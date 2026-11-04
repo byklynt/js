@@ -178,3 +178,13 @@ export function refillEligibility(
 export function bonusPercentFor(amount: number, tiers: { min: number; percent: number }[]): number {
   return [...tiers].sort((a, b) => b.min - a.min).find((t) => amount >= t.min)?.percent ?? 0;
 }
+
+/**
+ * What the provider really charged us for an order. The stored providerCost is the estimate at order time; a cancelled or
+ * failed order cost nothing and a partial one only costs the delivered share. Profit must use this, not the estimate.
+ */
+export function effectiveProviderCost(o: { status: OrderStatus; providerCost: number; quantity: number; remains: number }): number {
+  if (o.status === "dibatalkan" || o.status === "gagal_kirim") return 0;
+  if (o.status === "sebagian" && o.quantity > 0) return Math.floor((o.providerCost * Math.max(0, o.quantity - o.remains)) / o.quantity);
+  return o.providerCost;
+}

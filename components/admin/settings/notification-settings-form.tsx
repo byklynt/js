@@ -35,7 +35,7 @@ export function NotificationSettingsForm({ settings }: { settings: SiteSettings[
       >
         <SettingsSection icon={Bell} title="Saluran">
           <div className="max-w-[720px] space-y-4">
-            <TextField label="Webhook Telegram" value={form.telegramWebhook} onChange={(e) => setForm({ ...form, telegramWebhook: e.target.value })} placeholder="https://api.telegram.org/bot.../sendMessage" hint="Kosongkan untuk menonaktifkan. Pengiriman sungguhan belum tersambung (placeholder)." />
+            <TextField label="Webhook Telegram" value={form.telegramWebhook} onChange={(e) => setForm({ ...form, telegramWebhook: e.target.value })} placeholder="https://api.telegram.org/bot.../sendMessage" hint="Kosongkan untuk menonaktifkan. Belum tersedia: peringatan hanya dicatat di panel, belum dikirim ke luar." />
             <TextField label="Webhook email" value={form.emailWebhook} onChange={(e) => setForm({ ...form, emailWebhook: e.target.value })} placeholder="https://email.contoh.id/hook" />
           </div>
         </SettingsSection>

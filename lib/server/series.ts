@@ -1,16 +1,17 @@
 /** Dashboard series computed from the real store (orders, deposits). Empty store = zeros, never invented numbers. */
 import type { AdminDb } from "@/lib/admin-data";
+import { effectiveProviderCost } from "./rules";
 import { dayOf, hourOf, shiftDay, todayIso } from "./time";
 
 export type RevenuePoint = { label: string; value: number; profit: number };
 export type Range = "hari" | "7" | "30";
 
-const orderProfit = (o: AdminDb["orders"][number]) => (o.status === "gagal_kirim" ? 0 : o.charge - o.providerCost - o.refundedAmount);
+const orderProfit = (o: AdminDb["orders"][number]) => o.charge - effectiveProviderCost(o) - o.refundedAmount;
 
 export function revenueSeries(db: AdminDb, range: Range, now = new Date()): RevenuePoint[] {
   const today = todayIso(now);
   const paid = db.deposits.filter((d) => d.status === "berhasil");
-  const orders = db.orders.filter((o) => o.status !== "gagal_kirim");
+  const orders = db.orders;
   if (range === "hari") {
     return Array.from({ length: 12 }, (_, i) => {
       const from = i * 2;

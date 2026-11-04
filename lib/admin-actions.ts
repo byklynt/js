@@ -39,7 +39,7 @@ import { ServiceError, withTransaction } from "@/lib/server/tx";
  * 1. calls requireAdmin("action") itself (never relies on proxy.ts alone),
  * 2. validates its input with zod on the server,
  * 3. writes to the audit log through logAdminAction().
- * All data lives in the mock in-memory DB. TODO: swap for the real database/API calls.
+ * Data lives in the in-memory store, persisted to the dev store file (see lib/server/store.ts). TODO(db): swap for the real database.
  */
 export type ActionResult = { ok: true; message?: string; data?: unknown } | { ok: false; error: string };
 

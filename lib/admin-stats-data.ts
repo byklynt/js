@@ -3,6 +3,7 @@
  * TODO(db): replace with real queries / materialized views once there is a database (see lib/server/stats.ts).
  */
 import type { AdminDb } from "@/lib/admin-data";
+import { effectiveProviderCost } from "@/lib/server/rules";
 import { dayOf } from "@/lib/server/time";
 
 export const STATS_DAYS = 180;
@@ -68,7 +69,7 @@ export function buildStatsDatasetFromDb(db: AdminDb, now: Date = new Date()): St
     }
     f.orders++;
     f.revenue += o.charge;
-    f.providerCost += o.providerCost;
+    f.providerCost += effectiveProviderCost(o);
     f.refund += o.refundedAmount;
     if (o.status === "selesai") {
       f.completed++;

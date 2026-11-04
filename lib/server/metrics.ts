@@ -1,7 +1,7 @@
 import type { AdminDb } from "@/lib/admin-data";
 import { reconcileBalances } from "./ledger";
 import { refundMismatches } from "./refunds";
-import { isActiveStatus, mapProviderStatus } from "./rules";
+import { effectiveProviderCost, isActiveStatus, mapProviderStatus } from "./rules";
 import { stuckOrders } from "./sync";
 import { dayOf } from "./time";
 
@@ -13,7 +13,7 @@ const isToday = (iso: string, today: string) => dayOf(iso) === today;
 export function todayFinance(db: AdminDb, today: string) {
   const orders = db.orders.filter((o) => isToday(o.createdAt, today));
   const revenue = orders.reduce((s, o) => s + o.charge, 0);
-  const cost = orders.reduce((s, o) => s + o.providerCost, 0);
+  const cost = orders.reduce((s, o) => s + effectiveProviderCost(o), 0);
   const refunds = db.refunds.filter((r) => r.status === "selesai" && !r.reversed && r.processedAt && isToday(r.processedAt, today)).reduce((s, r) => s + r.amount, 0);
   return { revenue, cost, refunds, profit: revenue - cost - refunds };
 }
