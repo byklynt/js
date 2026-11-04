@@ -37,9 +37,22 @@ describe("PROVIDER_MODE is the single source of truth", () => {
     vi.stubEnv("PROVIDER_MODE", v);
     expect(providerMode()).toBe("live");
   });
-  it.each(["", "mock", "production", "liv", "true"])("%j means mock", (v) => {
-    vi.stubEnv("PROVIDER_MODE", v);
+  it("mock exists only when it is selected explicitly", () => {
+    vi.stubEnv("PROVIDER_MODE", "mock");
     expect(providerMode()).toBe("mock");
+  });
+  it.each(["", "production", "liv", "true", "demo"])("%j means off: nothing is faked", (v) => {
+    vi.stubEnv("PROVIDER_MODE", v);
+    expect(providerMode()).toBe("off");
+  });
+  it("unset means off, and off never returns data: the adapter and the connection test fail loudly", async () => {
+    vi.stubEnv("PROVIDER_MODE", "");
+    const db = seedAdminDb();
+    expect(() => getAdapter(db)).toThrow("Provider belum aktif");
+    const res = await checkLikeo(db, { force: true });
+    expect(res.ok).toBe(false);
+    expect(res.message).toContain("PROVIDER_MODE belum diatur");
+    expect(db.providers.find((p) => p.id === LIKEO_ID)!.lastTest?.ok).toBe(false);
   });
   it("is read on every call, not cached", () => {
     vi.stubEnv("PROVIDER_MODE", "mock");
@@ -51,10 +64,10 @@ describe("PROVIDER_MODE is the single source of truth", () => {
   });
   it("explains where the value comes from, and flags a value that is neither live nor mock", () => {
     vi.stubEnv("PROVIDER_MODE", "");
-    expect(resolveModeInfo()).toMatchObject({ mode: "mock", source: expect.stringContaining("default mock") });
+    expect(resolveModeInfo()).toMatchObject({ mode: "off", source: expect.stringContaining("belum aktif") });
     vi.stubEnv("PROVIDER_MODE", "Live!");
     const info = resolveModeInfo();
-    expect(info.mode).toBe("mock");
+    expect(info.mode).toBe("off");
     expect(info.warning).toContain("tidak dikenal");
     vi.stubEnv("PROVIDER_MODE", "live");
     expect(resolveModeInfo()).toMatchObject({ mode: "live", warning: null });

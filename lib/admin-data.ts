@@ -100,7 +100,7 @@ export type ProviderRecord = {
   balanceAt?: string | null;
   lastTest?: { ok: boolean; at: string; message: string } | null;
   /** Which mode produced balanceNative / lastTest. Data from another mode is cleared (reconcileProviderMode). The mode itself is never stored. */
-  dataMode?: "mock" | "live";
+  dataMode?: "mock" | "live" | "off";
 };
 
 export type PublicProvider = Omit<ProviderRecord, "apiKey"> & { apiKeyMasked: string };

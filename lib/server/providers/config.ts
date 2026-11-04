@@ -9,13 +9,18 @@ export const LIKEO_ID = "prv_likeo";
 export const LIKEO_NAME = "Likeo";
 export const LIKEO_DEFAULT_URL = "https://likeo.net/api/v2";
 
-export type ProviderMode = "mock" | "live";
+/** live = real Likeo calls. mock = deterministic fake data, ONLY when explicitly selected. off = not configured: nothing is faked. */
+export type ProviderMode = "mock" | "live" | "off";
 
 /**
  * THE single source of truth for the mode: the PROVIDER_MODE environment variable, read on every call (never cached,
  * never stored). "live" means live; anything else (unset, empty, a typo) means mock.
  */
-export const providerMode = (): ProviderMode => (process.env.PROVIDER_MODE?.trim().replace(/^["']|["']$/g, "").toLowerCase() === "live" ? "live" : "mock");
+export const providerMode = (): ProviderMode => {
+  const v = process.env.PROVIDER_MODE?.trim().replace(/^["']|["']$/g, "").toLowerCase();
+  // Mock data is never the default: it needs an explicit PROVIDER_MODE=mock (tests, local experiments).
+  return v === "live" ? "live" : v === "mock" ? "mock" : "off";
+};
 
 export type ModeInfo = {
   mode: ProviderMode;
@@ -23,7 +28,7 @@ export type ModeInfo = {
   raw: string | null;
   /** Human text, e.g. "dari .env.local" or "PROVIDER_MODE tidak ditemukan di environment, jadi default mock". */
   source: string;
-  /** Set when the value is something other than "live"/"mock", so a typo is visible instead of silently meaning mock. */
+  /** Set when the value is something other than "live"/"mock", so a typo is visible instead of silently switching things off. */
   warning: string | null;
 };
 
@@ -52,12 +57,12 @@ export function resolveModeInfo(): ModeInfo {
   const rawValue = process.env.PROVIDER_MODE;
   const raw = rawValue === undefined ? null : rawValue;
   if (raw === null || raw.trim() === "") {
-    return { mode, raw, source: raw === null ? "PROVIDER_MODE tidak ada di environment, jadi default mock" : "PROVIDER_MODE kosong, jadi default mock", warning: null };
+    return { mode, raw, source: raw === null ? "PROVIDER_MODE tidak ada di environment: provider belum aktif (tidak ada data contoh)" : "PROVIDER_MODE kosong: provider belum aktif (tidak ada data contoh)", warning: null };
   }
   const file = envFileDefining("PROVIDER_MODE");
   const source = file ? `dari ${file}` : "dari environment proses";
   const clean = raw.trim().replace(/^["']|["']$/g, "").toLowerCase();
-  const warning = clean === "live" || clean === "mock" ? null : `Nilai PROVIDER_MODE "${raw.slice(0, 20)}" tidak dikenal, jadi dianggap mock. Pakai "live" atau "mock".`;
+  const warning = clean === "live" || clean === "mock" ? null : `Nilai PROVIDER_MODE "${raw.slice(0, 20)}" tidak dikenal, jadi provider belum aktif. Pakai "live" (atau "mock" untuk uji).`;
   return { mode, raw, source, warning };
 }
 

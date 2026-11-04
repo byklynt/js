@@ -31,12 +31,13 @@ export function reconcileProviderMode(db: AdminDb, mode: ProviderMode = provider
     p.balance = 0;
     p.dataMode = mode;
   }
-  if (mode === "live" && db.providers.some((x) => !x.kind)) db.providers = db.providers.filter((x) => x.kind);
+  // Demo providers exist only in mock mode (tests / explicit experiments).
+  if (mode !== "mock" && db.providers.some((x) => !x.kind)) db.providers = db.providers.filter((x) => x.kind);
 }
 
 export type CheckOutcome = { ok: boolean; message: string; probe?: ProbeResult };
 
-function storeBalance(db: AdminDb, p: ProviderRecord, balance: number, currency: string, now: Date, mode: ProviderMode) {
+function storeBalance(db: AdminDb, p: ProviderRecord, balance: number, currency: string, now: Date, mode: "mock" | "live") {
   p.currency = currency;
   p.balanceNative = balance;
   p.balance = toRupiah(db, balance, currency);
@@ -56,6 +57,12 @@ export async function checkLikeo(db: AdminDb, opts: { force?: boolean; now?: Dat
   const mode = providerMode();
   if (!opts.force && p.dataMode === mode && p.balanceAt && now.getTime() - new Date(p.balanceAt).getTime() < BALANCE_CACHE_MS) {
     return { ok: true, message: "Saldo masih segar (cache 60 detik)." };
+  }
+
+  if (mode === "off") {
+    const message = "Provider belum aktif: PROVIDER_MODE belum diatur (isi live di .env.local lalu restart).";
+    p.lastTest = { ok: false, at: now.toISOString(), message };
+    return { ok: false, message };
   }
 
   if (mode === "mock") {

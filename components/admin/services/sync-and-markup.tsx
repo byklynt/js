@@ -28,7 +28,7 @@ export function SyncModal({ open, onClose }: { open: boolean; onClose: () => voi
   const run = useAdminRunner();
   const toast = useToast();
   const [preview, setPreview] = useState<SyncPreview | null>(null);
-  const [mode, setMode] = useState<"mock" | "live">("mock");
+  const [mode, setMode] = useState<"mock" | "live" | "off">("live");
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
@@ -37,7 +37,7 @@ export function SyncModal({ open, onClose }: { open: boolean; onClose: () => voi
     const result = await previewProviderSync();
     setLoading(false);
     if (result.ok) {
-      const data = result.data as { preview: SyncPreview; mode: "mock" | "live" };
+      const data = result.data as { preview: SyncPreview; mode: "mock" | "live" | "off" };
       setPreview(data.preview);
       setMode(data.mode);
     } else toast(result.error, "error");

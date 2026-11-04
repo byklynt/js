@@ -3,10 +3,11 @@ import { reconcileBalances } from "./ledger";
 import { refundMismatches } from "./refunds";
 import { isActiveStatus, mapProviderStatus } from "./rules";
 import { stuckOrders } from "./sync";
+import { dayOf } from "./time";
 
 export const STALL_MINUTES = 10;
 
-const isToday = (iso: string, today: string) => iso.startsWith(today);
+const isToday = (iso: string, today: string) => dayOf(iso) === today;
 
 /** Revenue - provider cost - refunds, for orders and refunds created on `today` (YYYY-MM-DD). */
 export function todayFinance(db: AdminDb, today: string) {
@@ -31,7 +32,8 @@ export function syncHealth(db: AdminDb, now = new Date()) {
       minutesAgo: last ? Math.round((now.getTime() - new Date(last.finishedAt).getTime()) / 60_000) : null,
       lastSyncedAt: last?.finishedAt ?? null,
       /** No run for 10 minutes while the cron should tick every 2: the job stopped. */
-      stalled: !last || now.getTime() - new Date(last.finishedAt).getTime() > STALL_MINUTES * 60_000,
+      // Only a problem when there is something to sync: with no running orders "never ran" is simply "nothing to do".
+      stalled: db.orders.some((o) => o.providerId === p.id && isActiveStatus(o.status)) && (!last || now.getTime() - new Date(last.finishedAt).getTime() > STALL_MINUTES * 60_000),
     };
   });
 }

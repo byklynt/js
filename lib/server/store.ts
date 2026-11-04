@@ -37,7 +37,7 @@ export type PersistedState = {
   /** Services imported from a provider, pricing settings (kurs, markup, rounding) and the real provider's switches. */
   importedServices: AdminService[];
   pricing: AdminDb["settings"]["pricing"];
-  likeo: { status: ProviderRecord["status"]; lastTest: ProviderRecord["lastTest"]; balanceNative?: number; currency?: string; balance: number; balanceAt?: string | null; dataMode?: "mock" | "live" };
+  likeo: { status: ProviderRecord["status"]; lastTest: ProviderRecord["lastTest"]; balanceNative?: number; currency?: string; balance: number; balanceAt?: string | null; dataMode?: "mock" | "live" | "off" };
   /** Operational data: everything users and admins create. There is no database yet, so it lives here (and only here). */
   users: AdminDb["users"];
   orders: AdminDb["orders"];

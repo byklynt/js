@@ -157,7 +157,7 @@ function PricingModal({ pricing, open, onClose }: { pricing: PricingView; open: 
   );
 }
 
-export function ProvidersView({ providers, mode, modeSource, modeWarning, pricing }: { providers: PublicProvider[]; mode: "mock" | "live"; modeSource: string; modeWarning: string | null; pricing: PricingView }) {
+export function ProvidersView({ providers, mode, modeSource, modeWarning, pricing }: { providers: PublicProvider[]; mode: "mock" | "live" | "off"; modeSource: string; modeWarning: string | null; pricing: PricingView }) {
   const run = useAdminRunner();
   const [editing, setEditing] = useState<{ provider: PublicProvider | null } | null>(null);
   const [revealFor, setRevealFor] = useState<PublicProvider | null>(null);
@@ -193,7 +193,7 @@ export function ProvidersView({ providers, mode, modeSource, modeWarning, pricin
                   <h2 className="text-[12px] font-semibold text-ink dark:text-white">{p.name}</h2>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-1.5">
-                  {p.kind === "likeo" ? <StatusChip label={mode === "mock" ? "MODE MOCK" : "MODE LIVE"} tone={mode === "mock" ? "amber" : "emerald"} /> : null}
+                  {p.kind === "likeo" ? <StatusChip label={mode === "mock" ? "MODE MOCK" : mode === "live" ? "MODE LIVE" : "BELUM DIATUR"} tone={mode === "mock" ? "amber" : mode === "live" ? "emerald" : "red"} /> : null}
                   <ProviderStatusChip status={p.status} />
                 </div>
               </div>

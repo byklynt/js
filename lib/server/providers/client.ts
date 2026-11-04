@@ -13,7 +13,9 @@ import type { MappedProviderStatus, ProviderAdapter, ProviderOrderStatus } from 
 
 /** The adapter for the current PROVIDER_MODE. In live mode a missing key throws a clear developer error. */
 export function getAdapter(db: AdminDb): ProviderAdapter {
-  if (providerMode() === "mock") return createMockAdapter(db, LIKEO_ID);
+  const mode = providerMode();
+  if (mode === "mock") return createMockAdapter(db, LIKEO_ID);
+  if (mode === "off") throw new ProviderError("Provider belum aktif. Isi PROVIDER_MODE=live di .env.local lalu restart server.", { kind: "config" });
   return createLikeoAdapter({ apiUrl: likeoApiUrl(), apiKey: likeoApiKey(), mode: "live" });
 }
 
