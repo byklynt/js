@@ -123,12 +123,6 @@ export function getServicesByCategory(categoryId: string): Service[] {
   return services.filter((s) => s.categoryId === categoryId);
 }
 
-export function getPlatformForCategory(categoryId: string): Platform | undefined {
-  const category = categories.find((c) => c.id === categoryId);
-  if (!category) return undefined;
-  return platforms.find((p) => p.id === category.platformId);
-}
-
 export const rupiahFormatter = new Intl.NumberFormat("id-ID", {
   style: "currency",
   currency: "IDR",

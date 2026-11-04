@@ -7,7 +7,6 @@ import type { RefundReason } from "./types";
 export const FINAL_STATUSES: OrderStatus[] = ["selesai", "sebagian", "dibatalkan", "gagal_kirim"];
 export const ACTIVE_STATUSES: OrderStatus[] = ["menunggu", "diproses", "berjalan"];
 
-export const isFinalStatus = (s: OrderStatus) => FINAL_STATUSES.includes(s);
 export const isActiveStatus = (s: OrderStatus) => ACTIVE_STATUSES.includes(s);
 
 /** Provider status strings (Pending, In progress, Processing, Completed, Partial, Canceled) -> internal status. */

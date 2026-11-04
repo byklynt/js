@@ -24,7 +24,7 @@ export function ServicesPage({ initialSearch = "" }: { initialSearch?: string })
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({});
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const loading = false;
 
   useEffect(() => {
     // One-time sync from localStorage once mounted in the browser.
@@ -43,21 +43,6 @@ export function ServicesPage({ initialSearch = "" }: { initialSearch?: string })
     return () => clearTimeout(t);
   }, [searchQuery]);
 
-  useEffect(() => {
-    // Show a brief skeleton on mount and whenever filters change.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    const t = setTimeout(() => setLoading(false), 400);
-    return () => clearTimeout(t);
-  }, [
-    debouncedQuery,
-    selectedCategoryIds,
-    advancedFilters.sortOrder,
-    advancedFilters.priceMin,
-    advancedFilters.priceMax,
-    advancedFilters.guarantee,
-    favoritesOnly,
-  ]);
 
   const groups = useMemo(() => {
     const query = debouncedQuery.trim().toLowerCase();

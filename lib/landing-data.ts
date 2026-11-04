@@ -1,16 +1,13 @@
 import { brand } from "@/lib/brand";
 import type { LucideIcon } from "lucide-react";
 import {
-  Zap,
   ShieldCheck,
   Rocket,
   Headphones,
   CreditCard,
   CalendarClock,
   Code2,
-  Check,
-  X,
-} from "lucide-react";
+  } from "lucide-react";
 import {
   SiInstagram,
   SiTiktok,
@@ -187,4 +184,3 @@ export const footerLinks = {
   ],
 };
 
-export const brandIcons = { Zap, Check, X };

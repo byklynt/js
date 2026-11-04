@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { categories, platforms, type Service } from "@/lib/dashboard-data";
 import { getOrderRulesAction } from "@/lib/user-actions";
-import { DEFAULT_CANCEL_POLICY, defaultOrderRules, ruleKeyFor, type CancelPolicy, type OrderRuleSet, type RuleKey } from "@/lib/order-rules";
+import { DEFAULT_CANCEL_POLICY, defaultOrderRules, type CancelPolicy, type OrderRuleSet, type RuleKey } from "@/lib/order-rules";
 
 type Loaded = { rules: Record<RuleKey, OrderRuleSet>; policy: CancelPolicy; loaded: boolean };
 
@@ -44,8 +44,3 @@ export function platformIdOfService(service: Service | null | undefined): string
   return platforms.find((p) => lower.includes(p.label.toLowerCase().replace("/x", "")))?.id;
 }
 
-export const ruleKeyOfService = (service: Service | null | undefined): RuleKey => ruleKeyFor(platformIdOfService(service));
-
-/** { ruleKey: version } for every rule set: what a batch acceptance sends. */
-export const versionsOf = (rules: Record<RuleKey, OrderRuleSet>): Record<string, string> =>
-  Object.fromEntries(Object.values(rules).map((r) => [r.key, r.version]));

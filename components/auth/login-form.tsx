@@ -120,12 +120,6 @@ export function LoginForm() {
             error={errors.password}
             autoComplete="current-password"
           />
-          <Link
-            href="#"
-            className="mt-1.5 inline-block text-xs font-semibold text-primary-600 hover:text-primary-700 dark:text-primary-300"
-          >
-            {copy.forgotPasswordLabel}
-          </Link>
         </div>
 
         <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">

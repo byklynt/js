@@ -22,7 +22,6 @@ import { approveRefund, autoRefundForOrder, createManualRefund, rejectRefund, re
 import { refundReasonFor } from "@/lib/server/rules";
 import { syncOrders } from "@/lib/server/sync";
 import { approveHeldOrder } from "@/lib/server/orders";
-import { replyAsAdmin } from "@/lib/server/tickets";
 import { notifyDeposit, notifyOrderStatus } from "@/lib/server/notifications";
 import { notifyAnnouncement } from "@/lib/server/announcements";
 import { ipAllowed, requireReauth } from "@/lib/server/access";
@@ -577,20 +576,6 @@ export async function createRefund(input: unknown) {
 // ---------------------------------------------------------------------------
 // Tickets
 // ---------------------------------------------------------------------------
-
-export async function replyAdminTicket(input: unknown) {
-  return run(S.ticketReplySchema, input, (d, admin) => {
-    const db = getDb();
-    const ticket = db.tickets.find((t) => t.id === d.ticketId);
-    if (!ticket) return fail("Tiket tidak ditemukan.");
-    const before = { status: ticket.status };
-    // Same service as the user area: appends the reply, sets "Dibalas" and flags the ticket unread for the user.
-    replyAsAdmin(db, ticket.id, { message: d.text });
-    if (d.status !== "dibalas") ticket.status = d.status;
-    audit(admin, "ticket.reply", "ticket", ticket.id, before, { status: ticket.status });
-    return ok(`Balasan untuk tiket #${ticket.id} terkirim.`);
-  });
-}
 
 export async function setTicketStatus(input: unknown) {
   return run(S.ticketStatusSchema, input, (d, admin) => {

@@ -16,15 +16,9 @@ export function useListState<F extends string>(
   const [filter, setFilterState] = useState<F>(initialFilter);
   const [query, setQuery] = useState(initialQuery);
   const [debounced, setDebounced] = useState(initialQuery.trim().toLowerCase());
-  const [readyFor, setReadyFor] = useState<F | null>(null);
   const [visible, setVisible] = useState(pageSize);
 
-  const loading = readyFor !== filter;
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setReadyFor(filter), 400);
-    return () => window.clearTimeout(timer);
-  }, [filter]);
+  const loading = false;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(query.trim().toLowerCase()), 200);

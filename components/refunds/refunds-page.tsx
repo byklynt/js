@@ -18,7 +18,6 @@ export function RefundsPage() {
   const [status, setStatus] = useState<Filter>("semua");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [readyFor, setReadyFor] = useState<Filter | null>(null);
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [refunds, setRefunds] = useState<Refund[] | null>(null);
 
@@ -26,11 +25,7 @@ export function RefundsPage() {
     void getMyRefunds().then(setRefunds).catch(() => setRefunds([]));
   }, []);
 
-  const loading = readyFor !== status || refunds === null;
-  useEffect(() => {
-    const timer = window.setTimeout(() => setReadyFor(status), 400);
-    return () => window.clearTimeout(timer);
-  }, [status]);
+  const loading = refunds === null;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 200);

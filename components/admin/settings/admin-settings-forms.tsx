@@ -16,7 +16,6 @@ import { SettingsPageHeader, SettingsSection } from "@/components/settings/setti
 import { Button } from "@/components/ui/button";
 import { PasswordField, TextField } from "@/components/ui/text-field";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
-import { useToast } from "@/components/shared/toast";
 import { useAdminRunner } from "../use-admin-runner";
 
 const adminSettingsNav: SettingsNavItem[] = [

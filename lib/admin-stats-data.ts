@@ -6,8 +6,6 @@ import type { AdminDb } from "@/lib/admin-data";
 import { dayOf } from "@/lib/server/time";
 
 export const STATS_DAYS = 180;
-export const PAYMENT_METHODS = ["QRIS", "Transfer Bank", "E-Wallet", "Virtual Account"] as const;
-
 /** One row per day and service. */
 export type DailyFact = {
   date: string;

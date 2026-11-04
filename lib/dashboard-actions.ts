@@ -23,15 +23,6 @@ export async function createOrder(payload: CreateOrderPayload): Promise<ActionRe
   return { success: false, message: res.error };
 }
 
-export async function createBulkOrder(payload: CreateBulkOrderPayload): Promise<ActionResult> {
-  const res = await submitMassOrder(payload.lines);
-  if (res.ok) {
-    refreshBalance();
-    return { success: true };
-  }
-  return { success: false, message: res.error };
-}
-
 export async function requestRefill(orderId: string): Promise<ActionResult> {
   const res = await submitRefill(orderId);
   return res.ok ? { success: true } : { success: false, message: res.error };

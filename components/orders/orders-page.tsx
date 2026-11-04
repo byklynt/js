@@ -47,7 +47,6 @@ export function OrdersPage({ initialSearch = "" }: { initialSearch?: string }) {
   const [status, setStatus] = useState<StatusFilter>("semua");
   const [query, setQuery] = useState(initialSearch);
   const [debouncedQuery, setDebouncedQuery] = useState(initialSearch.trim().toLowerCase());
-  const [readyFor, setReadyFor] = useState<StatusFilter | null>(null);
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [refills, setRefills] = useState<Record<string, RefillState>>({});
@@ -61,11 +60,7 @@ export function OrdersPage({ initialSearch = "" }: { initialSearch?: string }) {
   }, []);
 
   // Skeleton shimmer for 400ms on first load and whenever the status filter changes.
-  const loading = readyFor !== status || allOrders === null;
-  useEffect(() => {
-    const timer = window.setTimeout(() => setReadyFor(status), 400);
-    return () => window.clearTimeout(timer);
-  }, [status]);
+  const loading = allOrders === null;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim().toLowerCase()), 200);

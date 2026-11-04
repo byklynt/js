@@ -13,7 +13,6 @@ import { createProviderClient } from "@/lib/server/providers/client";
 import { createDepositRequest, methodLabel } from "@/lib/server/deposits";
 import { changeUserEmail, changeUserPassword, saveUserPrefs } from "@/lib/server/user-auth";
 import { loadCreds, saveCreds } from "@/lib/server/user-store";
-import { createManualRefund } from "@/lib/server/refunds";
 import { persistAdminState } from "@/lib/server/store";
 import { notifyAdmins } from "@/lib/server/notifications";
 import { requestCancel, requestRefill } from "@/lib/server/requests";
@@ -99,19 +98,6 @@ export async function submitCancel(orderId: unknown) {
     const db = getDb();
     requestCancel(db, userId, id.data);
     return { ok: true, message: "Permintaan pembatalan dikirim. Admin akan menyetujui atau menolaknya; refund mengikuti kebijakan pembatalan." };
-  });
-}
-
-/** User asks for a refund on a finished order; an admin decides in /admin/refunds. */
-export async function submitRefundRequest(input: unknown) {
-  const parsed = z.object({ orderId: z.string().trim().min(1).max(40), amount: z.coerce.number().int().positive(), reason: z.string().trim().min(10, "Alasan minimal 10 karakter.").max(300) }).safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Data tidak valid." } as const;
-  return guard(async (userId) => {
-    const db = getDb();
-    const order = db.orders.find((o) => o.id === parsed.data.orderId && o.userId === userId);
-    if (!order) return { ok: false, error: "Pesanan tidak ditemukan." } as const;
-    createManualRefund(db, { orderId: order.id, amount: parsed.data.amount, note: parsed.data.reason, source: "user_request" });
-    return { ok: true, message: "Permintaan refund dikirim ke admin." };
   });
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -198,14 +198,7 @@ export function StatsView({ result, params, providers, platforms }: {
   const [thinOnly, setThinOnly] = useState(false);
   const [highOnly, setHighOnly] = useState(false);
 
-  // 400ms skeleton whenever the filters or the tab change.
-  const key = JSON.stringify(params);
-  const [readyFor, setReadyFor] = useState<string | null>(null);
-  useEffect(() => {
-    const t = window.setTimeout(() => setReadyFor(key), 400);
-    return () => window.clearTimeout(t);
-  }, [key]);
-  const loading = readyFor !== key;
+  const loading = false;
 
   function update(patch: Partial<StatsUrlParams>) {
     const next = { ...params, ...patch };

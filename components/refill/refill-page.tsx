@@ -22,7 +22,6 @@ export function RefillPage() {
   const [status, setStatus] = useState<Filter>("semua");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [readyFor, setReadyFor] = useState<Filter | null>(null);
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [reporting, setReporting] = useState<RefillRequest | null>(null);
@@ -32,11 +31,7 @@ export function RefillPage() {
     void getMyRefills().then(setRefills).catch(() => setRefills([]));
   }, []);
 
-  const loading = readyFor !== status || refills === null;
-  useEffect(() => {
-    const timer = window.setTimeout(() => setReadyFor(status), 400);
-    return () => window.clearTimeout(timer);
-  }, [status]);
+  const loading = refills === null;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim().toLowerCase()), 200);

@@ -18,17 +18,12 @@ export function UserLedgerPage() {
   const [data, setData] = useState<{ balance: number; entries: LedgerEntry[] } | null>(null);
   const [filter, setFilter] = useState<Filter>("semua");
   const [visible, setVisible] = useState(PAGE_SIZE);
-  const [readyFor, setReadyFor] = useState<Filter | null>(null);
 
   useEffect(() => {
     void getMyLedger().then(setData).catch(() => setData({ balance: 0, entries: [] }));
   }, []);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setReadyFor(filter), 400);
-    return () => window.clearTimeout(timer);
-  }, [filter]);
 
-  const loading = readyFor !== filter || data === null;
+  const loading = data === null;
   const filtered = useMemo(() => (data?.entries ?? []).filter((l) => filter === "semua" || l.type === filter), [data, filter]);
 
   return (

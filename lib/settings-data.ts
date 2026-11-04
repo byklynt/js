@@ -29,13 +29,6 @@ export const timezones: { id: string; label: string }[] = [
   { id: "UTC", label: "UTC (UTC+0)" },
 ];
 
-export const notificationEvents = [
-  { id: "orderDone", label: "Pesanan selesai", hint: "Kabari saat pesananmu selesai diproses." },
-  { id: "ticketReply", label: "Balasan tiket", hint: "Kabari saat tim support membalas tiketmu." },
-  { id: "serviceUpdate", label: "Pembaruan layanan", hint: "Perubahan harga, layanan baru, dan gangguan." },
-  { id: "promo", label: "Promo & bonus", hint: "Penawaran dan bonus deposit terbaru." },
-] as const;
-
 export const notificationChannels = [
   { id: "email", label: "Email" },
   { id: "telegram", label: "Telegram" },
