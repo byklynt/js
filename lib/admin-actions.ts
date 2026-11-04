@@ -22,7 +22,7 @@ import { approveRefund, autoRefundForOrder, createManualRefund, rejectRefund, re
 import { refundReasonFor } from "@/lib/server/rules";
 import { syncOrders } from "@/lib/server/sync";
 import { approveHeldOrder } from "@/lib/server/orders";
-import { notifyDeposit, notifyOrderStatus } from "@/lib/server/notifications";
+import { notifyDeposit, notifyOrderStatus, notifyUser } from "@/lib/server/notifications";
 import { notifyAnnouncement } from "@/lib/server/announcements";
 import { ipAllowed, requireReauth } from "@/lib/server/access";
 import { getClientIp } from "@/lib/auth-server";
@@ -520,10 +520,17 @@ export async function rejectDeposit(input: unknown) {
 
 export async function reviewRefill(input: unknown) {
   return run(S.reviewSchema, input, (d, admin) => {
-    const refill = getDb().refills.find((r) => r.id === d.id);
+    const db = getDb();
+    const refill = db.refillRequests.find((r) => r.id === d.id);
     if (!refill) return fail("Refill tidak ditemukan.");
     const before = { status: refill.status };
     refill.status = d.action === "setujui" ? "berjalan" : d.action === "tolak" ? "ditolak" : "selesai";
+    if (d.action === "tolak") refill.rejectReason = "Ditolak oleh admin.";
+    notifyUser(db, refill.userId, {
+      type: "pesanan", title: `Refill pesanan #${refill.orderId} ${d.action === "setujui" ? "diproses" : d.action === "tolak" ? "ditolak" : "selesai"}`,
+      body: d.action === "tolak" ? "Permintaan refill ditolak. Buka tiket bila ada pertanyaan." : "Lihat statusnya di halaman Refill.",
+      href: "/dashboard/refill", dedupeKey: `refill:${refill.id}:${refill.status}`,
+    });
     audit(admin, `refill.${d.action}`, "refill", refill.id, before, { status: refill.status });
     return ok(`Refill #${refill.id} ${d.action === "setujui" ? "diproses" : d.action === "tolak" ? "ditolak" : "ditandai selesai"}.`);
   });

@@ -6,6 +6,7 @@ import { autoRefundForOrder, refundMismatches } from "./refunds";
 import { isActiveStatus, isStuck, mapProviderStatus } from "./rules";
 import type { ProviderSyncRun } from "./types";
 import { MAX_STATUS_BATCH } from "./providers/types";
+import { providerMode } from "./providers/config";
 
 export const FAILURE_ALERT_THRESHOLD = 3;
 
@@ -68,9 +69,13 @@ function updateRequests(db: AdminDb, now: Date) {
       notifyUser(db, c.userId, { type: "pesanan", title: `Pembatalan #${order.id} ditolak`, body: c.rejectReason ?? "", href: `/dashboard/orders?search=${order.id}`, dedupeKey: `cancel-rejected:${c.id}` }, now);
     }
   }
-  for (const r of db.refillRequests) {
-    if (r.status === "menunggu") r.status = "berjalan"; // TODO(provider): read the real refill status
-    else if (r.status === "berjalan") r.status = "selesai";
+  // The provider's refill status is not read back yet (TODO(provider)). Only the mock moves requests along by itself;
+  // with a real provider an admin sets "berjalan" / "selesai" / "ditolak" on /admin/refills.
+  if (providerMode() === "mock") {
+    for (const r of db.refillRequests) {
+      if (r.status === "menunggu") r.status = "berjalan";
+      else if (r.status === "berjalan") r.status = "selesai";
+    }
   }
 }
 

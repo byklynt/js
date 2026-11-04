@@ -42,7 +42,6 @@ export type PersistedState = {
   users: AdminDb["users"];
   orders: AdminDb["orders"];
   deposits: AdminDb["deposits"];
-  refills: AdminDb["refills"];
   refunds: AdminDb["refunds"];
   tickets: AdminDb["tickets"];
   ledger: AdminDb["ledger"];
@@ -154,7 +153,7 @@ export function applyPersisted(db: AdminDb, store: Store = getStore()): boolean 
   // Merge per platform so a rule set added later still has its default.
   if (saved.orderRules) db.settings.orderRules = { ...db.settings.orderRules, ...saved.orderRules };
   if (saved.cancelPolicy) db.settings.cancelPolicy = { ...db.settings.cancelPolicy, ...saved.cancelPolicy };
-  for (const key of ["users", "orders", "deposits", "refills", "refunds", "tickets", "ledger", "refillRequests", "cancelRequests", "syncRuns", "alerts", "priceUpdates", "sanityRuns", "outbox"] as const) {
+  for (const key of ["users", "orders", "deposits", "refunds", "tickets", "ledger", "refillRequests", "cancelRequests", "syncRuns", "alerts", "priceUpdates", "sanityRuns", "outbox"] as const) {
     if (Array.isArray(saved[key])) (db as unknown as Record<string, unknown>)[key] = saved[key];
   }
   if (saved.providerOrders) db.providerOrders = saved.providerOrders;
@@ -170,7 +169,7 @@ export function applyPersisted(db: AdminDb, store: Store = getStore()): boolean 
 
 /** Write the admin state of `db` to the store. Call after every change to 2FA, sessions or audit logs. */
 export function persistAdminState(db: AdminDb, store: Store = getStore()) {
-  store.update({ adminSecurity: db.adminSecurity, pending2fa: db.pending2fa, sessions: db.sessions, auditLogs: db.auditLogs.slice(0, 500), announcements: db.announcements, announcementSeen: db.announcementSeen, orderRules: db.settings.orderRules, cancelPolicy: db.settings.cancelPolicy, users: db.users, orders: db.orders, deposits: db.deposits, refills: db.refills, refunds: db.refunds, tickets: db.tickets, ledger: db.ledger,
+  store.update({ adminSecurity: db.adminSecurity, pending2fa: db.pending2fa, sessions: db.sessions, auditLogs: db.auditLogs.slice(0, 500), announcements: db.announcements, announcementSeen: db.announcementSeen, orderRules: db.settings.orderRules, cancelPolicy: db.settings.cancelPolicy, users: db.users, orders: db.orders, deposits: db.deposits, refunds: db.refunds, tickets: db.tickets, ledger: db.ledger,
     refillRequests: db.refillRequests, cancelRequests: db.cancelRequests, syncRuns: db.syncRuns.slice(0, 500), alerts: db.alerts.slice(0, 200), priceUpdates: db.priceUpdates.slice(0, 500),
     sanityRuns: db.sanityRuns.slice(0, 50), outbox: db.outbox.slice(0, 200), providerOrders: db.providerOrders,
     notifications: db.notifications, importedServices: db.services.filter((s) => s.imported), pricing: db.settings.pricing, likeo: likeoState(db) });

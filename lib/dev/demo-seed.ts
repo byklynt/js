@@ -5,7 +5,7 @@
 import { demoCategories as categories, demoServices as services, demoTickets, demoUserOrders as userOrders, demoUserRefills as userRefills } from "@/lib/dev/demo-data";
 import { platforms } from "@/lib/dashboard-data";
 import {
-  createEmptyDb, type AdminDb, type AdminOrder, type AdminDeposit, type DepositStatus, type AdminRefill, type AdminService, type AdminTicket, type AdminUser, type AuditLog,
+  createEmptyDb, type AdminDb, type AdminOrder, type AdminDeposit, type DepositStatus, type AdminService, type AdminTicket, type AdminUser, type AuditLog,
   type Announcement, type ProviderRecord, type UserRank,
 } from "@/lib/admin-data";
 import { computeExpectedRefund, isActiveStatus, refundReasonFor, toProviderStatus } from "@/lib/server/rules";
@@ -202,12 +202,6 @@ export function seedDeposits(users: AdminUser[]): AdminDeposit[] {
   }).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
-export function seedRefills(users: AdminUser[]): AdminRefill[] {
-  return userRefills.map((r, i) => {
-    const user = users[(i * 3 + 1) % users.length];
-    return { ...r, userId: user.id, username: user.username };
-  });
-}
 
 export function seedTickets(users: AdminUser[]): AdminTicket[] {
   return demoTickets.map((t, i) => {
@@ -453,7 +447,6 @@ export function seedDemoDb(): AdminDb {
     providers: seedProviders(),
     services: seedServices(),
     deposits: seedDeposits(users),
-    refills: seedRefills(users),
     refunds: [],
     tickets: seedTickets(users),
     announcements: seedAnnouncements(),

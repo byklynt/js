@@ -1,5 +1,5 @@
 /** Read models for the admin / user UI (plain, serializable data; no secrets). */
-import type { AdminDb } from "@/lib/admin-data";
+import type { AdminRefill, AdminDb } from "@/lib/admin-data";
 import type { OrderStatus } from "@/lib/orders-data";
 import { computeExpectedRefund, computeUserCancelRefund, DELIVERED, isActiveStatus, isStuck, mapProviderStatus } from "./rules";
 import type { LedgerEntry, RefundRecord } from "./types";
@@ -89,4 +89,14 @@ export function orderFlags(db: AdminDb, now = new Date()) {
       .map((o) => o.id)
   );
   return { stuck: [...stuck], drift: [...drift] };
+}
+
+/** Rows for /admin/refills: the real refill requests (db.refillRequests) joined with their order and user. */
+export function adminRefillRows(db: AdminDb): AdminRefill[] {
+  return db.refillRequests.flatMap((r) => {
+    const order = db.orders.find((o) => o.id === r.orderId);
+    return order
+      ? [{ id: r.id, orderId: order.id, platform: order.platform, name: order.name, link: order.link, status: r.status, createdAt: r.createdAt, userId: r.userId, username: order.username }]
+      : [];
+  });
 }

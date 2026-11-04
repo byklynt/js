@@ -245,7 +245,6 @@ export type AdminDb = {
   providers: ProviderRecord[];
   services: AdminService[];
   deposits: AdminDeposit[];
-  refills: AdminRefill[];
   refunds: AdminRefund[];
   tickets: AdminTicket[];
   announcements: Announcement[];
@@ -345,7 +344,7 @@ export function likeoProviderRow(): ProviderRecord {
  */
 export function createEmptyDb(): AdminDb {
   return {
-    users: [], orders: [], providers: [likeoProviderRow()], services: [], deposits: [], refills: [], refunds: [], tickets: [],
+    users: [], orders: [], providers: [likeoProviderRow()], services: [], deposits: [], refunds: [], tickets: [],
     announcements: [], auditLogs: [], settings: defaultSettings(), priceUpdates: [], ledger: [], refillRequests: [], cancelRequests: [],
     syncRuns: [], notifications: [], alerts: [], providerOrders: {}, providerDown: [], announcementSeen: {}, sessions: [], sanityRuns: [],
     outbox: [], adminSecurity: {}, pending2fa: {},

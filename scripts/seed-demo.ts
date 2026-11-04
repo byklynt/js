@@ -42,7 +42,7 @@ if (existsSync(storePath)) {
 const demo = seedDemoDb();
 // Replace operational data; keep admin security, sessions, logs, settings, the Likeo row and imported services.
 Object.assign(db, {
-  users: demo.users, orders: demo.orders, deposits: demo.deposits, refills: demo.refills, refunds: demo.refunds, tickets: demo.tickets,
+  users: demo.users, orders: demo.orders, deposits: demo.deposits, refunds: demo.refunds, tickets: demo.tickets,
   ledger: demo.ledger, refillRequests: demo.refillRequests, cancelRequests: demo.cancelRequests, syncRuns: demo.syncRuns, alerts: demo.alerts,
   priceUpdates: demo.priceUpdates, providerOrders: demo.providerOrders, notifications: demo.notifications, announcements: demo.announcements,
 });
