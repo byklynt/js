@@ -6,6 +6,7 @@ const dateFormatter = new Intl.DateTimeFormat("id-ID", {
 });
 
 /** Short id-ID date (fixed time zone so server and client agree). */
-export function formatDate(iso: string): string {
-  return dateFormatter.format(new Date(iso));
+export function formatDate(iso: string | null | undefined): string {
+  const d = iso ? new Date(iso) : null;
+  return d && !Number.isNaN(d.getTime()) ? dateFormatter.format(d) : "-";
 }

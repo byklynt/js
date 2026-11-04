@@ -20,7 +20,6 @@ import {
   BookText,
   BarChart3,
 } from "lucide-react";
-import { FaWhatsapp } from "react-icons/fa6";
 import type { TKey } from "@/lib/i18n/id";
 
 export type NavIcon = ComponentType<{ className?: string }>;

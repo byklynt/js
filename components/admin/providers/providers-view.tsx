@@ -243,7 +243,7 @@ export function ProvidersView({ providers, mode, modeSource, modeWarning, pricin
                   {p.balance < LOW_PROVIDER_BALANCE ? <LowBalanceChip /> : null}
                 </div>
                 <div className="text-[#5B6B8C] dark:text-slate-400">
-                  Terakhir sinkron <time dateTime={p.lastSync}>{formatDateTime(p.lastSync)}</time>
+                  Terakhir sinkron {p.lastSync ? <time dateTime={p.lastSync}>{formatDateTime(p.lastSync)}</time> : "belum pernah"}
                 </div>
                 {p.kind === "likeo" && p.lastTest ? (
                   <div role="status" className={`break-words ${p.lastTest.ok ? "text-emerald-600 dark:text-emerald-300" : "text-red-500"}`}>

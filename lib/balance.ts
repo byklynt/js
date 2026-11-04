@@ -25,6 +25,8 @@ const dateTimeFormatter = new Intl.DateTimeFormat("id-ID", {
   timeZone: "Asia/Jakarta",
 });
 
-export function formatDateTime(iso: string): string {
-  return dateTimeFormatter.format(new Date(iso));
+export function formatDateTime(iso: string | null | undefined): string {
+  const d = iso ? new Date(iso) : null;
+  // Never show "Invalid Date": a missing or broken timestamp is a dash.
+  return d && !Number.isNaN(d.getTime()) ? dateTimeFormatter.format(d) : "-";
 }
