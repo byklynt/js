@@ -10,7 +10,7 @@ Everything here is **server only**. The API key is read from the environment and
 
    | Variable | Meaning |
    | --- | --- |
-   | `PROVIDER_MODE` | `mock` (default): fake deterministic data, no key needed. `live`: real calls to Likeo. |
+   | `PROVIDER_MODE` | `live`: real calls to Likeo. `mock`: fake deterministic data, only when you pick it (tests). Unset or anything else: provider not active (nothing is faked). |
    | `LIKEO_API_URL` | Default `https://likeo.net/api/v2`. |
    | `LIKEO_API_KEY` | Your key. In `live` mode a missing key stops every call with a clear message. |
 
