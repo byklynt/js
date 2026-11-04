@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local dev store (admin 2FA, sessions, audit logs)
+.data/
+
+!.env.example

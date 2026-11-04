@@ -1,26 +1,285 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0b1220;
+  --ink: #0f1b3d;
+
+  /* ===================================================================================================================
+     BRAND COLOR TOKENS: the ONE place the blue is defined.
+     Change these THREE values and the whole site re-themes (every other brand color below is derived from them):
+       --brand        the logo blue (sampled from /public/brand/logo-mark.png; expected near #0070FF)
+       --brand-hover  hover / links on light (a step darker)
+       --brand-soft   pale tint for pills, icon boxes, badges (light mode)
+     Status colors (green, amber, red, purple) are NOT part of this and stay as they are.
+     Contrast: white text sits on --primary-solid / the --primary-from..--primary-to gradient, both kept >= 4.5:1 (AA).
+     The raw brand blue (#0070FF) is 4.41:1 with white, so buttons use a slightly deeper step of it.
+     =================================================================================================================== */
+  --brand: #0070ff;
+  --brand-hover: #0062e0;
+  --brand-soft: #e6f1ff;
+
+  /* Derived, light mode */
+  --primary: var(--brand);
+  --primary-hover: var(--brand-hover);
+  --primary-soft: var(--brand-soft);
+  --primary-border: color-mix(in srgb, var(--brand) 22%, white);            /* ~#C7DFFF */
+  --primary-pressed: color-mix(in srgb, var(--brand-hover) 82%, black);     /* ~#0050B8: button bottom edge */
+  --primary-accent: var(--brand-hover);                                     /* links / accent text on light */
+  --primary-ring: color-mix(in srgb, var(--brand) 40%, transparent);        /* focus ring */
+  /* Buttons / active pills / solid fills under white text (AA). Same in light and dark. */
+  --primary-solid: color-mix(in srgb, var(--brand) 94%, black);
+  --primary-from: color-mix(in srgb, var(--brand) 96%, black);
+  --primary-to: var(--brand-hover);
+
+  /* Shade scale behind the primary-50..950 utilities (replaces Tailwind sky/cyan) */
+  --primary-50: color-mix(in srgb, var(--brand-soft) 45%, white);
+  --primary-100: var(--brand-soft);
+  --primary-200: var(--primary-border);
+  --primary-300: color-mix(in srgb, var(--brand) 50%, white);
+  --primary-400: color-mix(in srgb, var(--brand) 75%, white);
+  --primary-500: var(--brand);
+  --primary-600: var(--brand-hover);
+  --primary-700: var(--primary-pressed);
+  --primary-800: color-mix(in srgb, var(--primary-pressed) 80%, black);
+  --primary-900: color-mix(in srgb, var(--primary-pressed) 58%, black);
+  --primary-950: color-mix(in srgb, var(--primary-pressed) 36%, black);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-jakarta);
+  --color-ink: var(--ink);
+
+  /* Brand blue: bg-primary, text-primary-accent, border-primary-border, from-primary-from, ... */
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-border: var(--primary-border);
+  --color-primary-pressed: var(--primary-pressed);
+  --color-primary-accent: var(--primary-accent);
+  --color-primary-ring: var(--primary-ring);
+  --color-primary-solid: var(--primary-solid);
+  --color-primary-from: var(--primary-from);
+  --color-primary-to: var(--primary-to);
+  --color-primary-50: var(--primary-50);
+  --color-primary-100: var(--primary-100);
+  --color-primary-200: var(--primary-200);
+  --color-primary-300: var(--primary-300);
+  --color-primary-400: var(--primary-400);
+  --color-primary-500: var(--primary-500);
+  --color-primary-600: var(--primary-600);
+  --color-primary-700: var(--primary-700);
+  --color-primary-800: var(--primary-800);
+  --color-primary-900: var(--primary-900);
+  --color-primary-950: var(--primary-950);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark {
+  --background: #050b16;
+  --foreground: #eaf2fb;
+  --ink: #eaf2fb;
+
+  /* Brand, dark mode (still derived from the three tokens above). Surfaces stay as they are; only the accent changes. */
+  --primary: color-mix(in srgb, var(--brand) 88%, white);                  /* ~#1F7BFF */
+  --primary-hover: color-mix(in srgb, var(--brand) 80%, white);
+  --primary-soft: color-mix(in srgb, var(--brand) 18%, transparent);
+  --primary-border: color-mix(in srgb, var(--brand) 30%, transparent);
+  --primary-accent: color-mix(in srgb, var(--brand) 65%, white);           /* ~#5AA2FF: links / accent text on dark */
+  --primary-50: color-mix(in srgb, var(--brand) 10%, transparent);
+  --primary-100: var(--primary-soft);
+  --primary-200: var(--primary-border);
+  --primary-300: var(--primary-accent);
+  --primary-400: color-mix(in srgb, var(--brand) 72%, white);
+  --primary-500: var(--primary);
+  --primary-600: var(--primary-hover);
+  --primary-900: color-mix(in srgb, var(--brand) 30%, #0f1215);
+  --primary-950: color-mix(in srgb, var(--brand) 20%, #0f1215);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-14px) rotate(3deg); }
+}
+
+@keyframes float-slower {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-20px); }
+}
+
+.animate-float-slow {
+  animation: float-slow 5s ease-in-out infinite;
+}
+
+.animate-float-slower {
+  animation: float-slower 6.5s ease-in-out infinite;
+}
+
+@keyframes marquee-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@keyframes marquee-right {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+
+.animate-marquee-left {
+  animation: marquee-left 28s linear infinite;
+}
+
+.animate-marquee-right {
+  animation: marquee-right 32s linear infinite;
+}
+
+.animate-marquee-left-slow {
+  animation: marquee-left 45s linear infinite;
+}
+
+.animate-marquee-right-slow {
+  animation: marquee-right 50s linear infinite;
+}
+
+.pause-on-hover:hover .animate-marquee-left,
+.pause-on-hover:hover .animate-marquee-right,
+.pause-on-hover:hover .animate-marquee-left-slow,
+.pause-on-hover:hover .animate-marquee-right-slow {
+  animation-play-state: paused;
+}
+
+.bg-dot-grid {
+  background-image: radial-gradient(circle, color-mix(in oklab, var(--color-primary-400) 35%, transparent) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+.bg-square-pattern {
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--color-primary-400) 45%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--color-primary-400) 45%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in oklab, var(--color-primary-400) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--color-primary-400) 22%, transparent) 1px, transparent 1px);
+  background-size: 68px 68px, 68px 68px, 17px 17px, 17px 17px;
+}
+
+.bg-squares {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='84'%3E%3Crect x='3' y='3' width='78' height='78' rx='2' fill='%230070FF' fill-opacity='0.08' stroke='%230070FF' stroke-opacity='0.16'/%3E%3C/svg%3E");
+  background-size: 84px 84px;
+  transform: perspective(900px) rotateX(14deg) rotateY(-12deg);
+  transform-origin: top right;
+}
+
+/* Dashboard dark tokens (sampled from the dark reference). Scoped to .dash so
+   landing/auth pages keep their own dark palette. Remaps the Tailwind slate
+   scale, so every existing `dark:*-slate-*` utility picks them up. */
+.dark .dash {
+  --background: #101316;
+  --foreground: #e6edf5;
+  --ink: #ffffff;
+  --color-slate-950: #101316;
+  --color-slate-900: #0f1215;
+  --color-slate-800: #2a2d30;
+  --color-slate-700: #2a2d30;
+  --color-slate-600: #55657a;
+  --color-slate-500: #8fa1b5;
+  --color-slate-400: #8fa1b5;
+  --color-slate-300: #e6edf5;
+  --color-slate-200: #e6edf5;
+  --color-slate-100: #ffffff;
+}
+
+.dark .bg-squares {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='84'%3E%3Crect x='3' y='3' width='78' height='78' rx='2' fill='%231F7BFF' fill-opacity='0.05' stroke='%231F7BFF' stroke-opacity='0.08'/%3E%3C/svg%3E");
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--color-slate-200) 60%, transparent) 25%,
+    color-mix(in oklab, var(--color-slate-100) 80%, transparent) 50%,
+    color-mix(in oklab, var(--color-slate-200) 60%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.dark .animate-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--color-slate-800) 60%, transparent) 25%,
+    color-mix(in oklab, var(--color-slate-700) 60%, transparent) 50%,
+    color-mix(in oklab, var(--color-slate-800) 60%, transparent) 75%
+  );
+  background-size: 200% 100%;
+}
+
+/* Thin custom scrollbar for modal / drawer lists */
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.thin-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+.dark .thin-scroll {
+  scrollbar-color: #3a4048 transparent;
+}
+.dark .thin-scroll::-webkit-scrollbar-thumb {
+  background: #3a4048;
+}
+
+/* Scrollable but with no visible scrollbar (sidebar, mobile menu). */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Slim themed scrollbar for the page scroll of the dashboard / admin shells (not the landing or auth pages). */
+html:has(.dash) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
+}
+html:has(.dash)::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+html:has(.dash)::-webkit-scrollbar-track {
+  background: transparent;
+}
+html:has(.dash)::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.35);
+  border-radius: 9999px;
+}
+html.dark:has(.dash) {
+  scrollbar-color: rgba(143, 161, 181, 0.3) transparent;
+}
+html.dark:has(.dash)::-webkit-scrollbar-thumb {
+  background: rgba(143, 161, 181, 0.3);
 }

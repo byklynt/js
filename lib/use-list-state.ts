@@ -1,0 +1,54 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+
+/**
+ * Shared list behaviour for dashboard/admin pages:
+ * - filter with a 400ms skeleton on first load and whenever the filter changes
+ * - search debounced by 200ms (trimmed + lowercased)
+ * - "show more" pagination
+ */
+export function useListState<F extends string>(
+  initialFilter: F,
+  { pageSize = 10, initialQuery = "" }: { pageSize?: number; initialQuery?: string } = {}
+) {
+  const [filter, setFilterState] = useState<F>(initialFilter);
+  const [query, setQuery] = useState(initialQuery);
+  const [debounced, setDebounced] = useState(initialQuery.trim().toLowerCase());
+  const [readyFor, setReadyFor] = useState<F | null>(null);
+  const [visible, setVisible] = useState(pageSize);
+
+  const loading = readyFor !== filter;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setReadyFor(filter), 400);
+    return () => window.clearTimeout(timer);
+  }, [filter]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(query.trim().toLowerCase()), 200);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  return {
+    filter,
+    setFilter: (next: F) => {
+      setFilterState(next);
+      setVisible(pageSize);
+    },
+    query,
+    setQuery,
+    debounced,
+    loading,
+    visible,
+    showMore: () => setVisible((v) => v + pageSize),
+  };
+}
+
+/** Initial list filter from the URL (?status=... or ?filter=...), so dashboard cards can link to a filtered list. */
+export function useParamFilter<F extends string>(allowed: readonly F[], fallback: F): F {
+  const params = useSearchParams();
+  const value = (params.get("status") ?? params.get("filter")) as F | null;
+  return value && allowed.includes(value) ? value : fallback;
+}

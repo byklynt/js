@@ -1,0 +1,205 @@
+"use client";
+
+import { useId, useRef, useState } from "react";
+import Link from "next/link";
+import { CreditCard, History, Loader2 } from "lucide-react";
+import {
+  getBonusPercent,
+  minDeposit,
+  paymentMethods,
+  presetAmounts,
+  type PaymentMethod,
+} from "@/lib/payments-data";
+import { formatIdr } from "@/lib/balance";
+import { createDeposit } from "@/lib/dashboard-actions";
+import { useToast } from "@/components/shared/toast";
+import { cn } from "@/lib/utils";
+import { AmountPresets, type PresetValue } from "./amount-presets";
+import { MethodSelect } from "./method-select";
+import { PaymentHistoryDrawer } from "./payment-history-drawer";
+
+function formatDigits(digits: string): string {
+  return digits ? Number(digits).toLocaleString("id-ID") : "";
+}
+
+export function AddFundsCard() {
+  const toast = useToast();
+  const amountId = useId();
+  const amountErrorId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const [digits, setDigits] = useState("");
+  const [customChosen, setCustomChosen] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const [method, setMethod] = useState<PaymentMethod | null>(paymentMethods[0]);
+  const [submitting, setSubmitting] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  const amount = Number(digits || 0);
+  const matchedPreset = presetAmounts.find((p) => p === amount);
+  const selectedPreset: PresetValue = matchedPreset ?? (customChosen || digits ? "custom" : null);
+  const belowMin = amount < minDeposit;
+  const error = touched && belowMin ? `Minimal deposit ${formatIdr(minDeposit)}.` : "";
+  const bonusPercent = getBonusPercent(amount);
+  const canSubmit = !belowMin && Boolean(method) && !submitting;
+
+  function handlePreset(next: number | "custom") {
+    if (next === "custom") {
+      setCustomChosen(true);
+      setDigits("");
+      inputRef.current?.focus();
+      return;
+    }
+    setCustomChosen(false);
+    setDigits(String(next));
+    setTouched(true);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setTouched(true);
+    if (!canSubmit || !method) return;
+    setSubmitting(true);
+    try {
+      const result = await createDeposit({ amount, method: method.name });
+      if (result.success) {
+        toast(`Permintaan deposit ${formatIdr(amount)} via ${method.name} dibuat`);
+        setDigits("");
+        setCustomChosen(false);
+        setTouched(false);
+      } else {
+        toast(result.message, "error");
+      }
+    } catch {
+      toast("Gagal membuat deposit. Coba lagi.", "error");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <>
+      <section
+        aria-labelledby="add-funds-title"
+        className="relative z-10 mx-auto w-full max-w-[524px] rounded-3xl border border-slate-200/70 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-soft text-[10px] font-semibold text-primary-accent">
+              Rp
+            </span>
+            <h2 id="add-funds-title" className="text-[13px] font-semibold text-ink dark:text-white">
+              Tambah saldo
+            </h2>
+          </div>
+          <button
+            type="button"
+            aria-label="Riwayat pembayaran"
+            aria-haspopup="dialog"
+            onClick={() => setHistoryOpen(true)}
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-ink transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-slate-700 dark:text-white dark:hover:bg-slate-800"
+          >
+            <History className="h-4 w-4" />
+          </button>
+        </div>
+
+        <form noValidate onSubmit={handleSubmit} className="mt-4 space-y-4">
+          <AmountPresets value={selectedPreset} onSelect={handlePreset} />
+
+          <div>
+            <label
+              htmlFor={amountId}
+              className="mb-1.5 block text-[10.5px] font-semibold text-ink dark:text-slate-200"
+            >
+              Jumlah
+            </label>
+            <div className="relative">
+              <span
+                aria-hidden
+                className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[10px] font-medium text-[#5B6B8C] dark:text-slate-400"
+              >
+                Rp
+              </span>
+              <input
+                ref={inputRef}
+                id={amountId}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                value={formatDigits(digits)}
+                onChange={(e) => {
+                  setDigits(e.target.value.replace(/\D/g, "").replace(/^0+/, "").slice(0, 10));
+                  setCustomChosen(true);
+                }}
+                onBlur={() => setTouched(true)}
+                placeholder="0"
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? amountErrorId : undefined}
+                className={cn(
+                  "h-[38px] w-full rounded-xl border bg-white pr-3.5 pl-9 text-[11px] font-medium text-ink outline-none transition placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary-ring focus:shadow-[0_0_0_5px_var(--primary-soft)] dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-600",
+                  error
+                    ? "border-red-300 focus:border-red-400 focus:ring-red-400 dark:border-red-900"
+                    : "border-slate-200 dark:border-slate-700"
+                )}
+              />
+            </div>
+            {error ? (
+              <p id={amountErrorId} className="mt-1.5 text-[9.5px] font-medium text-red-500">
+                {error}
+              </p>
+            ) : null}
+          </div>
+
+          <MethodSelect value={method} onChange={setMethod} />
+
+          <div>
+            <p className="mb-1.5 text-[10.5px] font-semibold text-ink dark:text-slate-200">
+              Petunjuk
+            </p>
+            <div className="space-y-2 text-center text-[10px] leading-relaxed text-[#5B6B8C] dark:text-slate-400">
+              <p>Rp 100.000+ = Bonus 3% | Rp 500.000+ = Bonus 5%</p>
+              <p>Rp 1.000.000+ = Bonus 6%</p>
+              <p className="pt-3">
+                Butuh bantuan pembayaran?{" "}
+                <Link
+                  href="/dashboard/tickets"
+                  className="font-medium text-primary-accent underline-offset-2 hover:underline"
+                >
+                  Hubungi support.
+                </Link>
+              </p>
+            </div>
+          </div>
+
+          <div aria-live="polite">
+            {bonusPercent > 0 ? (
+              <p className="rounded-xl bg-emerald-50 px-3 py-2 text-center text-[10px] font-medium text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300">
+                Bonus {bonusPercent}%: +{formatIdr(Math.floor((amount * bonusPercent) / 100))}
+              </p>
+            ) : null}
+          </div>
+
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="flex h-[38px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-primary-from to-primary-to text-[10px] font-semibold text-white shadow-[0_2px_0_var(--primary-pressed)] transition hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 dark:border dark:border-white/25 dark:shadow-[0_2px_0_var(--primary-pressed)]"
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Memproses...
+              </>
+            ) : (
+              <>
+                <CreditCard className="h-3.5 w-3.5" />
+                Bayar
+              </>
+            )}
+          </button>
+        </form>
+      </section>
+
+      <PaymentHistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} />
+    </>
+  );
+}
