@@ -16,6 +16,9 @@ import type { CancelPolicy, OrderRuleSet, RuleKey } from "@/lib/order-rules";
 import { NOTIFICATION_TYPES, type AppNotification } from "@/lib/notifications-data";
 import type { AdminSecurity, AdminSession, PendingTotp } from "./types";
 
+/** Credentials and personal settings of a user (never sent to the client). */
+export type UserAuthRecord = { passwordHash: string; prefs?: Record<string, Record<string, unknown>> };
+
 export type PersistedState = {
   adminSecurity: Record<string, AdminSecurity>;
   pending2fa: Record<string, PendingTotp>;
@@ -35,6 +38,24 @@ export type PersistedState = {
   importedServices: AdminService[];
   pricing: AdminDb["settings"]["pricing"];
   likeo: { status: ProviderRecord["status"]; lastTest: ProviderRecord["lastTest"]; balanceNative?: number; currency?: string; balance: number; balanceAt?: string | null; dataMode?: "mock" | "live" };
+  /** Operational data: everything users and admins create. There is no database yet, so it lives here (and only here). */
+  users: AdminDb["users"];
+  orders: AdminDb["orders"];
+  deposits: AdminDb["deposits"];
+  refills: AdminDb["refills"];
+  refunds: AdminDb["refunds"];
+  tickets: AdminDb["tickets"];
+  ledger: AdminDb["ledger"];
+  refillRequests: AdminDb["refillRequests"];
+  cancelRequests: AdminDb["cancelRequests"];
+  syncRuns: AdminDb["syncRuns"];
+  alerts: AdminDb["alerts"];
+  priceUpdates: AdminDb["priceUpdates"];
+  sanityRuns: AdminDb["sanityRuns"];
+  outbox: AdminDb["outbox"];
+  providerOrders: AdminDb["providerOrders"];
+  /** userId -> { passwordHash, prefs }: user credentials and settings (kept apart from the public user record). */
+  userAuth: Record<string, UserAuthRecord>;
   /** scrypt hashes of admin passwords that were changed in the panel. */
   adminPasswords: Record<string, string>;
   /** An encrypted known string: proves ADMIN_2FA_ENC_KEY is still the key the stored secrets were encrypted with. */
@@ -133,6 +154,10 @@ export function applyPersisted(db: AdminDb, store: Store = getStore()): boolean 
   // Merge per platform so a rule set added later still has its default.
   if (saved.orderRules) db.settings.orderRules = { ...db.settings.orderRules, ...saved.orderRules };
   if (saved.cancelPolicy) db.settings.cancelPolicy = { ...db.settings.cancelPolicy, ...saved.cancelPolicy };
+  for (const key of ["users", "orders", "deposits", "refills", "refunds", "tickets", "ledger", "refillRequests", "cancelRequests", "syncRuns", "alerts", "priceUpdates", "sanityRuns", "outbox"] as const) {
+    if (Array.isArray(saved[key])) (db as unknown as Record<string, unknown>)[key] = saved[key];
+  }
+  if (saved.providerOrders) db.providerOrders = saved.providerOrders;
   if (saved.pricing) db.settings.pricing = { ...db.settings.pricing, ...saved.pricing };
   setPriceRounding(db.settings.pricing.roundTo);
   if (saved.importedServices?.length) db.services = [...db.services.filter((s) => !s.imported), ...saved.importedServices];
@@ -145,7 +170,10 @@ export function applyPersisted(db: AdminDb, store: Store = getStore()): boolean 
 
 /** Write the admin state of `db` to the store. Call after every change to 2FA, sessions or audit logs. */
 export function persistAdminState(db: AdminDb, store: Store = getStore()) {
-  store.update({ adminSecurity: db.adminSecurity, pending2fa: db.pending2fa, sessions: db.sessions, auditLogs: db.auditLogs.slice(0, 500), announcements: db.announcements, announcementSeen: db.announcementSeen, orderRules: db.settings.orderRules, cancelPolicy: db.settings.cancelPolicy, notifications: db.notifications, importedServices: db.services.filter((s) => s.imported), pricing: db.settings.pricing, likeo: likeoState(db) });
+  store.update({ adminSecurity: db.adminSecurity, pending2fa: db.pending2fa, sessions: db.sessions, auditLogs: db.auditLogs.slice(0, 500), announcements: db.announcements, announcementSeen: db.announcementSeen, orderRules: db.settings.orderRules, cancelPolicy: db.settings.cancelPolicy, users: db.users, orders: db.orders, deposits: db.deposits, refills: db.refills, refunds: db.refunds, tickets: db.tickets, ledger: db.ledger,
+    refillRequests: db.refillRequests, cancelRequests: db.cancelRequests, syncRuns: db.syncRuns.slice(0, 500), alerts: db.alerts.slice(0, 200), priceUpdates: db.priceUpdates.slice(0, 500),
+    sanityRuns: db.sanityRuns.slice(0, 50), outbox: db.outbox.slice(0, 200), providerOrders: db.providerOrders,
+    notifications: db.notifications, importedServices: db.services.filter((s) => s.imported), pricing: db.settings.pricing, likeo: likeoState(db) });
   if (store === g.__sgStore) g.__sgSynced = store.version(); // our own write: not an outside change
 }
 

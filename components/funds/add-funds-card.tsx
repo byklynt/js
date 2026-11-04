@@ -3,13 +3,8 @@
 import { useId, useRef, useState } from "react";
 import Link from "next/link";
 import { CreditCard, History, Loader2 } from "lucide-react";
-import {
-  getBonusPercent,
-  minDeposit,
-  paymentMethods,
-  presetAmounts,
-  type PaymentMethod,
-} from "@/lib/payments-data";
+import type { PaymentMethod } from "@/lib/payments-data";
+import type { DepositConfig } from "@/lib/user-actions";
 import { formatIdr } from "@/lib/balance";
 import { createDeposit } from "@/lib/dashboard-actions";
 import { useToast } from "@/components/shared/toast";
@@ -22,7 +17,11 @@ function formatDigits(digits: string): string {
   return digits ? Number(digits).toLocaleString("id-ID") : "";
 }
 
-export function AddFundsCard() {
+const presetAmounts = [25000, 50000, 100000, 500000] as const;
+
+export function AddFundsCard({ config }: { config: DepositConfig }) {
+  const { minDeposit, methods: paymentMethods } = config;
+  const getBonusPercent = (amount: number) => config.bonusTiers.find((t) => amount >= t.min)?.percent ?? 0;
   const toast = useToast();
   const amountId = useId();
   const amountErrorId = useId();
@@ -31,7 +30,7 @@ export function AddFundsCard() {
   const [digits, setDigits] = useState("");
   const [customChosen, setCustomChosen] = useState(false);
   const [touched, setTouched] = useState(false);
-  const [method, setMethod] = useState<PaymentMethod | null>(paymentMethods[0]);
+  const [method, setMethod] = useState<PaymentMethod | null>(paymentMethods[0] ?? null);
   const [submitting, setSubmitting] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -61,9 +60,9 @@ export function AddFundsCard() {
     if (!canSubmit || !method) return;
     setSubmitting(true);
     try {
-      const result = await createDeposit({ amount, method: method.name });
+      const result = await createDeposit({ amount, method: method.id });
       if (result.success) {
-        toast(`Permintaan deposit ${formatIdr(amount)} via ${method.name} dibuat`);
+        toast(`Permintaan deposit ${formatIdr(amount)} dibuat. Menunggu konfirmasi admin.`);
         setDigits("");
         setCustomChosen(false);
         setTouched(false);
@@ -150,15 +149,21 @@ export function AddFundsCard() {
             ) : null}
           </div>
 
-          <MethodSelect value={method} onChange={setMethod} />
+          {paymentMethods.length === 0 ? (
+            <p role="status" className="rounded-xl bg-amber-50 px-3 py-2 text-center text-[10px] font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
+              Belum ada metode pembayaran yang aktif. Hubungi support.
+            </p>
+          ) : (
+            <MethodSelect value={method} onChange={setMethod} methods={paymentMethods} />
+          )}
 
           <div>
             <p className="mb-1.5 text-[10.5px] font-semibold text-ink dark:text-slate-200">
               Petunjuk
             </p>
             <div className="space-y-2 text-center text-[10px] leading-relaxed text-[#5B6B8C] dark:text-slate-400">
-              <p>Rp 100.000+ = Bonus 3% | Rp 500.000+ = Bonus 5%</p>
-              <p>Rp 1.000.000+ = Bonus 6%</p>
+              <p>Pembayaran otomatis (QRIS, bank, e-wallet) belum tersedia.</p>
+              <p>Ajukan deposit di sini, transfer sesuai arahan support, lalu admin menambahkan saldomu setelah pembayaran diterima.</p>
               <p className="pt-3">
                 Butuh bantuan pembayaran?{" "}
                 <Link
@@ -192,7 +197,7 @@ export function AddFundsCard() {
             ) : (
               <>
                 <CreditCard className="h-3.5 w-3.5" />
-                Bayar
+                Ajukan deposit
               </>
             )}
           </button>

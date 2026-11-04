@@ -1,14 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifyToken } from "@/lib/session";
+import { SESSION_COOKIE, USER_COOKIE, verifyToken } from "@/lib/session";
 
 /**
  * Next.js 16 renamed `middleware.ts` to `proxy.ts` (same behaviour).
+ * Gate for /dashboard/*: no valid user session -> /login (the layout re-checks against the store).
  * Gate for /admin/*: signed-out -> /admin/login, signed-in non-admin -> /dashboard.
  * This is only the first line of defence: every admin page, server action, and route handler
  * calls requireAdmin() itself.
  */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+    const user = await verifyToken(request.cookies.get(USER_COOKIE)?.value);
+    const res = user && user.kind === "session" && user.role === "user" ? NextResponse.next() : NextResponse.redirect(new URL("/login", request.url));
+    res.headers.set("Cache-Control", "no-store");
+    return res;
+  }
   const session = await verifyToken(request.cookies.get(SESSION_COOKIE)?.value);
   const isLogin = pathname === "/admin/login" || pathname.startsWith("/admin/login/");
 
@@ -30,5 +37,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: ["/admin/:path*", "/dashboard/:path*", "/dashboard"],
 };

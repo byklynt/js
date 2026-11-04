@@ -9,6 +9,7 @@ import { login, loginWithGoogle } from "@/lib/auth-actions";
 import { TextInput } from "./text-input";
 import { PasswordInput } from "./password-input";
 import { GoogleButton } from "./google-button";
+import { features } from "@/lib/features";
 import { FormAlert, type AlertState } from "@/components/shared/form-alert";
 
 type Errors = { username?: string; password?: string };
@@ -156,6 +157,7 @@ export function LoginForm() {
         </button>
       </form>
 
+      {features.googleLogin ? (
       <div className="mt-6 flex justify-center">
         <GoogleButton
           label={copy.googleLabel}
@@ -163,6 +165,7 @@ export function LoginForm() {
           disabled={googleSubmitting}
         />
       </div>
+      ) : null}
     </div>
   );
 }

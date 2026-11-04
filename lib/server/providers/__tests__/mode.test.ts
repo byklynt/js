@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { seedAdminDb, type AdminDb } from "@/lib/admin-data";
+import { type AdminDb } from "@/lib/admin-data";
+import { seedDemoDb as seedAdminDb } from "@/lib/dev/demo-seed";
 import { createRateLimiter } from "../../limits";
 import { placeOrder } from "../../orders";
 import { ProviderError } from "../../provider-client";

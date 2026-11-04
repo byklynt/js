@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { seedAdminDb, type AdminDb } from "@/lib/admin-data";
+import { type AdminDb } from "@/lib/admin-data";
+import { seedDemoDb as seedAdminDb } from "@/lib/dev/demo-seed";
 import { ServiceError } from "../../tx";
 import { reconcileProviderMode } from "../balance";
 import { applyCatalog, buildSyncPreview, buildUserCatalog, isUserVisible, pricingProblem, serviceStages } from "../catalog";

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { seedAdminDb, type AdminDb } from "@/lib/admin-data";
+import { type AdminDb } from "@/lib/admin-data";
+import { seedDemoDb as seedAdminDb } from "@/lib/dev/demo-seed";
 import type { Announcement } from "@/lib/announcements-data";
 import { applyPersisted, createMemoryStore, persistAdminState } from "../store";
 import { normalizeAnnouncement } from "@/lib/announcements-data";

@@ -6,6 +6,7 @@ import { CatalogBoundary } from "@/components/dashboard/catalog-boundary";
 import { DashboardHome } from "@/components/dashboard/dashboard-home";
 import { currentUserId } from "@/lib/current-user";
 import { getDb } from "@/lib/admin-db";
+import { getMyStats } from "@/lib/user-actions";
 import { getVisibleAnnouncements, viewerOf } from "@/lib/server/announcements";
 
 export const metadata: Metadata = { title: "Dashboard - JagoanSosmed" };
@@ -43,7 +44,7 @@ async function DashboardPageContent({
   return (
     <>
       <CatalogBoundary />
-      <DashboardHome username={username} preselectServiceId={preselectServiceId} announcements={announcements} />
+      <DashboardHome username={username} preselectServiceId={preselectServiceId} announcements={announcements} stats={await getMyStats()} />
     </>
   );
 }

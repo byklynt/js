@@ -4,12 +4,18 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { currentUserId } from "@/lib/current-user";
 import { getDb } from "@/lib/admin-db";
+import { emptyUserStats, type UserStats } from "@/lib/dashboard-data";
 import type { Order } from "@/lib/orders-data";
 import type { RefillRequest } from "@/lib/refills-data";
 import type { Refund } from "@/lib/refunds-data";
 import { placeOrder } from "@/lib/server/orders";
 import { createProviderClient } from "@/lib/server/providers/client";
+import { createDepositRequest, methodLabel } from "@/lib/server/deposits";
+import { changeUserEmail, changeUserPassword, saveUserPrefs } from "@/lib/server/user-auth";
+import { loadCreds, saveCreds } from "@/lib/server/user-store";
 import { createManualRefund } from "@/lib/server/refunds";
+import { persistAdminState } from "@/lib/server/store";
+import { notifyAdmins } from "@/lib/server/notifications";
 import { requestCancel, requestRefill } from "@/lib/server/requests";
 import { cancelEligibility, computeUserCancelRefund, refillEligibility, type Eligibility } from "@/lib/server/rules";
 import type { CancelPolicy, OrderRuleSet, RuleKey } from "@/lib/order-rules";
@@ -23,7 +29,10 @@ async function guard<T>(fn: (userId: string) => Promise<UserResult<T>> | UserRes
   if (!userId) return { ok: false, error: "Silakan masuk terlebih dahulu." };
   try {
     const result = await fn(userId);
-    if (result.ok) revalidatePath("/dashboard", "layout");
+    if (result.ok) {
+      persistAdminState(getDb());
+      revalidatePath("/dashboard", "layout");
+    }
     return result;
   } catch (e) {
     if (e instanceof ServiceError) return { ok: false, error: e.message };
@@ -175,4 +184,98 @@ export async function getMyBalance(): Promise<number | null> {
 export async function getOrderRulesAction(): Promise<{ rules: Record<RuleKey, OrderRuleSet>; policy: CancelPolicy }> {
   const { orderRules, cancelPolicy } = getDb().settings;
   return { rules: orderRules, policy: cancelPolicy };
+}
+
+// ---------------------------------------------------------------------------
+// Deposits (manual requests until a payment gateway exists)
+// ---------------------------------------------------------------------------
+
+export type DepositConfig = { minDeposit: number; methods: { id: string; name: string; detail?: string }[]; bonusTiers: { min: number; percent: number }[]; gateway: boolean };
+export type MyDeposit = { id: string; method: string; amount: number; status: "berhasil" | "menunggu" | "gagal"; createdAt: string };
+
+export async function getDepositConfig(): Promise<DepositConfig> {
+  const { payments } = getDb().settings;
+  return {
+    minDeposit: payments.minDeposit,
+    methods: payments.activeMethods.filter((id) => id === "manual").map((id) => ({ id, name: methodLabel(id), detail: "dikonfirmasi admin setelah pembayaran diterima" })),
+    bonusTiers: [...payments.bonusTiers].sort((a, b) => b.min - a.min),
+    gateway: false,
+  };
+}
+
+export async function getMyDeposits(): Promise<MyDeposit[]> {
+  const userId = await currentUserId();
+  if (!userId) return [];
+  return getDb().deposits
+    .filter((d) => d.userId === userId)
+    .map((d) => ({ id: d.id, method: d.method, amount: d.amount, status: d.status === "berhasil" ? "berhasil" : d.status === "menunggu" ? "menunggu" : "gagal", createdAt: d.createdAt }) as MyDeposit);
+}
+
+const depositSchema = z.object({ amount: z.coerce.number().int("Jumlah harus bilangan bulat."), methodId: z.string().trim().min(1).max(30) });
+
+export async function submitDeposit(input: unknown) {
+  const parsed = depositSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Data tidak valid." } as const;
+  return guard(async (userId) => {
+    const db = getDb();
+    const deposit = createDepositRequest(db, { userId, ...parsed.data });
+    notifyAdmins(db, { type: "deposit", title: "Deposit menunggu konfirmasi", body: `${deposit.username} meminta deposit Rp ${deposit.amount.toLocaleString("id-ID")}.`, href: "/admin/deposits?status=menunggu", dedupeKey: `deposit-request:${deposit.id}` });
+    return { ok: true, message: "Permintaan deposit dibuat.", data: { id: deposit.id } };
+  });
+}
+
+export async function getMyStats(): Promise<UserStats> {
+  const userId = await currentUserId();
+  const db = getDb();
+  const user = userId ? db.users.find((u) => u.id === userId) : undefined;
+  if (!user) return emptyUserStats;
+  return { balance: user.balance, totalOrders: db.orders.filter((o) => o.userId === user.id).length, rank: user.rank, totalSpent: user.totalSpent };
+}
+
+// ---------------------------------------------------------------------------
+// Account and personal settings
+// ---------------------------------------------------------------------------
+
+const passwordSchema = z.object({ currentPassword: z.string().min(1, "Password saat ini wajib diisi.").max(200), newPassword: z.string().min(1).max(200) });
+const emailSchema = z.object({ newEmail: z.string().trim().min(1, "Email wajib diisi.").max(160), password: z.string().min(1, "Password wajib diisi.").max(200) });
+const SETTINGS_SECTIONS = ["invoice", "notifications", "timezone", "experience"] as const;
+const settingsSchema = z.object({ section: z.enum(SETTINGS_SECTIONS), values: z.record(z.string(), z.unknown()) });
+
+export async function changeMyPassword(input: unknown) {
+  const parsed = passwordSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Data tidak valid." } as const;
+  return guard(async (userId) => {
+    const creds = loadCreds();
+    changeUserPassword(getDb(), creds, userId, parsed.data.currentPassword, parsed.data.newPassword);
+    saveCreds(creds);
+    return { ok: true, message: "Password diubah." };
+  });
+}
+
+export async function changeMyEmail(input: unknown) {
+  const parsed = emailSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Data tidak valid." } as const;
+  return guard(async (userId) => {
+    const creds = loadCreds();
+    changeUserEmail(getDb(), creds, userId, parsed.data.password, parsed.data.newEmail);
+    return { ok: true, message: "Email diubah." };
+  });
+}
+
+export async function saveMySettings(input: unknown) {
+  const parsed = settingsSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Data tidak valid." } as const;
+  return guard(async (userId) => {
+    const creds = loadCreds();
+    saveUserPrefs(creds, userId, parsed.data.section, parsed.data.values);
+    saveCreds(creds);
+    return { ok: true, message: "Disimpan." };
+  });
+}
+
+/** Saved values of one settings section (empty object when never saved). */
+export async function getMySettings(section: string): Promise<Record<string, unknown>> {
+  const userId = await currentUserId();
+  if (!userId || !(SETTINGS_SECTIONS as readonly string[]).includes(section)) return {};
+  return loadCreds()[userId]?.prefs?.[section] ?? {};
 }

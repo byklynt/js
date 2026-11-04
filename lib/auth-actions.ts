@@ -1,58 +1,87 @@
+"use server";
+
+import { cookies } from "next/headers";
+import { z } from "zod";
+import { getDb } from "@/lib/admin-db";
+import { getClientIp } from "@/lib/auth-server";
+import { checkRateLimit, recordFailure, resetFailures } from "@/lib/rate-limit";
+import { sessionCookieOptions, signToken, USER_COOKIE, verifyToken } from "@/lib/session";
+import { sharedLimiter } from "@/lib/server/limits";
+import { persistAdminState } from "@/lib/server/store";
+import { registerUser, verifyUserLogin } from "@/lib/server/user-auth";
+import { loadCreds, saveCreds } from "@/lib/server/user-store";
+import { ServiceError } from "@/lib/server/tx";
+
 export type AuthResult = { success: true } | { success: false; message: string };
 
-export type LoginPayload = {
-  username: string;
-  password: string;
-  rememberMe: boolean;
-};
+export type LoginPayload = { username: string; password: string; rememberMe: boolean };
+export type RegisterPayload = { username: string; email: string; password: string };
+export type CurrentUser = { id: string; username: string; email: string };
 
-export type RegisterPayload = {
-  username: string;
-  email: string;
-  password: string;
-};
+const GENERIC = "Username atau password salah.";
+const DAY = 24 * 3600;
 
-// TODO: replace this stub with a real API call to the JagoanSosmed backend
-// (e.g. POST /api/auth/login) once authentication infrastructure is in place.
-export async function login(payload: LoginPayload): Promise<AuthResult> {
-  await new Promise((resolve) => setTimeout(resolve, 900));
-  console.log("[auth-actions] login stub called with", payload);
-  return { success: true };
+const loginSchema = z.object({ username: z.string().trim().min(1).max(120), password: z.string().min(1).max(200), rememberMe: z.boolean().optional() });
+const registerSchema = z.object({ username: z.string().trim().min(1).max(40), email: z.string().trim().min(1).max(160), password: z.string().min(1).max(200) });
+
+async function startUserSession(user: { id: string; username: string; email: string }, remember: boolean) {
+  const seconds = (remember ? 30 : 1) * DAY;
+  const token = await signToken({ sub: user.id, username: user.username, email: user.email, role: "user", kind: "session", exp: Math.floor(Date.now() / 1000) + seconds });
+  (await cookies()).set(USER_COOKIE, token, sessionCookieOptions(seconds));
 }
 
-// TODO: replace this stub with a real API call to the JagoanSosmed backend
-// (e.g. POST /api/auth/register) once authentication infrastructure is in place.
 export async function register(payload: RegisterPayload): Promise<AuthResult> {
-  await new Promise((resolve) => setTimeout(resolve, 900));
-  console.log("[auth-actions] register stub called with", payload);
+  const parsed = registerSchema.safeParse(payload);
+  if (!parsed.success) return { success: false, message: "Data pendaftaran tidak valid." };
+  const ip = await getClientIp();
+  const limit = sharedLimiter.hit(`signup:${ip}`, 10, 60 * 60 * 1000, Date.now());
+  if (!limit.allowed) return { success: false, message: "Terlalu banyak pendaftaran dari jaringan ini. Coba lagi nanti." };
+  try {
+    const db = getDb();
+    const creds = loadCreds();
+    const user = registerUser(db, creds, parsed.data);
+    saveCreds(creds);
+    persistAdminState(db);
+    await startUserSession(user, false);
+    return { success: true };
+  } catch (e) {
+    if (e instanceof ServiceError) return { success: false, message: e.message };
+    return { success: false, message: "Terjadi kesalahan di server. Coba lagi." };
+  }
+}
+
+export async function login(payload: LoginPayload): Promise<AuthResult> {
+  const parsed = loginSchema.safeParse(payload);
+  if (!parsed.success) return { success: false, message: GENERIC };
+  const { username, password, rememberMe } = parsed.data;
+  const key = `user:${await getClientIp()}:${username.toLowerCase()}`;
+  const limit = checkRateLimit(key);
+  if (!limit.allowed) return { success: false, message: `Terlalu banyak percobaan. Coba lagi dalam ${limit.retryAfterMinutes} menit.` };
+  const user = verifyUserLogin(getDb(), loadCreds(), username, password);
+  if (!user) {
+    recordFailure(key);
+    return { success: false, message: GENERIC };
+  }
+  if (user.status !== "aktif") return { success: false, message: "Akunmu sedang diblokir. Hubungi support." };
+  resetFailures(key);
+  await startUserSession(user, Boolean(rememberMe));
   return { success: true };
 }
 
-// TODO: replace this stub with real Google OAuth (e.g. next-auth or Firebase Auth)
-// once a provider is configured for the project.
+/** Google sign-in needs an OAuth app that is not configured yet. */
 export async function loginWithGoogle(): Promise<AuthResult> {
-  await new Promise((resolve) => setTimeout(resolve, 900));
-  console.log("[auth-actions] loginWithGoogle stub called");
-  return { success: true };
+  return { success: false, message: "Masuk dengan Google belum tersedia." };
 }
 
-export type CurrentUser = {
-  username: string;
-  email: string;
-};
-
-// TODO: replace this stub with a real session check (e.g. reading a cookie/JWT
-// via next-auth, or calling a `/api/auth/me` endpoint) once authentication
-// infrastructure is in place. Returning null here should make callers redirect
-// to /login. For now a mock user is always returned so the dashboard is
-// reviewable end-to-end without a backend.
-export async function getCurrentUser(): Promise<CurrentUser | null> {
-  return { username: "jagoansosmed_user", email: "user@jagoansosmed.com" };
-}
-
-// TODO: replace this stub with a real session-destroying call (e.g. clearing
-// the auth cookie / calling POST /api/auth/logout) once auth infra exists.
 export async function logout(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 400));
-  console.log("[auth-actions] logout stub called");
+  (await cookies()).delete(USER_COOKIE);
+}
+
+/** The signed-in user, resolved from the signed cookie and the store. Null when signed out, blocked or deleted. */
+export async function getCurrentUser(): Promise<CurrentUser | null> {
+  const session = await verifyToken((await cookies()).get(USER_COOKIE)?.value);
+  if (!session || session.kind !== "session" || session.role !== "user") return null;
+  const user = getDb().users.find((u) => u.id === session.sub);
+  if (!user || user.status !== "aktif") return null;
+  return { id: user.id, username: user.username, email: user.email };
 }

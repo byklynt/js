@@ -1,4 +1,5 @@
-import { finalPrice, MOCK_TODAY, type AdminDb, type AdminService } from "@/lib/admin-data";
+import { finalPrice, type AdminDb, type AdminService } from "@/lib/admin-data";
+import { todayIso } from "./time";
 
 const rupiah = (n: number) => `Rp ${n.toLocaleString("id-ID")}`;
 
@@ -43,7 +44,7 @@ export function recordPriceChange(db: AdminDb, s: AdminService, oldPrice: number
     platform: s.platform,
     name: s.name,
     type: newPrice > oldPrice ? "naik" : "turun",
-    date: MOCK_TODAY,
+    date: todayIso(),
     detail: `Harga berubah dari ${rupiah(oldPrice)} menjadi ${rupiah(newPrice)} per 1000.`,
   });
 }

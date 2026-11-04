@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { finalPrice, seedAdminDb, type AdminDb } from "@/lib/admin-data";
+import { finalPrice, type AdminDb } from "@/lib/admin-data";
+import { seedDemoDb as seedAdminDb } from "@/lib/dev/demo-seed";
 import * as S from "@/lib/admin-schemas";
 import { ipAllowed, maintenanceBlocks, requireReauth, twoFactorGate } from "../access";
 import { createRateLimiter } from "../limits";

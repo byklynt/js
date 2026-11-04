@@ -1,5 +1,5 @@
 import { refreshBalance } from "@/lib/balance";
-import { submitMassOrder, submitOrder, submitRefill } from "@/lib/user-actions";
+import { changeMyEmail, changeMyPassword, saveMySettings, submitDeposit, submitMassOrder, submitOrder, submitRefill } from "@/lib/user-actions";
 import { createTicketAction, replyTicketAction } from "@/lib/ticket-actions";
 
 export type ActionResult = { success: true } | { success: false; message: string };
@@ -37,24 +37,16 @@ export async function requestRefill(orderId: string): Promise<ActionResult> {
   return res.ok ? { success: true } : { success: false, message: res.error };
 }
 
-// TODO: replace this stub with a real API call that opens a support ticket for the order.
-export async function reportOrder(payload: {
-  orderId: string;
-  message: string;
-}): Promise<ActionResult> {
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  console.log("[dashboard-actions] reportOrder stub called with", payload);
-  return { success: true };
+/** "Laporkan pesanan": opens a support ticket about that order. */
+export async function reportOrder(payload: { orderId: string; message: string }): Promise<ActionResult> {
+  const res = await createTicket({ category: "Pesanan", subcategory: "Lainnya", orderIds: [payload.orderId], message: payload.message, files: [] });
+  return res.success ? { success: true } : { success: false, message: res.message };
 }
 
-// TODO: integrate a real payment gateway here. This stub never calls any payment API.
-export async function createDeposit(payload: {
-  amount: number;
-  method: string;
-}): Promise<ActionResult> {
-  await new Promise((resolve) => setTimeout(resolve, 900));
-  console.log("[dashboard-actions] createDeposit stub called with", payload);
-  return { success: true };
+/** Deposit request. No payment gateway yet: it stays pending until an admin confirms the transfer. */
+export async function createDeposit(payload: { amount: number; method: string }): Promise<ActionResult> {
+  const res = await submitDeposit({ amount: payload.amount, methodId: payload.method });
+  return res.ok ? { success: true } : { success: false, message: res.error };
 }
 
 export type CreateTicketPayload = {
@@ -103,62 +95,18 @@ export async function createMassOrder(lines: MassOrderLine[]): Promise<MassOrder
   return { success: false, message: res.error };
 }
 
-// TODO: replace this stub with a real API call (e.g. POST /api/auth/change-password).
-export async function changePassword(payload: {
-  currentPassword: string;
-  newPassword: string;
-}): Promise<ActionResult> {
-  await new Promise((resolve) => setTimeout(resolve, 800));
-  console.log("[dashboard-actions] changePassword stub called", Object.keys(payload));
-  return { success: true };
+export async function changePassword(payload: { currentPassword: string; newPassword: string }): Promise<ActionResult> {
+  const res = await changeMyPassword(payload);
+  return res.ok ? { success: true } : { success: false, message: res.error };
 }
 
-// TODO: replace this stub with a real API call (e.g. POST /api/account/change-email).
-export async function changeEmail(payload: {
-  newEmail: string;
-  password: string;
-}): Promise<ActionResult> {
-  await new Promise((resolve) => setTimeout(resolve, 800));
-  console.log("[dashboard-actions] changeEmail stub called with", payload.newEmail);
-  return { success: true };
+export async function changeEmail(payload: { newEmail: string; password: string }): Promise<ActionResult> {
+  const res = await changeMyEmail(payload);
+  return res.ok ? { success: true } : { success: false, message: res.error };
 }
 
-// TODO: replace this stub with a real 2FA enrolment call (verify the TOTP code server-side).
-export async function enable2FA(code: string): Promise<ActionResult> {
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  console.log("[dashboard-actions] enable2FA stub called with code length", code.length);
-  return { success: true };
-}
-
-// TODO: replace this stub with a real call that verifies the password and disables 2FA.
-export async function disable2FA(password: string): Promise<ActionResult> {
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  console.log("[dashboard-actions] disable2FA stub called", password.length > 0);
-  return { success: true };
-}
-
-// TODO: replace this stub with a real call that persists the given settings section.
-export async function saveSettings(
-  section: string,
-  values: Record<string, unknown>
-): Promise<ActionResult> {
-  await new Promise((resolve) => setTimeout(resolve, 400));
-  console.log("[dashboard-actions] saveSettings stub called", section, values);
-  return { success: true };
-}
-
-// TODO: replace this stub with a real call that rotates the API key server-side.
-export async function regenerateApiKey(): Promise<{ success: true; key: string }> {
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  const chars = "abcdef0123456789";
-  let key = "sg_live_";
-  for (let i = 0; i < 32; i++) key += chars[Math.floor(Math.random() * chars.length)];
-  return { success: true, key };
-}
-
-// TODO: replace this stub with a real payout request.
-export async function requestPayout(amount: number): Promise<ActionResult> {
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  console.log("[dashboard-actions] requestPayout stub called with", amount);
-  return { success: true };
+/** Saves one personal settings section (invoice, notifications, timezone, experience) for the signed-in user. */
+export async function saveSettings(section: string, values: Record<string, unknown>): Promise<ActionResult> {
+  const res = await saveMySettings({ section, values });
+  return res.ok ? { success: true } : { success: false, message: res.error };
 }

@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { finalPrice, seedAdminDb, setPriceRounding, type AdminDb } from "@/lib/admin-data";
+import { finalPrice, setPriceRounding, type AdminDb } from "@/lib/admin-data";
+import { seedDemoDb as seedAdminDb } from "@/lib/dev/demo-seed";
 import { toPublicProvider } from "@/lib/admin-db";
 import { ProviderError, type ProviderClient } from "../../provider-client";
 import { placeOrder, resolveManualCheck } from "../../orders";

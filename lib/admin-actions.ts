@@ -7,7 +7,8 @@ import type { SessionPayload } from "@/lib/session";
 import { getDb } from "@/lib/admin-db";
 import { logAdminAction } from "@/lib/admin-audit";
 import { setAdminPassword, verifyAdminPassword } from "@/lib/admin-password";
-import { finalPrice, MOCK_TODAY, setPriceRounding, type AdminService } from "@/lib/admin-data";
+import { finalPrice, setPriceRounding, type AdminService } from "@/lib/admin-data";
+import { todayIso } from "@/lib/server/time";
 import * as S from "@/lib/admin-schemas";
 import { applyLedgerEntry } from "@/lib/server/ledger";
 import { creditDeposit } from "@/lib/server/deposits";
@@ -290,7 +291,7 @@ export async function updateService(input: unknown) {
     if (wasActive && !service.active) {
       getDb().priceUpdates.unshift({
         id: `pu_off_${service.id}`, serviceId: service.id, platform: service.platform, name: service.name,
-        type: "nonaktif", date: MOCK_TODAY, detail: "Layanan dinonaktifkan sementara.",
+        type: "nonaktif", date: todayIso(), detail: "Layanan dinonaktifkan sementara.",
       });
     }
     audit(admin, "service.update", "service", service.id, before, { ...service, finalPrice: newPrice });
@@ -313,7 +314,7 @@ export async function createService(input: unknown) {
     db.services.push(created);
     db.priceUpdates.unshift({
       id: `pu_new_${nextId}`, serviceId: nextId, platform: created.platform, name: created.name, type: "baru",
-      date: MOCK_TODAY, detail: `Layanan baru tersedia dengan harga ${rupiah(finalPrice(created))} per 1000.`,
+      date: todayIso(), detail: `Layanan baru tersedia dengan harga ${rupiah(finalPrice(created))} per 1000.`,
     });
     audit(admin, "service.create", "service", nextId, null, created);
     return ok(`Layanan ${nextId} ditambahkan.`);

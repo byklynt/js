@@ -6,12 +6,11 @@ export const settingsNav: SettingsNavItem[] = [
   { href: "/dashboard/settings", label: "Keamanan", icon: Lock },
   { href: "/dashboard/settings/2fa", label: "2FA", icon: KeyRound },
   { href: "/dashboard/settings/experience", label: "Pengalaman Pengguna", icon: SlidersHorizontal },
-  { href: "/dashboard/settings/timezone-api", label: "Zona Waktu & API", icon: Globe },
+  { href: "/dashboard/settings/timezone-api", label: "Zona Waktu", icon: Globe },
   { href: "/dashboard/settings/invoice", label: "Detail Invoice", icon: Receipt },
   { href: "/dashboard/settings/notifications", label: "Notifikasi", icon: Bell },
 ];
 
-export const userRank = "Starter";
 
 export const timezones: { id: string; label: string }[] = [
   { id: "Asia/Jakarta", label: "Asia/Jakarta (WIB, UTC+7)" },
@@ -42,9 +41,6 @@ export const notificationChannels = [
   { id: "telegram", label: "Telegram" },
   { id: "whatsapp", label: "WhatsApp" },
 ] as const;
-
-// Mock API key. TODO: load from the backend; never ship real keys in the client bundle.
-export const initialApiKey = "sg_live_3f9a1c7e5b2d4086a9e1c3d57f20b84a";
 
 export const languages = [
   { id: "id", label: "Indonesia" },

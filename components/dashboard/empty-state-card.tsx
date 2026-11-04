@@ -21,7 +21,7 @@ export function EmptyStateCard({
           <Icon className="h-6 w-6" />
         </span>
         <p className="mt-5 text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Segera Hadir
+          Belum tersedia
         </p>
         <p className="mt-1.5 max-w-sm text-sm text-slate-500 dark:text-slate-400">
           {description}

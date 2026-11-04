@@ -5,16 +5,15 @@ import { thinMarginServices } from "@/lib/server/pricing";
 import { likeoApiUrl, maskedLikeoKey } from "@/lib/server/providers/config";
 import { reconcileProviderMode } from "@/lib/server/providers/balance";
 import { missingRefunds } from "@/lib/server/views";
+import { ordersByPlatform, revenueSeries } from "@/lib/server/series";
+import { dayOf, todayIso } from "@/lib/server/time";
 import { applyPersisted, changedOutside, getStore, markSynced, persistAdminState } from "@/lib/server/store";
 import { checkKeyStability, KEY_CHANGED_MESSAGE } from "@/lib/server/key-check";
 import { encryptSecret } from "@/lib/server/crypto-at-rest";
 import {
   DEV_OWNER_TOTP_SECRET,
-  MOCK_TODAY,
+  createEmptyDb,
   mockAdminAccounts,
-  ordersByPlatform,
-  revenueSeries,
-  seedAdminDb,
   setPriceRounding,
   type AdminAccount,
   type AdminDb,
@@ -23,14 +22,15 @@ import {
 } from "@/lib/admin-data";
 
 /**
- * In-memory mock database for the admin area (lives on globalThis so it survives HMR).
+ * In-memory database (lives on globalThis so it survives HMR). It starts EMPTY (createEmptyDb) and is filled from the dev store
+ * (lib/server/store.ts); nothing is seeded at startup. Demo data exists only in lib/dev/demo-seed.ts (`npm run seed:demo`).
  * TODO: replace with the real database. If Supabase is used: keep the role in a `profiles` table,
  * enforce it with RLS, and read it server-side only. Never trust a role sent from the client.
  */
 const globalForDb = globalThis as unknown as { __sgAdminDb?: AdminDb; __sgAdminDbSeed?: string };
 
-/** Bump this string to reseed the in-memory mock data (e.g. to reset state between manual test runs). */
-const SEED_VERSION = "seed-36";
+/** Bump this string to rebuild the in-memory db from the dev store on the next request. */
+const SEED_VERSION = "empty-1";
 
 /** Dev: shout once at startup if the encryption key no longer matches the stored data. */
 function verifyKey() {
@@ -51,7 +51,7 @@ export function getDb(): AdminDb {
     markSynced();
   }
   if (!globalForDb.__sgAdminDb || globalForDb.__sgAdminDbSeed !== SEED_VERSION) {
-    const db = seedAdminDb();
+    const db = createEmptyDb();
     // A reseed (SEED_VERSION bump, dev restart) must never wipe admin 2FA, sessions or audit logs.
     const hadSecurity = applyPersisted(db);
     if (!hadSecurity && process.env.NODE_ENV !== "production" && process.env.ADMIN_2FA_ENC_KEY && !process.env.VITEST) {
@@ -107,8 +107,9 @@ export function toPublicProvider(p: ProviderRecord): PublicProvider {
 /** Numbers shown in the shell: today's revenue + items needing attention. */
 export function getShellStats() {
   const db = getDb();
+  const today = todayIso();
   const todayRevenue = db.deposits
-    .filter((d) => d.status === "berhasil" && d.createdAt.startsWith(MOCK_TODAY.slice(0, 8)))
+    .filter((d) => d.status === "berhasil" && dayOf(d.createdAt) === today)
     .reduce((sum, d) => sum + d.amount, 0);
   const pendingTickets = db.tickets.filter((t) => t.status === "menunggu").length;
   const pendingDeposits = db.deposits.filter((d) => d.status === "menunggu").length;
@@ -124,13 +125,13 @@ export function getDashboardData() {
   return {
     stats: {
       revenueToday: stats.todayRevenue,
-      ordersToday: db.orders.filter((o) => o.createdAt.startsWith("2026-11-0")).length + 14,
-      newUsers: db.users.filter((u) => u.createdAt.startsWith("2026-10-2")).length,
+      ordersToday: db.orders.filter((o) => dayOf(o.createdAt) === todayIso(now)).length,
+      newUsers: db.users.filter((u) => dayOf(u.createdAt) === todayIso(now)).length,
       pendingTickets: stats.pendingTickets,
     },
     series: {
-      revenue: { hari: revenueSeries("hari"), "7": revenueSeries("7"), "30": revenueSeries("30") },
-      platforms: { hari: ordersByPlatform("hari"), "7": ordersByPlatform("7"), "30": ordersByPlatform("30") },
+      revenue: { hari: revenueSeries(db, "hari", now), "7": revenueSeries(db, "7", now), "30": revenueSeries(db, "30", now) },
+      platforms: { hari: ordersByPlatform(db, "hari", now), "7": ordersByPlatform(db, "7", now), "30": ordersByPlatform(db, "30", now) },
     },
     recentOrders: db.orders.slice(0, 5),
     recentDeposits: db.deposits.slice(0, 5),
@@ -138,7 +139,7 @@ export function getDashboardData() {
     lowProviders,
     lowBalanceThreshold: db.settings.operations.lowBalanceThreshold,
     autoDisableLowBalance: db.settings.operations.autoDisableLowBalance,
-    finance: todayFinance(db, MOCK_TODAY),
+    finance: todayFinance(db, todayIso(now)),
     syncHealth: syncHealth(db, now),
     providerBalances: providerBalances(db),
     alerts: db.alerts.slice(0, 3),

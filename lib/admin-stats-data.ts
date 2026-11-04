@@ -1,11 +1,10 @@
 /**
- * MOCK statistics data for /admin/stats: deterministic daily facts for the last 180 days.
- * TODO(db): replace buildStatsDataset() with real queries / materialized views (see lib/server/stats.ts).
- * Everything here is generated, nothing is read from the real order store.
+ * Statistics for /admin/stats, computed from the real store (see buildStatsDatasetFromDb).
+ * TODO(db): replace with real queries / materialized views once there is a database (see lib/server/stats.ts).
  */
-import { MOCK_TODAY, seedProviders, seedServices, seedUsers } from "@/lib/admin-data";
+import type { AdminDb } from "@/lib/admin-data";
+import { dayOf } from "@/lib/server/time";
 
-export const STATS_TODAY = MOCK_TODAY;
 export const STATS_DAYS = 180;
 export const PAYMENT_METHODS = ["QRIS", "Transfer Bank", "E-Wallet", "Virtual Account"] as const;
 
@@ -44,17 +43,6 @@ export type StatsDataset = {
   platforms: string[];
 };
 
-function rng(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 export function isoDay(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
@@ -64,72 +52,73 @@ export function addDays(iso: string, n: number): string {
   return isoDay(d);
 }
 
-const PLATFORM_MINUTES: Record<string, number> = { instagram: 95, tiktok: 70, youtube: 180, telegram: 40, facebook: 130, twitter: 110 };
+/** Statistics dataset computed from the REAL store (orders, deposits, users, tickets, sync runs). Empty store = empty dataset. */
+export function buildStatsDatasetFromDb(db: AdminDb, now: Date = new Date()): StatsDataset {
+  const today = dayOf(now);
+  const days = Array.from({ length: STATS_DAYS }, (_, i) => addDays(today, -(STATS_DAYS - 1 - i)));
+  const from = days[0];
 
-let cache: StatsDataset | null = null;
+  const dailyMap = new Map<string, DailyFact>();
+  for (const o of db.orders) {
+    const date = dayOf(o.createdAt);
+    if (date < from || date > today) continue;
+    const key = `${date}|${o.serviceId}`;
+    let f = dailyMap.get(key);
+    if (!f) {
+      f = { date, serviceId: o.serviceId, serviceName: o.name, platform: o.platform, providerId: o.providerId, orders: 0, revenue: 0, providerCost: 0, refund: 0, completed: 0, partial: 0, canceled: 0, failed: 0, completionMinutes: 0 };
+      dailyMap.set(key, f);
+    }
+    f.orders++;
+    f.revenue += o.charge;
+    f.providerCost += o.providerCost;
+    f.refund += o.refundedAmount;
+    if (o.status === "selesai") {
+      f.completed++;
+      if (o.completedAt) f.completionMinutes += Math.max(0, Math.round((new Date(o.completedAt).getTime() - new Date(o.createdAt).getTime()) / 60_000));
+    } else if (o.status === "sebagian") f.partial++;
+    else if (o.status === "dibatalkan") f.canceled++;
+    else if (o.status === "gagal_kirim") f.failed++;
+  }
 
-export function buildStatsDataset(): StatsDataset {
-  if (cache) return cache;
-  const rand = rng(20261104);
-  const services = seedServices().filter((s) => s.active).slice(0, 14);
-  const days = Array.from({ length: STATS_DAYS }, (_, i) => addDays(STATS_TODAY, -(STATS_DAYS - 1 - i)));
+  const deposits: DepositFact[] = db.deposits
+    .filter((d) => d.status === "berhasil" && dayOf(d.createdAt) >= from)
+    .map((d) => ({ date: dayOf(d.createdAt), method: d.method, amount: d.amount }));
 
-  const daily: DailyFact[] = [];
-  const deposits: DepositFact[] = [];
-  const signups: SignupFact[] = [];
-  const ops: OpsFact[] = [];
+  const activeBy = new Map<string, Set<string>>();
+  for (const o of db.orders) {
+    const d = dayOf(o.createdAt);
+    (activeBy.get(d) ?? activeBy.set(d, new Set()).get(d)!).add(o.userId);
+  }
+  const signups: SignupFact[] = days.map((date) => ({ date, signups: db.users.filter((u) => dayOf(u.createdAt) === date).length, active: activeBy.get(date)?.size ?? 0 }));
 
-  days.forEach((date, di) => {
-    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-    const weekend = weekday === 0 || weekday === 6 ? 0.78 : 1;
-    const growth = 0.7 + (di / STATS_DAYS) * 0.6;
-    services.forEach((s, si) => {
-      const popularity = 1 / (1 + si * 0.45);
-      const orders = Math.max(0, Math.round(26 * popularity * weekend * growth * (0.7 + rand() * 0.6)));
-      if (orders === 0) return;
-      const avgCharge = 9_000 + ((si * 7_300) % 30_000);
-      const revenue = orders * avgCharge;
-      // A few services sell at a thin margin or below cost, one has a high refund rate (so the filters have data).
-      const costRatio = si % 5 === 2 ? 0.965 : si === 7 ? 1.04 : 0.66 + (si % 4) * 0.04;
-      const refundRate = si === 3 ? 0.12 : 0.012 + (si % 3) * 0.006;
-      const canceled = Math.round(orders * (si === 3 ? 0.1 : 0.02 + rand() * 0.02));
-      const partial = Math.round(orders * (0.03 + rand() * 0.03));
-      const failed = Math.round(orders * (si % 6 === 5 ? 0.04 : 0.008));
-      const completed = Math.max(0, orders - canceled - partial - failed);
-      const base = PLATFORM_MINUTES[s.platform] ?? 100;
-      daily.push({
-        date, serviceId: s.id, serviceName: s.name, platform: s.platform, providerId: s.providerId, orders, revenue,
-        providerCost: Math.round(revenue * costRatio), refund: Math.round(revenue * refundRate), completed, partial, canceled, failed,
-        completionMinutes: Math.round(completed * base * (0.8 + rand() * 0.4)),
-      });
-    });
-    PAYMENT_METHODS.forEach((method, mi) => {
-      const amount = Math.round((900_000 + rand() * 1_400_000) * (1 - mi * 0.2) * weekend * growth / 1000) * 1000;
-      deposits.push({ date, method, amount });
-    });
-    signups.push({ date, signups: Math.round((3 + rand() * 6) * weekend * growth), active: Math.round((60 + rand() * 25) * growth) });
-    ops.push({
-      date, stuck: Math.round(rand() * 5 + (di > 160 ? 3 : 0)), tickets: Math.round((4 + rand() * 7) * weekend),
-      firstResponseMin: Math.round(18 + rand() * 40), syncErrors: Math.round(rand() * (di > 170 ? 9 : 3)),
-    });
+  const firstResponse = (t: AdminDb["tickets"][number]): number | null => {
+    const user = t.messages.find((m) => m.from === "user");
+    const reply = t.messages.find((m) => m.from === "support");
+    return user && reply ? Math.max(0, Math.round((new Date(reply.at).getTime() - new Date(user.at).getTime()) / 60_000)) : null;
+  };
+  const ops: OpsFact[] = days.map((date) => {
+    const tickets = db.tickets.filter((t) => dayOf(t.messages[0]?.at ?? t.updatedAt) === date);
+    const times = tickets.map(firstResponse).filter((n): n is number => n !== null);
+    return {
+      date, stuck: 0, tickets: tickets.length, firstResponseMin: times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : 0,
+      syncErrors: db.syncRuns.filter((r) => dayOf(r.startedAt) === date).reduce((n, r) => n + r.errors, 0),
+    };
   });
 
-  const users = seedUsers();
-  const spenders: SpenderRow[] = users
-    .map((u, i) => {
-      const orders = Math.max(1, Math.round(u.totalSpent / 14_000));
-      return {
-        id: u.id, username: u.username, totalSpent: u.totalSpent, orders,
-        refundRatio: u.username === "dimas_arya" ? 0.55 : Math.round(((i * 37) % 22) + 2) / 100,
-        status: u.status, balance: u.balance,
-      };
+  const spenders: SpenderRow[] = db.users
+    .map((u) => {
+      const mine = db.orders.filter((o) => o.userId === u.id);
+      const charged = mine.reduce((n, o) => n + o.charge, 0);
+      const refunded = mine.reduce((n, o) => n + o.refundedAmount, 0);
+      return { id: u.id, username: u.username, totalSpent: u.totalSpent, orders: mine.length, refundRatio: charged > 0 ? Math.round((refunded / charged) * 100) / 100 : 0, status: u.status, balance: u.balance };
     })
     .sort((a, b) => b.totalSpent - a.totalSpent);
 
-  const providers: ProviderMeta[] = seedProviders().map((p, i) => ({
-    id: p.id, name: p.name, balance: p.balance, status: p.status, lastSync: p.lastSync, syncStatus: i === 2 ? "Gagal 3x" : "Normal",
-  }));
+  const providers: ProviderMeta[] = db.providers.map((p) => {
+    const last = db.syncRuns.filter((r) => r.providerId === p.id).slice(0, 3);
+    const failing = last.length === 3 && last.every((r) => r.errors > 0);
+    return { id: p.id, name: p.name, balance: p.balance, status: p.status, lastSync: p.lastSync, syncStatus: failing ? "Gagal 3x" : "Normal" };
+  });
 
-  cache = { daily, deposits, signups, ops, spenders, providers, platforms: Array.from(new Set(services.map((s) => s.platform))) };
-  return cache;
+  return { daily: [...dailyMap.values()], deposits, signups, ops, spenders, providers, platforms: Array.from(new Set(db.orders.map((o) => o.platform).filter(Boolean))) };
 }

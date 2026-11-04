@@ -1,7 +1,3 @@
-// Single mock balance source shared by the top bar and the dashboard "Saldo Akun" card.
-// TODO: replace with the real balance from the JagoanSosmed backend.
-export const mockBalance = 125000;
-
 export const BALANCE_EVENT = "sg:balance-refresh";
 
 /** Ask the top bar to re-read the balance (after an order, refund, deposit...). Client only. */

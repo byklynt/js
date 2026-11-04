@@ -1,5 +1,5 @@
 import "server-only";
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { hashPassword, verifyPassword } from "@/lib/server/password";
 import { getStore } from "@/lib/server/store";
 
 /**
@@ -7,19 +7,7 @@ import { getStore } from "@/lib/server/store";
  * TODO: replace with the real auth provider. Never keep passwords in code or env defaults in production:
  * in production no account can sign in unless ADMIN_DEV_PASSWORD (or a real store) is configured.
  */
-const KEYLEN = 64;
-
-export function hashPassword(password: string, salt: string = randomBytes(16).toString("hex")): string {
-  return `${salt}:${scryptSync(password, salt, KEYLEN).toString("hex")}`;
-}
-
-export function verifyPassword(password: string, stored: string): boolean {
-  const [salt, hash] = stored.split(":");
-  if (!salt || !hash) return false;
-  const candidate = scryptSync(password, salt, KEYLEN);
-  const expected = Buffer.from(hash, "hex");
-  return expected.length === candidate.length && timingSafeEqual(candidate, expected);
-}
+export { hashPassword, verifyPassword };
 
 const globalForPasswords = globalThis as unknown as { __sgAdminHashes?: Map<string, string> };
 

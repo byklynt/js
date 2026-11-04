@@ -127,8 +127,9 @@ export function PaymentSettingsForm({ settings }: { settings: SiteSettings["paym
           <ul className="max-w-[720px] space-y-2">
             {paymentMethods.map((m) => (
               <li key={m.id} className="list-none">
-                <Row label={m.name} hint={m.detail}>
+                <Row label={m.name} hint={m.needsGateway ? "Butuh payment gateway: belum tersedia" : m.detail}>
                   <ToggleSwitch
+                    disabled={m.needsGateway}
                     checked={active.includes(m.id)}
                     label={`Aktifkan ${m.name}`}
                     onChange={(v) => setActive((a) => (v ? [...a, m.id] : a.filter((x) => x !== m.id)))}

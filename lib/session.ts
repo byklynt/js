@@ -4,6 +4,8 @@
  * from a server-side source of truth (a `profiles` table + RLS), never from anything the client sends.
  */
 export const SESSION_COOKIE = "sg_session";
+/** Separate cookie for regular users, so an admin can browse the user site in the same browser. */
+export const USER_COOKIE = "sg_user";
 export const PENDING_2FA_COOKIE = "sg_2fa_pending";
 
 export type Role = "user" | "admin";

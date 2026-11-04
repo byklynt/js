@@ -9,6 +9,7 @@ import { register, loginWithGoogle } from "@/lib/auth-actions";
 import { TextInput } from "./text-input";
 import { PasswordInput } from "./password-input";
 import { GoogleButton } from "./google-button";
+import { features } from "@/lib/features";
 import { FormAlert, type AlertState } from "@/components/shared/form-alert";
 
 type Errors = {
@@ -74,7 +75,7 @@ export function SignupForm() {
       const result = await register({ username, email, password });
       if (result.success) {
         setAlert({ type: "success", message: copy.successMessage });
-        router.push("/login");
+        router.push("/dashboard");
       } else {
         setAlert({ type: "error", message: result.message });
       }
@@ -179,6 +180,7 @@ export function SignupForm() {
         </button>
       </form>
 
+      {features.googleLogin ? (
       <div className="mt-6 flex justify-center">
         <GoogleButton
           label={copy.googleLabel}
@@ -186,6 +188,7 @@ export function SignupForm() {
           disabled={googleSubmitting}
         />
       </div>
+      ) : null}
     </div>
   );
 }

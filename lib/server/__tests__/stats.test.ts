@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStatsDataset, type DailyFact } from "@/lib/admin-stats-data";
+import { type DailyFact, type StatsDataset } from "@/lib/admin-stats-data";
 import {
   computeStats, dailyFinance, deltaPercent, depositsByMethod, filterDaily, financeSummary, marginPercent, previousPeriod, profitOf,
   providerStats, ratePercent, resolveRange, topServices,
@@ -106,8 +106,25 @@ describe("series and filters", () => {
   });
 });
 
-describe("computeStats on the mock dataset", () => {
-  const ds = buildStatsDataset();
+/** A small hand-made dataset (the app has no demo data): one healthy service, one thin-margin one, one with many refunds. */
+function fixtureDataset(): StatsDataset {
+  const days = Array.from({ length: 30 }, (_, i) => `2026-10-${String(6 + i > 31 ? 6 + i - 31 : 6 + i).padStart(2, "0")}`.replace(/^2026-10-0([1-5])$/, "2026-11-0$1"));
+  const daily: DailyFact[] = days.flatMap((date) => [
+    fact({ date, serviceId: "1", platform: "instagram", providerId: "prv_1" }),
+    fact({ date, serviceId: "2", platform: "tiktok", providerId: "prv_1", providerCost: 98_000 }),
+    fact({ date, serviceId: "3", platform: "youtube", providerId: "prv_2", refund: 30_000, canceled: 4, completed: 5 }),
+  ]);
+  return {
+    daily, deposits: days.map((date) => ({ date, method: "QRIS", amount: 500_000 })), signups: days.map((date) => ({ date, signups: 2, active: 5 })),
+    ops: days.map((date) => ({ date, stuck: 0, tickets: 1, firstResponseMin: 10, syncErrors: 0 })),
+    spenders: [{ id: "u1", username: "tester", totalSpent: 1_000_000, orders: 10, refundRatio: 0.6, status: "aktif", balance: 50_000 }],
+    providers: [{ id: "prv_1", name: "P1", balance: 1_000_000, status: "aktif", syncStatus: "Normal", lastSync: "2026-11-04T08:00:00+07:00" }, { id: "prv_2", name: "P2", balance: 1_000, status: "aktif", syncStatus: "Normal", lastSync: "2026-11-04T08:00:00+07:00" }],
+    platforms: ["instagram", "tiktok", "youtube"],
+  };
+}
+
+describe("computeStats on a fixture dataset", () => {
+  const ds = fixtureDataset();
   const base = { range: "30" as const, provider: "semua", platform: "semua", compare: true };
 
   it("Keuangan: cards agree with the daily series and carry a delta only when comparing", () => {
@@ -129,7 +146,7 @@ describe("computeStats on the mock dataset", () => {
     expect(r.rows).toHaveLength(1);
     expect(r.rows[0].successRate).toBeGreaterThan(0);
   });
-  it("Layanan tab contains flagged services in the mock data", () => {
+  it("Layanan tab contains flagged services", () => {
     const r = computeStats(ds, "layanan", { ...base, range: "90" }, "2026-11-04").layanan!;
     expect(r.rows.some((x) => x.thin)).toBe(true);
     expect(r.rows.some((x) => x.highRefund)).toBe(true);

@@ -1,7 +1,7 @@
 "use client";
 
 import { Bitcoin, Building2, CreditCard, QrCode, Smartphone } from "lucide-react";
-import { paymentMethods, type PaymentMethod } from "@/lib/payments-data";
+import type { PaymentMethod } from "@/lib/payments-data";
 import { CustomSelect } from "@/components/ui/select";
 
 const methodIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -35,14 +35,16 @@ function MethodLabel({ method }: { method: PaymentMethod }) {
 export function MethodSelect({
   value,
   onChange,
+  methods,
 }: {
   value: PaymentMethod | null;
   onChange: (next: PaymentMethod) => void;
+  methods: PaymentMethod[];
 }) {
   return (
     <CustomSelect
       label="Metode pembayaran"
-      options={paymentMethods}
+      options={methods}
       value={value}
       onChange={onChange}
       getKey={(m) => m.id}

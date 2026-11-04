@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  statCards,
+  statCardsFor,
+  emptyUserStats,
+  type UserStats,
   categories,
   services,
   platforms,
@@ -26,8 +28,10 @@ export function DashboardHome({
   username,
   preselectServiceId,
   announcements = [],
+  stats = emptyUserStats,
 }: {
   username: string;
+  stats?: UserStats;
   preselectServiceId?: string;
   announcements?: PublicAnnouncement[];
 }) {
@@ -79,7 +83,7 @@ export function DashboardHome({
 
       <div className="relative grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:gap-[16px]">
         <HeaderLine />
-        {statCards.map((stat, i) => (
+        {statCardsFor(stats).map((stat, i) => (
           <motion.div
             key={stat.label}
             initial={{ opacity: 0, y: 16 }}

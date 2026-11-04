@@ -1,5 +1,6 @@
-import { Download, WalletCards } from "lucide-react";
-import type { Payment, PaymentStatus } from "@/lib/payments-data";
+import { WalletCards } from "lucide-react";
+import type { PaymentStatus } from "@/lib/payments-data";
+import type { MyDeposit } from "@/lib/user-actions";
 import { formatDateTime, formatIdr } from "@/lib/balance";
 import { cn } from "@/lib/utils";
 
@@ -15,19 +16,11 @@ const statusLabels: Record<PaymentStatus, string> = {
   gagal: "Gagal",
 };
 
-export function PaymentHistoryItem({ payment }: { payment: Payment }) {
+export function PaymentHistoryItem({ payment }: { payment: MyDeposit }) {
   return (
     <li className="list-none rounded-2xl border border-slate-200/70 p-3 dark:border-slate-800">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] font-semibold text-ink dark:text-white">{payment.method}</p>
-        <button
-          type="button"
-          aria-label={`Unduh invoice pembayaran ${payment.id}`}
-          className="flex h-6 items-center gap-1 rounded-full border border-slate-200 px-2.5 text-[9px] font-medium text-ink transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
-        >
-          <Download className="h-3 w-3" aria-hidden />
-          Unduh invoice
-        </button>
       </div>
       <div className="mt-3 flex items-center justify-between gap-2">
         <p className="text-[10px] font-medium text-ink dark:text-slate-100">

@@ -10,7 +10,7 @@ import {
   Moon,
 } from "lucide-react";
 import type { Crumb } from "@/lib/nav-config";
-import { BALANCE_EVENT, formatBalance, mockBalance } from "@/lib/balance";
+import { BALANCE_EVENT, formatBalance } from "@/lib/balance";
 import { getMyBalance } from "@/lib/user-actions";
 import { useLanguage } from "@/lib/i18n/provider";
 import { slugOf } from "@/lib/i18n";
@@ -69,7 +69,7 @@ function ThemeTogglePill() {
 
 export function CurrencyPill() {
   const [open, setOpen] = useState(false);
-  const [balance, setBalance] = useState(mockBalance);
+  const [balance, setBalance] = useState(0);
   const pathname = usePathname();
 
   // The real balance comes from the server (ledger). Re-read on navigation and after money events.

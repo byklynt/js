@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { seedAdminDb, type AdminDb } from "@/lib/admin-data";
+import { type AdminDb } from "@/lib/admin-data";
+import { seedDemoDb as seedAdminDb } from "@/lib/dev/demo-seed";
 import { creditDeposit, handlePaymentWebhook } from "../deposits";
 import { applyLedgerEntry, reconcileBalances } from "../ledger";
 import { placeOrder, resubmitFailedOrder } from "../orders";

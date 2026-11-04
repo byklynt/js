@@ -3,7 +3,6 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { UpdatesPage } from "@/components/updates/updates-page";
 import { getDb } from "@/lib/admin-db";
-import { getServiceTitle, services } from "@/lib/dashboard-data";
 import type { ServiceUpdate } from "@/lib/updates-data";
 import { currentUserId } from "@/lib/current-user";
 import { getVisibleAnnouncements, viewerOf } from "@/lib/server/announcements";
@@ -21,18 +20,9 @@ export default function Page() {
 /** Price/service changes made in the admin area show up here as extra updates. */
 async function UpdatesWithAdminChanges() {
   await connection();
-  const extra: ServiceUpdate[] = getDb().priceUpdates.map((u) => {
-    const service = services.find((s) => s.id === u.serviceId);
-    return {
-      id: u.id,
-      serviceId: u.serviceId,
-      platform: u.platform,
-      name: service ? getServiceTitle(service) : u.name,
-      type: u.type,
-      date: u.date,
-      detail: u.detail,
-    };
-  });
+  const extra: ServiceUpdate[] = getDb().priceUpdates.map((u) => ({
+    id: u.id, serviceId: u.serviceId, platform: u.platform, name: u.name, type: u.type, date: u.date, detail: u.detail,
+  }));
   // Announcements for this user, filtered on the server (hidden ones never reach the browser).
   const db = getDb();
   const userId = await currentUserId();

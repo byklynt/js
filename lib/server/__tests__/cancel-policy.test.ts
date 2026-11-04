@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { seedAdminDb, type AdminDb, type AdminOrder } from "@/lib/admin-data";
+import { type AdminDb, type AdminOrder } from "@/lib/admin-data";
+import { seedDemoDb as seedAdminDb } from "@/lib/dev/demo-seed";
 import { cancelPolicyBullet, cancelPolicySentences, formatCountdown, nextRuleVersion, ruleKeyFor } from "@/lib/order-rules";
 import { createRateLimiter } from "../limits";
 import { placeOrder } from "../orders";

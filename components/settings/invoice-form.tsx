@@ -29,9 +29,9 @@ function validate(v: Values): Partial<Record<keyof Values, string>> {
   return errors;
 }
 
-export function InvoiceForm() {
+export function InvoiceForm({ initial }: { initial?: Partial<Values> }) {
   const toast = useToast();
-  const [values, setValues] = useState<Values>(empty);
+  const [values, setValues] = useState<Values>({ ...empty, ...initial });
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const errors = validate(values);
@@ -46,8 +46,9 @@ export function InvoiceForm() {
     if (Object.keys(errors).length > 0) return;
     setSubmitting(true);
     try {
-      await saveSettings("invoice", values);
-      toast("Detail invoice disimpan");
+      const res = await saveSettings("invoice", values);
+      if (res.success) toast("Detail penagihan disimpan");
+      else toast(res.message, "error");
     } catch {
       toast("Gagal menyimpan detail invoice.", "error");
     } finally {
@@ -57,7 +58,7 @@ export function InvoiceForm() {
 
   return (
     <>
-      <SettingsPageHeader title="Detail Invoice" subtitle="Data ini akan tampil di invoice pembayaranmu." />
+      <SettingsPageHeader title="Detail Invoice" subtitle="Data penagihanmu. Pembuatan invoice otomatis belum tersedia." />
       <SettingsSection icon={Receipt} title="Data penagihan">
         <form noValidate onSubmit={handleSubmit} className="max-w-[720px] space-y-4">
           <TextField label="Nama lengkap" autoComplete="name" value={values.fullName} onChange={set("fullName")} error={shown("fullName")} />

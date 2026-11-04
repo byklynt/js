@@ -87,3 +87,31 @@ export function handlePaymentWebhook(db: AdminDb, rawBody: string, signature: st
     return { status: e instanceof ServiceError ? 422 : 500, body: { ok: false, message } };
   }
 }
+
+export const MAX_PENDING_DEPOSITS = 5;
+
+/** A user asks to top up. With no payment gateway this is a pending row an admin confirms (creditDeposit) after the money arrived. */
+export function createDepositRequest(
+  db: AdminDb, input: { userId: string; amount: number; methodId: string }, now = new Date()
+): AdminDeposit {
+  const user = db.users.find((u) => u.id === input.userId);
+  if (!user) throw new ServiceError("Pengguna tidak ditemukan.", "no_user");
+  if (user.status !== "aktif") throw new ServiceError("Akunmu sedang diblokir.", "blocked");
+  const { minDeposit, activeMethods } = db.settings.payments;
+  if (!Number.isInteger(input.amount) || input.amount < minDeposit) throw new ServiceError(`Minimal deposit ${rupiah(minDeposit)}.`, "below_min");
+  if (input.amount > 100_000_000) throw new ServiceError("Maksimal deposit Rp 100.000.000 per permintaan.", "above_max");
+  if (!activeMethods.includes(input.methodId)) throw new ServiceError("Metode pembayaran tidak tersedia.", "bad_method");
+  const pending = db.deposits.filter((d) => d.userId === user.id && d.status === "menunggu").length;
+  if (pending >= MAX_PENDING_DEPOSITS) throw new ServiceError("Masih ada beberapa deposit yang menunggu konfirmasi. Tunggu atau hubungi support.", "too_many_pending");
+  const max = db.deposits.reduce((n, d) => Math.max(n, Number(d.id) || 0), 215_000);
+  const deposit: AdminDeposit = {
+    id: String(max + 1), userId: user.id, username: user.username, method: methodLabel(input.methodId), amount: input.amount,
+    status: "menunggu", createdAt: now.toISOString(), proof: "", externalId: null,
+  };
+  db.deposits.unshift(deposit);
+  logSystem(db, "deposit.request", "deposit", deposit.id, null, { amount: deposit.amount, method: deposit.method }, now);
+  return deposit;
+}
+
+const METHOD_LABELS: Record<string, string> = { manual: "Transfer manual", qris: "QRIS", bank: "Transfer Bank", ewallet: "E-Wallet", va: "Virtual Account" };
+export const methodLabel = (id: string) => METHOD_LABELS[id] ?? id;
