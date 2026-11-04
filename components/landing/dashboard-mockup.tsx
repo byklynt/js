@@ -4,7 +4,6 @@ import {
   Wallet,
   Settings,
   Users,
-  Code2,
   LifeBuoy,
   Wand2,
   Wallet2,
@@ -20,7 +19,6 @@ const sidebarItems = [
   { icon: ShoppingBag, label: "Pesanan Saya" },
   { icon: Wallet, label: "Saldo" },
   { icon: Users, label: "Reseller" },
-  { icon: Code2, label: "API" },
   { icon: LifeBuoy, label: "Bantuan" },
   { icon: Settings, label: "Pengaturan" },
 ];
