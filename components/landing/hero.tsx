@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Zap } from "lucide-react";
-import { heroBadges, platformMarquee, floatingSocialIcons } from "@/lib/landing-data";
+import { platformMarquee, floatingSocialIcons } from "@/lib/landing-data";
+import { claims, hero } from "@/lib/landing-content";
+import { siteConfig } from "@/lib/site-config";
 import { SectionBadge } from "./section-badge";
 
 export function Hero() {
@@ -32,7 +34,7 @@ export function Hero() {
 
       <div className="relative mx-auto flex max-w-4xl flex-col items-center px-4 text-center">
         <Reveal>
-          <SectionBadge>SMM Panel</SectionBadge>
+          <SectionBadge>{hero.badge}</SectionBadge>
         </Reveal>
 
         <motion.h1
@@ -41,11 +43,11 @@ export function Hero() {
           transition={{ duration: 0.7, delay: 0.1, ease: "easeOut" }}
           className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-balance text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl md:text-6xl dark:text-white"
         >
-          <span className="text-primary-500">SMM Panel</span>
+          <span className="text-primary-500">{hero.highlight}</span>
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary-500 shadow-lg shadow-primary-500/40 sm:h-12 sm:w-12">
             <Zap className="h-5 w-5 fill-white text-white sm:h-6 sm:w-6" />
           </span>
-          <span>Order Mudah dan Transparan</span>
+          <span>{hero.headline}</span>
         </motion.h1>
 
         <motion.p
@@ -54,8 +56,7 @@ export function Hero() {
           transition={{ duration: 0.7, delay: 0.2, ease: "easeOut" }}
           className="mt-5 max-w-xl text-balance text-base text-slate-500 sm:text-lg dark:text-slate-400"
         >
-          Tingkatkan followers, views, dan engagement media sosialmu dengan harga
-          paling hemat, proses instan, dan kualitas terjamin.
+          {hero.description}
         </motion.p>
 
         <motion.div
@@ -72,8 +73,9 @@ export function Hero() {
           </Link>
         </motion.div>
 
+        {siteConfig.showSocialProof && claims.length > 0 ? (
         <Reveal delay={0.1} className="mt-10 flex flex-wrap items-center justify-center gap-3">
-          {heroBadges.map((badge) => (
+          {claims.map((badge) => (
             <span
               key={badge.label}
               className="inline-flex items-center gap-1.5 rounded-full border border-primary-100 bg-white/80 px-3.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300"
@@ -83,6 +85,7 @@ export function Hero() {
             </span>
           ))}
         </Reveal>
+        ) : null}
       </div>
 
       <div className="relative mt-14 overflow-hidden">

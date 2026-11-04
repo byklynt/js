@@ -283,3 +283,19 @@ html.dark:has(.dash) {
 html.dark:has(.dash)::-webkit-scrollbar-thumb {
   background: rgba(143, 161, 181, 0.3);
 }
+
+/* Reduced motion: no marquee animation; rows become manually scrollable and the duplicated group is hidden. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee-left,
+  .animate-marquee-right,
+  .animate-marquee-left-slow,
+  .animate-marquee-right-slow {
+    animation: none;
+  }
+  .marquee-viewport {
+    overflow-x: auto;
+  }
+  .marquee-dup {
+    display: none;
+  }
+}

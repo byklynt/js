@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { TrendingUp } from "lucide-react";
+import { stats } from "@/lib/landing-content";
+import { siteConfig as siteFlags } from "@/lib/site-config";
 import { closingCta, footerLinks, siteConfig } from "@/lib/landing-data";
 import { Logo } from "@/components/shared/logo";
 import { Reveal } from "./reveal";
@@ -26,6 +29,29 @@ export function ClosingFooter() {
               {closingCta.cta}
             </Link>
 
+            {siteFlags.showSocialProof && stats.length > 0 ? (
+              <div className="relative mt-10 flex flex-wrap items-center justify-center gap-3">
+                {stats.map((stat) => (
+                  <div
+                    key={stat.label}
+                    className="flex w-fit items-center gap-3 rounded-2xl border border-primary-100 bg-white px-5 py-3 text-left shadow-sm dark:border-slate-800 dark:bg-slate-900"
+                  >
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50 text-primary-500 dark:bg-primary-950/60 dark:text-primary-300">
+                      <TrendingUp className="h-4 w-4" aria-hidden />
+                    </span>
+                    <span>
+                      <span className="block text-[11px] text-slate-400">{stat.label}</span>
+                      <span className="block text-sm font-extrabold text-slate-900 dark:text-white">{stat.value}</span>
+                    </span>
+                    {stat.change ? (
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300">
+                        {stat.change}
+                      </span>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         </Reveal>
       </section>

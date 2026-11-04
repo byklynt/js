@@ -1,9 +1,6 @@
 import { brand } from "@/lib/brand";
 import type { LucideIcon } from "lucide-react";
 import {
-  ShieldCheck,
-  Rocket,
-  Headphones,
   CreditCard,
   CalendarClock,
   Code2,
@@ -33,13 +30,6 @@ export const navLinks = [
   { label: "Daftar", href: "/signup" },
 ];
 
-export const heroBadges: { label: string; icon: LucideIcon }[] = [
-  { label: "Order dalam Beberapa Klik", icon: Rocket },
-  { label: "Saldo Tercatat Jelas", icon: CreditCard },
-  { label: "Refund Sesuai Aturan", icon: ShieldCheck },
-  { label: "Bantuan Lewat Tiket", icon: Headphones },
-];
-
 export const platformMarquee: { label: string; icon: IconType }[] = [
   { label: "Instagram", icon: SiInstagram },
   { label: "TikTok", icon: SiTiktok },
@@ -57,12 +47,6 @@ export const floatingSocialIcons: { icon: IconType; side: "left" | "right"; posi
   { icon: SiX, side: "left", position: "top-56 left-0 md:left-2", delay: "0.8s" },
   { icon: SiYoutube, side: "right", position: "top-64 right-0 md:right-2", delay: "1.1s" },
 ];
-
-export const socialProof = {
-  badge: "Ulasan Pelanggan",
-  title: "Apa kata pelanggan kami",
-  subtitle: "",
-};
 
 export const bentoFeatures = {
   badge: "Layanan Unggulan",
@@ -127,11 +111,6 @@ export const massOrder = {
   description:
     "Khusus buat kamu yang menjalankan bisnis SMM, JagoanSosmed menyediakan fitur mass order agar kamu bisa memproses puluhan pesanan sekaligus tanpa perlu input satu per satu. Hemat waktu, kerja lebih efisien.",
 };
-
-/** Real reviews only. Empty until there is real data (see lib/site-config.ts: showSocialProof). */
-export const testimonials: { name: string; handle: string; rating: number; text: string }[] = [];
-
-export const ratingSummary: { score: string; label: string } | null = null;
 
 export const faqLeft = [
   {

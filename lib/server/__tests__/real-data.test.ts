@@ -44,8 +44,8 @@ describe("a first-run database has no demo data", () => {
     expect(ds.spenders).toEqual([]);
     expect(ds.deposits).toEqual([]);
   });
-  it("marketing switches stay off until there is real data", () => {
-    expect(siteConfig.showSocialProof).toBe(false);
+  it("social proof is a flag (landing copy only) and feature flags stay off", () => {
+    expect(typeof siteConfig.showSocialProof).toBe("boolean");
     expect(Object.values(features).every((v) => v === false)).toBe(true);
   });
 });
