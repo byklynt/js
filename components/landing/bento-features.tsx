@@ -74,7 +74,7 @@ export function BentoFeatures() {
                   </p>
                 </div>
                 <a
-                  href="#layanan"
+                  href="/services"
                   className="inline-flex w-fit items-center gap-1.5 rounded-full bg-primary-solid px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-primary-500/30 transition hover:bg-primary-600"
                 >
                   {bentoFeatures.cards[1].cta}

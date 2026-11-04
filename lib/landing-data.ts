@@ -25,9 +25,8 @@ export const siteConfig = {
 };
 
 export const navLinks = [
-  { label: "Layanan", href: "#layanan" },
-  { label: "Masuk", href: "/login" },
-  { label: "Daftar", href: "/signup" },
+  { label: "Layanan", href: "/services" },
+  { label: "Blog", href: "/blog" },
 ];
 
 export const platformMarquee: { label: string; icon: IconType }[] = [
@@ -157,6 +156,8 @@ export const closingCta = {
 
 export const footerLinks = {
   bantuan: [
+    { label: "Layanan", href: "/services" },
+    { label: "Blog", href: "/blog" },
     { label: "Syarat & Ketentuan", href: "/terms" },
     { label: "Kebijakan Refund", href: "/refund-policy" },
     { label: "Status Layanan", href: "/status" },
