@@ -2,17 +2,14 @@
  * DEMO SEED. Only used by tests and by scripts/seed-demo.ts (`npm run seed:demo`). The running app never imports this file:
  * normal startup seeds nothing (see createEmptyDb in lib/admin-data.ts).
  */
-import { brand } from "@/lib/brand";
-import { demoCategories as categories, demoPayments, demoServices as services, demoTickets, demoUserOrders as userOrders, demoUserRefills as userRefills } from "@/lib/dev/demo-data";
+import { demoCategories as categories, demoServices as services, demoTickets, demoUserOrders as userOrders, demoUserRefills as userRefills } from "@/lib/dev/demo-data";
 import { platforms } from "@/lib/dashboard-data";
 import {
-  createEmptyDb, finalPrice, likeoProviderRow,
-  type AdminDb, type AdminOrder, type AdminDeposit, type DepositStatus, type AdminRefill, type AdminService, type AdminTicket, type AdminUser, type AuditLog,
+  createEmptyDb, type AdminDb, type AdminOrder, type AdminDeposit, type DepositStatus, type AdminRefill, type AdminService, type AdminTicket, type AdminUser, type AuditLog,
   type Announcement, type ProviderRecord, type UserRank,
 } from "@/lib/admin-data";
 import { computeExpectedRefund, isActiveStatus, refundReasonFor, toProviderStatus } from "@/lib/server/rules";
 import type { OrderStatus } from "@/lib/orders-data";
-import type { RefillStatus } from "@/lib/refills-data";
 import type { AppNotification } from "@/lib/notifications-data";
 import type { LedgerEntry } from "@/lib/server/types";
 

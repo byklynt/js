@@ -7,7 +7,6 @@ import {
   ShoppingCart,
   Gem,
   ArrowDownToLine,
-  Flame,
   Rocket,
   type LucideIcon,
 } from "lucide-react";

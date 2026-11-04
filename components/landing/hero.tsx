@@ -14,7 +14,7 @@ export function Hero() {
     >
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,theme(colors.sky.200/60),transparent)] dark:bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,theme(colors.sky.900/40),transparent)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,color-mix(in_srgb,var(--primary-200)_60%,transparent),transparent)] dark:bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,color-mix(in_srgb,var(--primary-900)_40%,transparent),transparent)]"
       />
 
       {floatingSocialIcons.map((item, i) => {
@@ -32,7 +32,7 @@ export function Hero() {
 
       <div className="relative mx-auto flex max-w-4xl flex-col items-center px-4 text-center">
         <Reveal>
-          <SectionBadge>Main Provider &mdash; #1 SMM Panel</SectionBadge>
+          <SectionBadge>SMM Panel</SectionBadge>
         </Reveal>
 
         <motion.h1
@@ -45,7 +45,7 @@ export function Hero() {
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary-500 shadow-lg shadow-primary-500/40 sm:h-12 sm:w-12">
             <Zap className="h-5 w-5 fill-white text-white sm:h-6 sm:w-6" />
           </span>
-          <span>Termurah se-Indonesia</span>
+          <span>Order Mudah dan Transparan</span>
         </motion.h1>
 
         <motion.p

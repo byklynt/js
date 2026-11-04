@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { TrendingUp } from "lucide-react";
 import { closingCta, footerLinks, siteConfig } from "@/lib/landing-data";
 import { Logo } from "@/components/shared/logo";
 import { Reveal } from "./reveal";
@@ -27,20 +26,6 @@ export function ClosingFooter() {
               {closingCta.cta}
             </Link>
 
-            <div className="relative mx-auto mt-10 flex w-fit items-center gap-3 rounded-2xl border border-primary-100 bg-white px-5 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-50 text-primary-500 dark:bg-primary-950/60 dark:text-primary-300">
-                <TrendingUp className="h-4 w-4" />
-              </span>
-              <div className="text-left">
-                <p className="text-[11px] text-slate-400">
-                  {closingCta.stat.label}
-                </p>
-                <p className="text-sm font-bold text-slate-900 dark:text-white">
-                  {closingCta.stat.value}{" "}
-                  <span className="text-emerald-500">{closingCta.stat.growth}</span>
-                </p>
-              </div>
-            </div>
           </div>
         </Reveal>
       </section>
@@ -55,8 +40,6 @@ export function ClosingFooter() {
               </p>
             </div>
 
-            <FooterColumn title="Layanan" links={footerLinks.layanan} />
-            <FooterColumn title="Perusahaan" links={footerLinks.perusahaan} />
             <FooterColumn title="Bantuan" links={footerLinks.bantuan} />
           </div>
 

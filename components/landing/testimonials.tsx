@@ -74,12 +74,14 @@ export function Testimonials() {
             </div>
           </div>
 
-          <Reveal className="mt-10 flex justify-center">
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-              {ratingSummary.score} &middot; {ratingSummary.label}
-            </span>
-          </Reveal>
+          {ratingSummary ? (
+            <Reveal className="mt-10 flex justify-center">
+              <span className="inline-flex items-center gap-2 rounded-full border border-primary-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                {ratingSummary.score} &middot; {ratingSummary.label}
+              </span>
+            </Reveal>
+          ) : null}
         </div>
       </div>
     </section>

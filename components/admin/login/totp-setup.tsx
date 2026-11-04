@@ -7,7 +7,6 @@ import { beginTotpSetup, confirmTotpSetup } from "@/lib/admin-2fa";
 import { TextInput } from "@/components/auth/text-input";
 import { FormAlert, type AlertState } from "@/components/shared/form-alert";
 import { AuthShell } from "@/components/auth/auth-shell";
-import { FloatingCards } from "@/components/auth/floating-cards";
 import { ToastProvider } from "@/components/shared/toast";
 import { AdminPreview } from "./admin-preview";
 
@@ -99,7 +98,6 @@ export function TotpSetupScreen() {
       <AuthShell
         logoTag="Admin"
         preview={<AdminPreview />}
-        floating={<FloatingCards followerCard={{ name: "Pesanan", text: "Pesanan baru masuk" }} storeCard={{ label: "Pendapatan Hari Ini", metricLabel: "Total deposit berhasil", value: "Rp 4.820.000", growth: "+12%" }} />}
       >
         <SetupForm />
       </AuthShell>

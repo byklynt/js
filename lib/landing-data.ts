@@ -27,21 +27,20 @@ export const siteConfig = {
   name: brand.name,
   tagline: brand.tagline,
   description:
-    `${brand.name} adalah SMM panel terpercaya dengan harga termurah, pengiriman cepat, dan layanan 24/7 untuk Instagram, TikTok, X, YouTube, Facebook, dan platform lainnya.`,
+    `${brand.name} adalah SMM panel untuk memesan layanan media sosial (Instagram, TikTok, X, YouTube, Facebook, dan lainnya) dengan saldo yang tercatat jelas dan aturan refund yang transparan.`,
 };
 
 export const navLinks = [
   { label: "Layanan", href: "#layanan" },
-  { label: "API", href: "#api" },
-  { label: "Blog", href: "#blog" },
+  { label: "Masuk", href: "/login" },
   { label: "Daftar", href: "/signup" },
 ];
 
 export const heroBadges: { label: string; icon: LucideIcon }[] = [
-  { label: "Kualitas Tinggi", icon: ShieldCheck },
-  { label: "Harga Termurah", icon: CreditCard },
-  { label: "Pengiriman Cepat", icon: Rocket },
-  { label: "Support 24/7", icon: Headphones },
+  { label: "Order dalam Beberapa Klik", icon: Rocket },
+  { label: "Saldo Tercatat Jelas", icon: CreditCard },
+  { label: "Refund Sesuai Aturan", icon: ShieldCheck },
+  { label: "Bantuan Lewat Tiket", icon: Headphones },
 ];
 
 export const platformMarquee: { label: string; icon: IconType }[] = [
@@ -63,10 +62,9 @@ export const floatingSocialIcons: { icon: IconType; side: "left" | "right"; posi
 ];
 
 export const socialProof = {
-  badge: "Kepuasan Pelanggan",
-  title: "JagoanSosmed berarti satu kisah sukses demi kisah sukses lainnya!",
-  subtitle:
-    "Bergabunglah dengan ribuan pelanggan yang puas dan raih kesuksesan besar bersama media sosialmu.",
+  badge: "Ulasan Pelanggan",
+  title: "Apa kata pelanggan kami",
+  subtitle: "",
 };
 
 export const bentoFeatures = {
@@ -74,14 +72,14 @@ export const bentoFeatures = {
   title: "JagoanSosmed siap bantu bisnis SMM kamu berkembang pesat",
   cards: [
     {
-      title: "Panel X (Twitter) yang Dinamis",
+      title: "Layanan untuk X (Twitter)",
       description:
-        "Kelola followers, likes, retweet, hingga views X dalam satu dashboard yang simpel dan cepat.",
+        "Pesan followers, likes, retweet, atau views X dari satu dashboard. Layanan yang tersedia mengikuti katalog provider.",
     },
     {
-      title: "Panel YouTube Original",
+      title: "Layanan untuk YouTube",
       description:
-        "Tingkatkan subscriber, views, dan watch time channel YouTube kamu dengan layanan tercepat di kelasnya.",
+        "Pesan subscriber, views, atau layanan YouTube lainnya. Lihat detail, batas pesanan, dan harga sebelum memesan.",
       cta: "Lihat Layanan",
     },
   ],
@@ -89,7 +87,7 @@ export const bentoFeatures = {
 
 export const servicesGalore = {
   badge: "Mulai Viral Hari Ini!",
-  title: "Ribuan Layanan SMM Tersedia",
+  title: "Pilihan Layanan SMM",
   description:
     "Layanan yang bisa kamu dapatkan tidak terbatas pada tiga platform besar saja. Kamu juga bisa meningkatkan engagement media sosial klienmu lewat LinkedIn, Reddit, Pinterest, Spotify, layanan SEO, dan masih banyak lagi.",
   cta: "Daftar Sekarang",
@@ -97,13 +95,13 @@ export const servicesGalore = {
 
 export const dashboardMock = {
   greeting: "Selamat datang di JagoanSosmed",
-  balance: { label: "Saldo Akun", value: "Rp 10.590.000" },
-  totalOrders: { label: "Total Pesanan", value: "10" },
-  spent: { label: "Total Pengeluaran", value: "Rp 10.590.000" },
-  pending: { label: "Pesanan Diproses", value: "235" },
+  balance: { label: "Saldo Akun", value: "Rp 0" },
+  totalOrders: { label: "Total Pesanan", value: "0" },
+  spent: { label: "Total Pengeluaran", value: "Rp 0" },
+  pending: { label: "Pesanan Diproses", value: "0" },
   form: {
-    category: "Instagram - Followers",
-    service: "Followers Indonesia | Instant | Garansi 30 Hari",
+    category: "Pilih kategori",
+    service: "Pilih layanan",
     link: "https://instagram.com/akunkamu",
     quantity: "1000",
   },
@@ -111,21 +109,18 @@ export const dashboardMock = {
 
 export const featureColumns: { title: string; description: string; icon: LucideIcon }[] = [
   {
-    title: "Pembayaran Otomatis",
-    description:
-      "Lupakan proses manual yang ribet. Top up saldo otomatis lewat e-wallet, transfer bank, hingga QRIS dalam hitungan detik.",
+    title: "Saldo dan Mutasi Transparan",
+    description: "Setiap perubahan saldo tercatat: deposit, pesanan, dan refund. Kamu bisa melihat riwayatnya kapan saja.",
     icon: CreditCard,
   },
   {
-    title: "Layanan SMM Bulanan",
-    description:
-      "Atur layanan agar berjalan otomatis tiap bulan, cocok untuk kamu yang ingin followers dan engagement selalu stabil.",
+    title: "Refund Sesuai Aturan",
+    description: "Pesanan yang dibatalkan atau tidak selesai direfund otomatis sesuai kebijakan yang tertulis jelas.",
     icon: CalendarClock,
   },
   {
-    title: "API Siap Pakai",
-    description:
-      "Integrasikan JagoanSosmed ke platform kamu sendiri lewat API yang lengkap, stabil, dan terdokumentasi dengan baik.",
+    title: "Pantau Pesanan",
+    description: "Lihat status, jumlah awal, dan sisa pesananmu di satu halaman, lengkap dengan notifikasi.",
     icon: Code2,
   },
 ];
@@ -136,74 +131,10 @@ export const massOrder = {
     "Khusus buat kamu yang menjalankan bisnis SMM, JagoanSosmed menyediakan fitur mass order agar kamu bisa memproses puluhan pesanan sekaligus tanpa perlu input satu per satu. Hemat waktu, kerja lebih efisien.",
 };
 
-export const testimonials = [
-  {
-    name: "Dimas Prakoso",
-    handle: "@dimasp",
-    rating: 5,
-    text: "Harganya jauh lebih murah dibanding panel lain yang pernah aku coba. Prosesnya juga cepat banget, followers langsung masuk.",
-  },
-  {
-    name: "Siti Rahma",
-    handle: "@sitirahma",
-    rating: 5,
-    text: "Admin fast respon dan ramah. Pernah ada kendala pesanan, langsung dibantu sampai tuntas. Recommended banget!",
-  },
-  {
-    name: "Bagas Wirawan",
-    handle: "@bagaswr",
-    rating: 5,
-    text: "Dashboard-nya simpel, enak dipakai sehari-hari buat kelola banyak akun klien sekaligus.",
-  },
-  {
-    name: "Putri Ayunda",
-    handle: "@putriayu",
-    rating: 5,
-    text: "Udah langganan 6 bulan buat layanan bulanan Instagram, hasilnya konsisten dan stabil terus.",
-  },
-  {
-    name: "Reza Maulana",
-    handle: "@rezam",
-    rating: 4,
-    text: "Fitur API-nya membantu banget buat integrasi ke sistem reseller aku. Dokumentasinya jelas.",
-  },
-  {
-    name: "Novita Sari",
-    handle: "@novitasr",
-    rating: 5,
-    text: "Garansi layanan beneran jalan. Pas drop followers, langsung di-refill tanpa ribet.",
-  },
-  {
-    name: "Andika Pratama",
-    handle: "@andikap",
-    rating: 5,
-    text: "Pilihan layanannya lengkap banget, dari Instagram sampai Spotify semua ada di satu panel.",
-  },
-  {
-    name: "Laras Wulandari",
-    handle: "@laraswln",
-    rating: 5,
-    text: "Mass order-nya ngebantu banget buat yang jualan jasa follow ke banyak klien tiap hari.",
-  },
-];
+/** Real reviews only. Empty until there is real data (see lib/site-config.ts: showSocialProof). */
+export const testimonials: { name: string; handle: string; rating: number; text: string }[] = [];
 
-export const ratingSummary = {
-  score: "4.9/5.0",
-  label: "Rating dari 500+ Ulasan Pelanggan",
-};
-
-export const comparison = {
-  title: "JagoanSosmed memberikanmu SMM Panel terbaik agar kamu bisa unggul dari kompetitor!",
-  columns: ["Panel Kompetitor", "JagoanSosmed"],
-  rows: [
-    { label: "Harga layanan termurah", competitor: false, jagoansosmed: true },
-    { label: "Pengiriman order instan", competitor: false, jagoansosmed: true },
-    { label: "Support 24/7 responsif", competitor: false, jagoansosmed: true },
-    { label: "Garansi refill otomatis", competitor: true, jagoansosmed: true },
-    { label: "API terdokumentasi lengkap", competitor: false, jagoansosmed: true },
-    { label: "Program reseller menguntungkan", competitor: false, jagoansosmed: true },
-  ],
-};
+export const ratingSummary: { score: string; label: string } | null = null;
 
 export const faqLeft = [
   {
@@ -219,7 +150,7 @@ export const faqLeft = [
   {
     question: "Apakah aman menggunakan JagoanSosmed?",
     answer:
-      "Aman. Kami tidak pernah meminta kata sandi akun media sosialmu dan seluruh transaksi diproses melalui sistem pembayaran yang terenkripsi.",
+      "Kami tidak pernah meminta kata sandi akun media sosialmu. Yang kami butuhkan hanya link profil atau postingan yang ingin ditingkatkan.",
   },
 ] as const;
 
@@ -227,51 +158,29 @@ export const faqRight = [
   {
     question: "Apakah JagoanSosmed menyediakan dukungan pelanggan?",
     answer:
-      "Tentu. Tim support kami siap membantu 24/7 lewat live chat maupun tiket bantuan untuk menjawab semua pertanyaanmu.",
+      "Ya. Kamu bisa membuat tiket bantuan dari dashboard, dan tim kami akan membalasnya di halaman tiket.",
   },
   {
     question: "Bagaimana cara mulai melakukan pemesanan?",
     answer:
-      "Cukup daftar akun, top up saldo, pilih kategori dan layanan yang diinginkan, masukkan link serta jumlah, lalu klik Pesan Sekarang.",
+      "Daftar akun, ajukan deposit saldo, pilih kategori dan layanan, masukkan link serta jumlah, lalu klik Pesan Sekarang.",
   },
   {
     question: "Kenapa harus memilih JagoanSosmed?",
     answer:
-      "Karena kami menawarkan kombinasi harga termurah, kualitas tinggi, kecepatan pengiriman, dan layanan pelanggan terbaik dalam satu panel.",
+      "Karena saldo, pesanan, dan refund tercatat jelas, dan aturan layanan ditulis terbuka sebelum kamu memesan.",
   },
 ] as const;
-
-export const resellerCta = {
-  title: "Mau jadi reseller?",
-  description:
-    "Jual kembali layanan JagoanSosmed dengan brand kamu sendiri dan dapatkan margin keuntungan maksimal setiap bulannya.",
-  cta: "Lihat Program Reseller",
-};
 
 export const closingCta = {
   title: "Mulai bersama JagoanSosmed dan lesatkan bisnismu",
   description:
-    "Daftar sekarang dan rasakan kemudahan mengelola seluruh kebutuhan SMM dalam satu panel yang cepat, murah, dan terpercaya.",
-  cta: "Sign up",
-  stat: { label: "Total Penjualan", value: "Rp 500.000", growth: "+15%" },
+    "Daftar sekarang dan kelola pesanan SMM-mu dalam satu panel.",
+  cta: "Daftar",
 };
 
 export const footerLinks = {
-  layanan: [
-    { label: "Instagram", href: "#" },
-    { label: "TikTok", href: "#" },
-    { label: "YouTube", href: "#" },
-    { label: "X (Twitter)", href: "#" },
-  ],
-  perusahaan: [
-    { label: "Tentang Kami", href: "#" },
-    { label: "Blog", href: "#" },
-    { label: "Program Reseller", href: "#" },
-    { label: "API Docs", href: "#" },
-  ],
   bantuan: [
-    { label: "FAQ", href: "#" },
-    { label: "Hubungi Kami", href: "#" },
     { label: "Syarat & Ketentuan", href: "/terms" },
     { label: "Kebijakan Refund", href: "/refund-policy" },
     { label: "Status Layanan", href: "/status" },

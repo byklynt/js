@@ -1,7 +1,6 @@
 import type { ComponentType } from "react";
 import {
   Activity,
-  Bot,
   ClipboardCheck,
   ClipboardList,
   Headset,
@@ -10,21 +9,18 @@ import {
   List,
   LogOut,
   Megaphone,
-  Globe,
   ReceiptText,
   RefreshCcw,
   ScrollText,
   Server,
   Settings,
   ShoppingCart,
-  Smartphone,
-  SquareCode,
   Users,
   WalletCards,
   BookText,
   BarChart3,
 } from "lucide-react";
-import { FaTelegram, FaWhatsapp } from "react-icons/fa6";
+import { FaWhatsapp } from "react-icons/fa6";
 import type { TKey } from "@/lib/i18n/id";
 
 export type NavIcon = ComponentType<{ className?: string }>;
@@ -52,7 +48,6 @@ export type Crumb = { label: string; subtitle: string; labelKey?: TKey; subtitle
 // ---------------------------------------------------------------------------
 
 const main = "Menu utama";
-const extra = "Tautan lainnya";
 const account = "Pengaturan";
 
 export const userNav: NavItem[] = [
@@ -66,14 +61,7 @@ export const userNav: NavItem[] = [
   { label: "Refill", labelKey: "nav.refill", href: "/dashboard/refill", icon: RefreshCcw, group: main },
   { label: "Refund", labelKey: "nav.refund", href: "/dashboard/refunds", icon: ReceiptText, group: main },
   { label: "Order Massal", labelKey: "nav.order_massal", href: "/dashboard/mass-order", icon: List, group: main },
-  { label: "Afiliasi", labelKey: "nav.afiliasi", href: "/dashboard/affiliates", icon: Users, group: main },
-  { label: "Panel Anak", labelKey: "nav.panel_anak", href: "/dashboard/child-panel", icon: Globe, group: main },
-  { label: "API", labelKey: "nav.api", href: "/dashboard/api", icon: SquareCode, group: main },
 
-  { label: "Aplikasi Mobile", labelKey: "nav.aplikasi_mobile", href: "#", icon: Smartphone, group: extra },
-  { label: "Pengumuman WhatsApp", labelKey: "nav.pengumuman_whatsapp", href: "#", icon: FaWhatsapp, group: extra },
-  { label: "Pengumuman Telegram", labelKey: "nav.pengumuman_telegram", href: "#", icon: FaTelegram, group: extra },
-  { label: "Bot Telegram", labelKey: "nav.bot_telegram", href: "#", icon: Bot, group: extra },
 
   { label: "Pengaturan", labelKey: "nav.pengaturan", href: "/dashboard/settings", icon: Settings, group: account },
   { label: "Keluar", labelKey: "nav.keluar", icon: LogOut, group: account, action: "logout" },

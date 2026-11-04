@@ -6,20 +6,16 @@ import { ArrowLeft } from "lucide-react";
 import { Logo } from "@/components/shared/logo";
 import { authCopy } from "@/lib/auth-data";
 import { DashboardPreview } from "./dashboard-preview";
-import { FloatingCards } from "./floating-cards";
 
 export function AuthShell({
   children,
   preview,
-  floating,
   logoTag,
   backHref = "/",
 }: {
   children: React.ReactNode;
   /** Right-column mockup. Defaults to the user dashboard preview. */
   preview?: React.ReactNode;
-  /** Floating cards over the preview. Defaults to the user ones. */
-  floating?: React.ReactNode;
   /** Small pill next to the logo (e.g. "Admin"). */
   logoTag?: string;
   backHref?: string;
@@ -58,7 +54,7 @@ export function AuthShell({
       <div className="relative hidden w-1/2 overflow-hidden bg-gradient-to-br from-primary-50 via-primary-50/60 to-white dark:from-primary-950/30 dark:via-slate-950 dark:to-slate-950 lg:block">
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_60%_at_30%_20%,theme(colors.sky.200/50),transparent)] dark:bg-[radial-gradient(ellipse_70%_60%_at_30%_20%,theme(colors.sky.900/30),transparent)]"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_60%_at_30%_20%,color-mix(in_srgb,var(--primary-200)_50%,transparent),transparent)] dark:bg-[radial-gradient(ellipse_70%_60%_at_30%_20%,color-mix(in_srgb,var(--primary-900)_30%,transparent),transparent)]"
         />
         <motion.div
           initial={{ opacity: 0, x: 40 }}
@@ -69,7 +65,6 @@ export function AuthShell({
           {preview ?? <DashboardPreview />}
         </motion.div>
 
-        {floating ?? <FloatingCards />}
       </div>
     </div>
   );

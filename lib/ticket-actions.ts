@@ -9,6 +9,7 @@ import {
   type IncomingFile, type UserTicket,
 } from "@/lib/server/tickets";
 import { ServiceError } from "@/lib/server/tx";
+import { persistAdminState } from "@/lib/server/store";
 
 /**
  * Server actions for the signed-in USER's tickets. Every one resolves the user on the server and goes through
@@ -21,7 +22,9 @@ async function withUser<T>(fn: (userId: string) => T | Promise<T>): Promise<T | 
   const userId = await currentUserId();
   if (!userId) return { ok: false, error: "Silakan masuk terlebih dahulu." };
   try {
-    return await fn(userId);
+    const result = await fn(userId);
+    persistAdminState(getDb());
+    return result;
   } catch (e) {
     if (e instanceof ServiceError) return { ok: false, error: e.message };
     return { ok: false, error: "Terjadi kesalahan di server. Coba lagi." };

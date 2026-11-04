@@ -1,7 +1,7 @@
 /** Single source of truth for the product name. Change the brand here, not in individual files. */
 export const brand = {
   name: "JagoanSosmed",
-  tagline: "SMM Panel Termurah & Terpercaya",
+  tagline: "SMM Panel untuk Order Sosial Media yang Mudah dan Transparan",
   /** Public site URL (used for metadata, sitemap and links). */
   domain: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
   /** Placeholder until a real mailbox exists. */

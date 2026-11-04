@@ -26,10 +26,10 @@ const navItems: { label: string; icon: LucideIcon }[] = [
 ];
 
 const stats: { label: string; value: string; icon: LucideIcon; tone: string }[] = [
-  { label: "Pendapatan Hari Ini", value: "Rp 4.820.000", icon: Wallet, tone: "sky" },
-  { label: "Pesanan Hari Ini", value: "1.284", icon: ShoppingCart, tone: "amber" },
-  { label: "Pengguna Baru", value: "63", icon: Users, tone: "emerald" },
-  { label: "Tiket Menunggu", value: "9", icon: Headset, tone: "rose" },
+  { label: "Pendapatan Hari Ini", value: "Rp 0", icon: Wallet, tone: "sky" },
+  { label: "Pesanan Hari Ini", value: "0", icon: ShoppingCart, tone: "amber" },
+  { label: "Pengguna Baru", value: "0", icon: Users, tone: "emerald" },
+  { label: "Tiket Menunggu", value: "0", icon: Headset, tone: "rose" },
 ];
 
 const toneClasses: Record<string, { icon: string; strip: string }> = {
@@ -51,14 +51,10 @@ const toneClasses: Record<string, { icon: string; strip: string }> = {
   },
 };
 
-const recent = [
-  { id: "7112481", name: "TikTok Views + 10% Like", user: "budi_santoso", status: "Berjalan", tone: "sky" },
-  { id: "7112480", name: "Instagram Followers Indonesia", user: "siti_aisyah", status: "Selesai", tone: "emerald" },
-  { id: "7112479", name: "YouTube Views Retensi Tinggi", user: "andi_pratama", status: "Menunggu", tone: "amber" },
-  { id: "7112478", name: "Telegram Post Views", user: "rina_wulandari", status: "Selesai", tone: "emerald" },
-];
+/** No sample orders: the preview shows the empty state a new panel starts with. */
+const recent: { id: string; name: string; user: string; status: string; tone: string }[] = [];
 
-const chartPoints = [38, 52, 44, 66, 58, 82, 74, 96, 88, 112, 104, 128];
+const chartPoints = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 function RevenueChart() {
   const w = 560;
@@ -69,7 +65,7 @@ function RevenueChart() {
   const line = pts.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const area = `${line} L${w},${h} L0,${h} Z`;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="h-[150px] w-full" role="img" aria-label="Grafik pendapatan contoh">
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-[150px] w-full" role="img" aria-label="Grafik pendapatan (belum ada data)">
       <defs>
         <linearGradient id="adm-prev-fill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" className="text-primary" stopColor="currentColor" stopOpacity="0.28" />
@@ -169,6 +165,7 @@ export function AdminPreview() {
           </div>
           <div className="rounded-2xl border border-primary-100 p-4 dark:border-slate-800">
             <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Pesanan Terbaru</p>
+            {recent.length === 0 ? <p className="mt-3 text-[11px] text-slate-400">Belum ada pesanan</p> : null}
             <ul className="mt-3 space-y-2.5">
               {recent.map((o) => (
                 <li key={o.id} className="flex items-center justify-between gap-2">

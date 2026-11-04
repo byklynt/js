@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/admin-db";
+import { persistAdminState } from "@/lib/server/store";
 import { handlePaymentWebhook } from "@/lib/server/deposits";
 
 /**
@@ -8,6 +9,8 @@ import { handlePaymentWebhook } from "@/lib/server/deposits";
  */
 export async function POST(request: Request) {
   const raw = await request.text();
-  const result = handlePaymentWebhook(getDb(), raw, request.headers.get("x-signature"), process.env.PAYMENT_WEBHOOK_SECRET);
+  const db = getDb();
+  const result = handlePaymentWebhook(db, raw, request.headers.get("x-signature"), process.env.PAYMENT_WEBHOOK_SECRET);
+  persistAdminState(db);
   return Response.json(result.body, { status: result.status });
 }

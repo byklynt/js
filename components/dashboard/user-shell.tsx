@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { LogOut, Settings, Star } from "lucide-react";
+import { LogOut, Settings } from "lucide-react";
 import { logout } from "@/lib/auth-actions";
 import { userBreadcrumbs, userNav } from "@/lib/nav-config";
 import { useUnreadTicketCount } from "@/lib/tickets-store";
@@ -13,7 +13,6 @@ import type { AccountMenuItem } from "@/components/shell/account-menu";
 import { LegalFooter } from "@/components/legal/legal-page";
 
 const accountItems: AccountMenuItem[] = [
-  { label: "Afiliasi", icon: Star, href: "/dashboard/affiliates", filledIcon: true },
   { label: "Akun", icon: Settings, href: "/dashboard/settings" },
   { label: "Keluar", icon: LogOut, action: "logout" },
 ];
