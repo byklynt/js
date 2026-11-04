@@ -38,7 +38,7 @@ export function TicketDetail({ ticketId, initial, username }: { ticketId: string
 
   if (!ticket) {
     return (
-      <main className="mx-auto flex max-w-md flex-col items-center py-24 text-center">
+      <div className="mx-auto flex max-w-md flex-col items-center py-24 text-center">
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-50 text-primary-accent dark:bg-slate-900">
           <Inbox className="h-6 w-6" aria-hidden />
         </span>
@@ -47,7 +47,7 @@ export function TicketDetail({ ticketId, initial, username }: { ticketId: string
         <Link href="/dashboard/tickets" className="mt-5 flex h-[38px] items-center rounded-xl bg-gradient-to-b from-primary-from to-primary-to px-5 text-[10px] font-semibold text-white shadow-[0_2px_0_var(--primary-pressed)] transition hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
           Kembali ke tiket
         </Link>
-      </main>
+      </div>
     );
   }
 
@@ -132,12 +132,12 @@ export function TicketDetail({ ticketId, initial, username }: { ticketId: string
         </div>
       </header>
 
-      <main className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col">
         <section aria-label="Percakapan" className="flex min-h-0 flex-1 flex-col">
           <TicketThread messages={ticket.messages} username={username} />
         </section>
         <TicketComposer onSend={send} disabled={closed} disabledNote="Tiket ini sudah ditutup." />
-      </main>
+      </div>
 
       <ConfirmDialog
         open={closing}

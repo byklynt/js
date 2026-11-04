@@ -18,6 +18,8 @@ import { ActionMenu } from "@/components/ui/action-menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListSkeleton } from "@/components/ui/skeleton";
 import { Pagination } from "@/components/ui/pagination";
+import { Dialog } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useListState, useParamFilter } from "@/lib/use-list-state";
 import { useAdminRunner } from "../use-admin-runner";
@@ -67,6 +69,7 @@ export function UsersView({
   const list = useListState<Filter>(useParamFilter<Filter>(filters.map((f) => f.id), "semua"));
   const flagged = useMemo(() => new Set(flaggedIds), [flaggedIds]);
   const [pending, setPending] = useState<Pending | null>(null);
+  const [tempPassword, setTempPassword] = useState<{ username: string; password: string } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
 
   const filtered = useMemo(
@@ -228,17 +231,27 @@ export function UsersView({
         }}
       />
 
+      <Dialog open={Boolean(tempPassword)} onClose={() => setTempPassword(null)} title={`Password sementara ${tempPassword?.username ?? ""}`} description="Salin sekarang. Password ini tidak akan ditampilkan lagi." maxWidth="max-w-sm">
+        <p className="rounded-xl bg-slate-100 px-3 py-2 text-center font-mono text-[12px] font-semibold tracking-wide text-ink select-all dark:bg-slate-800 dark:text-white">{tempPassword?.password}</p>
+        <div className="mt-4 flex justify-end">
+          <Button onClick={() => setTempPassword(null)}>Selesai</Button>
+        </div>
+      </Dialog>
+
       <ConfirmDialog
         open={pending?.kind === "reset"}
         onClose={() => setPending(null)}
         title={`Reset password ${pending?.user.username ?? ""}?`}
-        description="Tautan reset akan dikirim ke email pengguna (contoh, belum mengirim email sungguhan)."
-        confirmLabel="Kirim tautan"
+        description="Password lama diganti password sementara yang hanya ditampilkan sekali. Berikan ke pengguna lewat saluran yang aman; pengiriman email belum tersedia."
+        confirmLabel="Buat password sementara"
         tone="primary"
         onConfirm={async () => {
           if (pending?.kind !== "reset") return;
           const result = await run(resetUserPassword({ userId: pending.user.id }));
-          if (result.ok) setPending(null);
+          if (result.ok) {
+            setTempPassword({ username: pending.user.username, password: (result.data as { tempPassword: string }).tempPassword });
+            setPending(null);
+          }
         }}
       />
 

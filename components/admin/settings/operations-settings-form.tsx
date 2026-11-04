@@ -87,7 +87,7 @@ export function OperationsSettingsForm({ operations, risk, pricing, limits, ops 
 
       <SettingsSection icon={Database} title="Cadangan dan pemantauan error">
         <div className="max-w-[720px] space-y-4">
-          <Row label="Cadangan terakhir" hint="Belum tersambung ke sistem cadangan (placeholder). TODO: isi dari job cadangan database.">
+          <Row label="Cadangan terakhir" hint="Belum tersedia: cadangan butuh database sungguhan. Sementara salin folder .data secara manual.">
             {ops.lastBackupAt ? <span className="text-[10px] font-medium text-ink dark:text-white">{formatDateTime(ops.lastBackupAt)}</span> : <StatusChip label="Belum ada data" tone="slate" />}
           </Row>
           <form
@@ -108,7 +108,7 @@ export function OperationsSettingsForm({ operations, risk, pricing, limits, ops 
               value={dsn}
               onChange={(e) => setDsn(e.target.value)}
               placeholder={ops.monitoringDsn ? "••••••••••••  (tersimpan)" : "https://kunci@o0.ingest.sentry.io/0"}
-              hint="Disimpan di server dan tidak pernah dikirim balik ke browser. Belum mengirim error sungguhan (placeholder)."
+              hint="Disimpan di server dan tidak pernah dikirim balik ke browser. Belum dipakai: pengiriman error ke layanan pemantauan belum tersedia."
             />
             <Button type="submit" loading={dsnBusy}>Simpan DSN</Button>
           </form>

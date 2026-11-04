@@ -1,17 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, EyeOff, Pencil, Plug, Plus, Power, RefreshCw, Server, SlidersHorizontal } from "lucide-react";
+import { Plug, Power, RefreshCw, Server, SlidersHorizontal } from "lucide-react";
 import type { PublicProvider } from "@/lib/admin-data";
-import { refreshProviderBalanceAction, revealProviderKey, saveProvider, savePricingSettings, setProviderStatus, testProviderConnection } from "@/lib/admin-actions";
+import { refreshProviderBalanceAction, savePricingSettings, setProviderStatus, testProviderConnection } from "@/lib/admin-actions";
 import { formatDateTime, formatIdr } from "@/lib/balance";
 import { LOW_PROVIDER_BALANCE } from "@/lib/admin-data";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { PasswordField, TextField } from "@/components/ui/text-field";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { TextField } from "@/components/ui/text-field";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAdminRunner } from "../use-admin-runner";
 import { LowBalanceChip, ProviderStatusChip } from "../admin-chips";
@@ -27,72 +25,6 @@ function maskUrl(url: string): string {
   } catch {
     return "••••";
   }
-}
-
-function ProviderModal({
-  provider,
-  open,
-  onClose,
-}: {
-  provider: PublicProvider | null;
-  open: boolean;
-  onClose: () => void;
-}) {
-  const run = useAdminRunner();
-  const [name, setName] = useState(provider?.name ?? "");
-  const [apiUrl, setApiUrl] = useState(provider?.apiUrl ?? "https://");
-  const [apiKey, setApiKey] = useState("");
-  const [password, setPassword] = useState("");
-  const [active, setActive] = useState(provider ? provider.status === "aktif" : true);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    setBusy(true);
-    if (apiKey && !password) {
-      setBusy(false);
-      setError("Masukkan password adminmu untuk mengubah API key.");
-      return;
-    }
-    const result = await run(saveProvider({ id: provider?.id, name, apiUrl, apiKey, active, password }));
-    setBusy(false);
-    if (result.ok) onClose();
-    else setError(result.error);
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      title={provider ? `Ubah ${provider.name}` : "Tambah provider"}
-      description="API key disimpan di server dan tidak pernah dikirim ke browser."
-      maxWidth="max-w-md"
-    >
-      <form noValidate onSubmit={submit} className="space-y-3.5">
-        <TextField label="Nama provider" value={name} onChange={(e) => setName(e.target.value)} />
-        <TextField label="URL API" value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder="https://api.contoh.id/v2" />
-        <PasswordField
-          label="API key"
-          autoComplete="off"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          hint={provider ? "Kosongkan untuk mempertahankan key saat ini." : undefined}
-        />
-        {apiKey ? <PasswordField label="Password admin" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} hint="Wajib saat mengubah API key." /> : null}
-        <div className="flex items-center justify-between rounded-xl border border-slate-200/70 px-3 py-2 dark:border-slate-800">
-          <span className="text-[10.5px] font-medium text-ink dark:text-white">Aktif</span>
-          <ToggleSwitch checked={active} onChange={setActive} label="Aktif" />
-        </div>
-        {error ? <p role="alert" className="text-[9.5px] font-medium text-red-500">{error}</p> : null}
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>Batal</Button>
-          <Button type="submit" loading={busy}>Simpan</Button>
-        </div>
-      </form>
-    </Dialog>
-  );
 }
 
 export type PricingView = {
@@ -159,9 +91,6 @@ function PricingModal({ pricing, open, onClose }: { pricing: PricingView; open: 
 
 export function ProvidersView({ providers, mode, modeSource, modeWarning, pricing }: { providers: PublicProvider[]; mode: "mock" | "live" | "off"; modeSource: string; modeWarning: string | null; pricing: PricingView }) {
   const run = useAdminRunner();
-  const [editing, setEditing] = useState<{ provider: PublicProvider | null } | null>(null);
-  const [revealFor, setRevealFor] = useState<PublicProvider | null>(null);
-  const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<string | null>(null);
   const [pricingOpen, setPricingOpen] = useState(false);
@@ -170,12 +99,7 @@ export function ProvidersView({ providers, mode, modeSource, modeWarning, pricin
     <div>
       <PageHeader title="Provider" subtitle="Kelola koneksi ke provider layanan." />
 
-      <div className="mt-8 flex justify-end">
-        <Button onClick={() => setEditing({ provider: null })}>
-          <Plus className="h-3.5 w-3.5" aria-hidden />
-          Tambah provider
-        </Button>
-      </div>
+      <p className="mt-6 text-[10px] text-[#5B6B8C] dark:text-slate-400">Provider yang didukung saat ini: Likeo. URL dan API key dibaca dari .env.local.</p>
 
       {providers.length === 0 ? (
         <div className="mt-5">
@@ -215,18 +139,8 @@ export function ProvidersView({ providers, mode, modeSource, modeWarning, pricin
                 <div>
                   <dt className="text-[#5B6B8C] dark:text-slate-400">API key</dt>
                   <dd className="mt-0.5 flex items-center gap-2">
-                    <span className="truncate font-mono text-[10.5px] text-ink dark:text-white">{revealed[p.id] ?? p.apiKeyMasked}</span>
-                    {p.kind === "likeo" ? <span className="text-[9.5px] text-[#5B6B8C] dark:text-slate-400">dari .env.local</span> : <button
-                      type="button"
-                      aria-label={revealed[p.id] ? `Sembunyikan API key ${p.name}` : `Tampilkan API key ${p.name}`}
-                      onClick={() => {
-                        if (revealed[p.id]) setRevealed((r) => { const next = { ...r }; delete next[p.id]; return next; });
-                        else setRevealFor(p);
-                      }}
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-ink hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-primary dark:text-slate-100 dark:hover:bg-slate-800"
-                    >
-                      {revealed[p.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                    </button>}
+                    <span className="truncate font-mono text-[10.5px] text-ink dark:text-white">{p.apiKeyMasked}</span>
+                    <span className="text-[9.5px] text-[#5B6B8C] dark:text-slate-400">dari .env.local</span>
                   </dd>
                 </div>
                 <div className="flex items-end justify-between gap-2">
@@ -286,12 +200,7 @@ export function ProvidersView({ providers, mode, modeSource, modeWarning, pricin
                       Kurs &amp; markup
                     </Button>
                   </>
-                ) : (
-                  <Button variant="outline" className="h-8" onClick={() => setEditing({ provider: p })}>
-                    <Pencil className="h-3.5 w-3.5" aria-hidden />
-                    Ubah
-                  </Button>
-                )}
+                ) : null}
                 <Button
                   variant="outline"
                   className="h-8"
@@ -306,32 +215,9 @@ export function ProvidersView({ providers, mode, modeSource, modeWarning, pricin
         </ul>
       )}
 
-      <ProviderModal
-        key={editing ? (editing.provider?.id ?? "new") : "closed"}
-        open={Boolean(editing)}
-        provider={editing?.provider ?? null}
-        onClose={() => setEditing(null)}
-      />
 
       <PricingModal key={pricingOpen ? "pricing-open" : "pricing-closed"} pricing={pricing} open={pricingOpen} onClose={() => setPricingOpen(false)} />
 
-      <ConfirmDialog
-        open={Boolean(revealFor)}
-        onClose={() => setRevealFor(null)}
-        title="Tampilkan API key?"
-        description="Demi keamanan hanya awal dan akhir key yang ditampilkan. Masukkan password adminmu."
-        confirmLabel="Tampilkan"
-        tone="primary"
-        requirePassword
-        onConfirm={async (password) => {
-          if (!revealFor) return;
-          const result = await run(revealProviderKey({ id: revealFor.id, password }));
-          if (result.ok) {
-            setRevealed((r) => ({ ...r, [revealFor.id]: (result.data as { partial: string }).partial }));
-            setRevealFor(null);
-          }
-        }}
-      />
     </div>
   );
 }

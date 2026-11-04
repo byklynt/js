@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { ZodType, z } from "zod";
+import { z, type ZodType } from "zod";
 import { requireAdmin } from "@/lib/auth-server";
 import type { SessionPayload } from "@/lib/session";
 import { getDb } from "@/lib/admin-db";
@@ -28,6 +28,9 @@ import { notifyAnnouncement } from "@/lib/server/announcements";
 import { ipAllowed, requireReauth } from "@/lib/server/access";
 import { getClientIp } from "@/lib/auth-server";
 import { persistAdminState } from "@/lib/server/store";
+import { randomBytes } from "node:crypto";
+import { hashPassword } from "@/lib/server/password";
+import { loadCreds, saveCreds } from "@/lib/server/user-store";
 import { nextRuleVersion } from "@/lib/order-rules";
 import { applyAutoMarkup, previewAutoMarkup, recordPriceChange } from "@/lib/server/pricing";
 import { ServiceError, withTransaction } from "@/lib/server/tx";
@@ -140,9 +143,13 @@ export async function resetUserPassword(input: unknown) {
   return run(S.userIdSchema, input, (d, admin) => {
     const user = getDb().users.find((u) => u.id === d.userId);
     if (!user) return fail("Pengguna tidak ditemukan.");
-    // TODO: send a real password-reset email through the auth provider.
+    // No e-mail sending yet: the admin gets a one-time temporary password to hand to the user (shown once, never stored in clear).
+    const temp = `${randomBytes(9).toString("base64url")}9a`;
+    const creds = loadCreds();
+    creds[user.id] = { ...(creds[user.id] ?? { passwordHash: "" }), passwordHash: hashPassword(temp) };
+    saveCreds(creds);
     audit(admin, "user.password.reset", "user", user.id, null, { email: user.email });
-    return ok(`Tautan reset password dikirim ke ${user.email} (contoh).`);
+    return ok(`Password sementara untuk ${user.username} dibuat.`, { tempPassword: temp });
   });
 }
 
@@ -407,34 +414,6 @@ export async function importServicesCsv(input: unknown) {
 // Providers
 // ---------------------------------------------------------------------------
 
-export async function saveProvider(input: unknown) {
-  return run(S.providerSchema, input, (d, admin) => {
-    const db = getDb();
-    // Changing or setting an API key is a sensitive action: password again.
-    if (d.apiKey && !requireReauth((p) => reauth(admin, p), d.password)) return fail("Password salah. Masukkan password adminmu untuk mengubah API key.");
-    if (d.id) {
-      const p = db.providers.find((x) => x.id === d.id);
-      if (!p) return fail("Provider tidak ditemukan.");
-      if (p.kind === "likeo") return fail("URL dan API key Likeo dibaca dari .env.local dan tidak bisa diubah di sini.");
-      const before = { name: p.name, apiUrl: p.apiUrl, status: p.status, apiKeyChanged: false };
-      p.name = d.name;
-      p.apiUrl = d.apiUrl;
-      p.status = d.active ? "aktif" : "nonaktif";
-      if (d.apiKey) p.apiKey = d.apiKey;
-      audit(admin, "provider.update", "provider", p.id, before, { name: p.name, apiUrl: p.apiUrl, status: p.status, apiKeyChanged: Boolean(d.apiKey) });
-      return ok(`Provider ${p.name} disimpan.`);
-    }
-    if (!d.apiKey) return fail("API key wajib diisi untuk provider baru.");
-    const created = {
-      id: `prv_${db.providers.length + 1}`, name: d.name, apiUrl: d.apiUrl, apiKey: d.apiKey, balance: 0,
-      status: (d.active ? "aktif" : "nonaktif") as "aktif" | "nonaktif", lastSync: new Date().toISOString(),
-    };
-    db.providers.push(created);
-    audit(admin, "provider.create", "provider", created.id, null, { name: created.name, apiUrl: created.apiUrl });
-    return ok(`Provider ${created.name} ditambahkan.`);
-  });
-}
-
 export async function testProviderConnection(input: unknown) {
   return run(S.providerIdSchema, input, async (d, admin) => {
     const db = getDb();
@@ -496,7 +475,7 @@ export async function resolveOrderManualCheck(input: unknown) {
 }
 
 export async function setProviderStatus(input: unknown) {
-  return run(S.providerIdSchema.extend({ active: S.providerSchema.shape.active }), input, (d, admin) => {
+  return run(S.providerIdSchema.extend({ active: z.boolean() }), input, (d, admin) => {
     const p = getDb().providers.find((x) => x.id === d.id);
     if (!p) return fail("Provider tidak ditemukan.");
     const before = { status: p.status };
@@ -504,21 +483,6 @@ export async function setProviderStatus(input: unknown) {
     revalidatePath("/dashboard", "layout");
     audit(admin, "provider.status", "provider", p.id, before, { status: p.status });
     return ok(`${p.name} ${d.active ? "diaktifkan" : "dinonaktifkan"}.`);
-  });
-}
-
-/**
- * Reveal-on-confirm: after password re-entry the admin sees the first and last characters only.
- * The full key is never sent to the browser.
- */
-export async function revealProviderKey(input: unknown) {
-  return run(S.providerRevealSchema, input, (d, admin) => {
-    if (!reauth(admin, d.password)) return fail("Password salah.");
-    const p = getDb().providers.find((x) => x.id === d.id);
-    if (!p) return fail("Provider tidak ditemukan.");
-    if (p.kind === "likeo") return fail("API key Likeo hanya ada di .env.local dan tidak pernah ditampilkan.");
-    audit(admin, "provider.key.reveal", "provider", p.id, null, null);
-    return ok(undefined, { partial: `${p.apiKey.slice(0, 8)}${"•".repeat(16)}${p.apiKey.slice(-4)}` });
   });
 }
 

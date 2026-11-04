@@ -2,7 +2,7 @@ import "server-only";
 import { integrityReport, providerBalances, stuckBreakdown, STALL_MINUTES, syncHealth, todayFinance } from "@/lib/server/metrics";
 import { flaggedUsers } from "@/lib/server/risk";
 import { thinMarginServices } from "@/lib/server/pricing";
-import { likeoApiUrl, maskedLikeoKey } from "@/lib/server/providers/config";
+import { likeoApiUrl, maskedLikeoKey, providerMode } from "@/lib/server/providers/config";
 import { reconcileProviderMode } from "@/lib/server/providers/balance";
 import { missingRefunds } from "@/lib/server/views";
 import { ordersByPlatform, revenueSeries } from "@/lib/server/series";
@@ -150,6 +150,7 @@ export function getDashboardData() {
     thinMargin: thinMarginServices(db).length,
     flaggedUsers: flaggedUsers(db).length,
     sanity: db.sanityRuns[0] ?? null,
+    setup: setupSteps(db),
     maintenance: db.settings.general.maintenance,
     stallMinutes: STALL_MINUTES,
     anyStalled: syncHealth(db, now).some((h) => h.stalled),
@@ -159,4 +160,16 @@ export function getDashboardData() {
       refundMismatches: integrity.refundMismatches.length + missingRefunds(db).length,
     },
   };
+}
+
+/** First-run checklist on the admin dashboard: what is still missing before the panel can take orders. */
+function setupSteps(db: AdminDb) {
+  const mode = providerMode();
+  const likeo = db.providers.find((p) => p.kind === "likeo");
+  return [
+    { id: "provider", label: "Hubungkan provider (PROVIDER_MODE=live dan API key di .env.local)", href: "/admin/providers", done: mode === "live" && Boolean(likeo?.lastTest?.ok) },
+    { id: "pricing", label: "Atur kurs dan markup", href: "/admin/providers", done: Boolean(db.services.some((s) => s.imported)) || db.settings.pricing.rateIdr !== 16_000 },
+    { id: "services", label: "Sinkronkan layanan dari provider", href: "/admin/services", done: db.services.some((s) => s.imported) },
+    { id: "payments", label: "Aktifkan metode pembayaran untuk deposit", href: "/admin/settings/payments", done: db.settings.payments.activeMethods.length > 0 },
+  ];
 }

@@ -57,9 +57,14 @@ export function useChartColors() {
 
 export const compact = new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 });
 
+function NoData() {
+  return <div role="status" className="flex h-[240px] items-center justify-center rounded-xl border border-dashed border-slate-200 text-[11px] text-[#5B6B8C] dark:border-slate-800 dark:text-slate-400">Belum ada data</div>;
+}
+
 export function RevenueChart({ data }: { data: { label: string; value: number; profit: number }[] }) {
   const c = useChartColors();
   if (!c.mounted) return <div className="animate-shimmer h-[240px] rounded-xl" />;
+  if (data.every((d) => !d.value && !d.profit)) return <NoData />;
   return (
     <div role="img" aria-label="Grafik pendapatan dan profit" className="h-[240px] w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -85,6 +90,7 @@ export function RevenueChart({ data }: { data: { label: string; value: number; p
 export function PlatformChart({ data }: { data: { platform: string; value: number }[] }) {
   const c = useChartColors();
   if (!c.mounted) return <div className="animate-shimmer h-[240px] rounded-xl" />;
+  if (data.length === 0 || data.every((d) => !d.value)) return <NoData />;
   return (
     <div role="img" aria-label="Grafik pesanan per platform" className="h-[240px] w-full">
       <ResponsiveContainer width="100%" height="100%">

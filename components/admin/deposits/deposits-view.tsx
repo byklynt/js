@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Eye, WalletCards, X } from "lucide-react";
+import { Check, WalletCards, X } from "lucide-react";
 import type { AdminDeposit, DepositStatus } from "@/lib/admin-data";
 import { confirmDeposit, rejectDeposit } from "@/lib/admin-actions";
 import { formatDateTime, formatIdr } from "@/lib/balance";
@@ -31,8 +31,7 @@ const filters: { id: Filter; label: string }[] = [
 
 type Dialogs =
   | { kind: "confirm"; deposit: AdminDeposit }
-  | { kind: "reject"; deposit: AdminDeposit }
-  | { kind: "proof"; deposit: AdminDeposit };
+  | { kind: "reject"; deposit: AdminDeposit };
 
 function RejectDialog({ deposit, onClose, onSubmit }: { deposit: AdminDeposit | null; onClose: () => void; onSubmit: (reason: string) => Promise<boolean> }) {
   const [reason, setReason] = useState("");
@@ -87,7 +86,6 @@ export function DepositsView({ deposits }: { deposits: AdminDeposit[] }) {
         items={[
           { label: "Konfirmasi manual", icon: Check, disabled: !pending, onSelect: () => setDialog({ kind: "confirm", deposit: d }) },
           { label: "Tolak", icon: X, tone: "danger", disabled: !pending, onSelect: () => setDialog({ kind: "reject", deposit: d }) },
-          { label: "Lihat bukti", icon: Eye, onSelect: () => setDialog({ kind: "proof", deposit: d }) },
         ]}
       />
     );
@@ -172,19 +170,6 @@ export function DepositsView({ deposits }: { deposits: AdminDeposit[] }) {
           return result.ok;
         }}
       />
-      <Dialog
-        open={dialog?.kind === "proof"}
-        onClose={() => setDialog(null)}
-        title={`Bukti deposit #${dialog?.kind === "proof" ? dialog.deposit.id : ""}`}
-        description="Pratinjau bukti pembayaran (contoh). Berkas asli akan dimuat dari penyimpanan aman."
-        maxWidth="max-w-sm"
-      >
-        <div className="flex h-40 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 text-center dark:border-slate-600">
-          <WalletCards className="h-6 w-6 text-primary-accent" aria-hidden />
-          <p className="text-[10.5px] font-medium text-ink dark:text-white">{dialog?.kind === "proof" ? dialog.deposit.proof : ""}</p>
-          <p className="text-[9.5px] text-[#5B6B8C] dark:text-slate-400">Tidak ada gambar yang dimuat di versi contoh.</p>
-        </div>
-      </Dialog>
     </div>
   );
 }

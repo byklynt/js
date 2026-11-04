@@ -86,18 +86,7 @@ export const manualCheckSchema = z.object({
 
 export const csvImportSchema = z.object({ csv: z.string().min(1, "File CSV kosong.").max(500_000) });
 
-export const providerSchema = z.object({
-  id: id.optional(),
-  name: z.string().trim().min(2, "Nama minimal 2 karakter.").max(60),
-  apiUrl: z.string().trim().url("URL API tidak valid.").refine((u) => u.startsWith("https://"), "URL API harus memakai https."),
-  // Optional on edit: an empty value keeps the existing key.
-  apiKey: z.string().trim().max(200).optional(),
-  active: z.boolean(),
-  /** Required (checked in the action) whenever a key is sent: changing a provider key is a re-auth action. */
-  password: z.string().max(200).optional(),
-});
 export const providerIdSchema = z.object({ id });
-export const providerRevealSchema = z.object({ id, password });
 
 export const depositConfirmSchema = z.object({ id, password });
 export const depositRejectSchema = z.object({ id, reason: z.string().trim().min(3, "Alasan minimal 3 karakter.").max(200) });

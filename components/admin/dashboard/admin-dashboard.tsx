@@ -101,6 +101,21 @@ export function AdminDashboard({ data }: { data: Data }) {
         ))}
       </div>
 
+      {data.setup.some((s) => !s.done) ? (
+        <section aria-label="Langkah awal" className="rounded-2xl border border-primary-200 bg-primary-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+          <h2 className="text-[12px] font-semibold text-ink dark:text-white">Langkah awal</h2>
+          <p className="mt-0.5 text-[10px] text-[#5B6B8C] dark:text-slate-400">Selesaikan ini supaya pengguna bisa mulai memesan.</p>
+          <ul className="mt-3 space-y-1.5">
+            {data.setup.map((s) => (
+              <li key={s.id} className="flex items-center gap-2 text-[10.5px] text-ink dark:text-slate-200">
+                <span aria-hidden className={s.done ? "text-emerald-500" : "text-slate-400"}>{s.done ? "✓" : "○"}</span>
+                {s.done ? <span className="text-[#5B6B8C] line-through dark:text-slate-500">{s.label}</span> : <Link href={s.href} className="font-medium text-primary-accent underline-offset-2 hover:underline">{s.label}</Link>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section aria-label="Perlu Tindakan" className="space-y-3">
         <h2 className="text-[12px] font-semibold text-ink dark:text-white">Perlu Tindakan</h2>
         {attention.length === 0 ? (

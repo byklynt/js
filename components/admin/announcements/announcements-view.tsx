@@ -29,11 +29,14 @@ function toLocalInput(iso: string): string {
 }
 
 /** The exact components users see: the dashboard banner and the row on the updates page. */
+/** "Now" as a datetime-local value in WIB (the default publish time of a new announcement). */
+const nowLocalInput = () => new Date().toLocaleString("sv-SE", { timeZone: "Asia/Jakarta" }).slice(0, 16).replace(" ", "T");
+
 function Preview({ title, body, level, audience, placements, publishAt, count }: {
   title: string; body: string; level: AnnouncementLevel; audience: AnnouncementAudience; placements: AnnouncementPlacement[]; publishAt: string; count: number;
 }) {
   const item: PublicAnnouncement = {
-    id: "preview", title: title || "Judul pengumuman", body: body || "Isi pengumuman akan tampil di sini.", level, publishAt: publishAt ? `${publishAt}:00+07:00` : "2026-11-05T09:00:00+07:00", updatedAt: "preview",
+    id: "preview", title: title || "Judul pengumuman", body: body || "Isi pengumuman akan tampil di sini.", level, publishAt: publishAt ? `${publishAt}:00+07:00` : new Date().toISOString(), updatedAt: "preview",
   };
   const row: ServiceUpdate = {
     id: "preview", serviceId: "", platform: "", name: item.title, type: "pengumuman", date: item.publishAt.slice(0, 10), detail: item.body,
@@ -69,7 +72,7 @@ function Editor({ item, counts, onClose }: { item: Announcement | null; counts: 
   const [audience, setAudience] = useState<AnnouncementAudience>(item?.audience ?? "semua");
   const [placements, setPlacements] = useState<AnnouncementPlacement[]>(item?.placements ?? ["dashboard"]);
   const [level, setLevel] = useState<AnnouncementLevel>(item?.level ?? "info");
-  const [publishAt, setPublishAt] = useState(toLocalInput(item?.publishAt ?? "2026-11-05T09:00"));
+  const [publishAt, setPublishAt] = useState(toLocalInput(item?.publishAt ?? nowLocalInput()));
   const [expiresAt, setExpiresAt] = useState(item?.expiresAt ? toLocalInput(item.expiresAt) : "");
   const [active, setActive] = useState(item?.active ?? true);
   const [showPreview, setShowPreview] = useState(true);

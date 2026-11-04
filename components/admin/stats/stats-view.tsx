@@ -266,7 +266,7 @@ export function StatsView({ result, params, providers, platforms }: {
         </div>
         <p className="mt-2 text-[9.5px] text-[#5B6B8C] dark:text-slate-400">
           Periode {periodText}
-          {params.compare ? `, dibandingkan dengan ${result.period.prevFrom} sampai ${result.period.prevTo}.` : "."} Data contoh (belum dari database).
+          {params.compare ? `, dibandingkan dengan ${result.period.prevFrom} sampai ${result.period.prevTo}.` : "."} Dihitung dari data panel (belum dari database).
         </p>
       </div>
 

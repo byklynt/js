@@ -53,7 +53,6 @@ export function Row({ label, hint, children }: { label: string; hint?: string; c
 
 export function GeneralSettingsForm({ settings }: { settings: SiteSettings["general"] }) {
   const run = useAdminRunner();
-  const toast = useToast();
   const [form, setForm] = useState(settings);
   const [busy, setBusy] = useState(false);
 
@@ -72,16 +71,6 @@ export function GeneralSettingsForm({ settings }: { settings: SiteSettings["gene
           className="max-w-[720px] space-y-4"
         >
           <TextField label="Nama situs" value={form.siteName} onChange={(e) => setForm({ ...form, siteName: e.target.value })} />
-          <div>
-            <label htmlFor="logo" className="mb-1.5 block text-[10.5px] font-semibold text-ink dark:text-slate-200">Logo</label>
-            <input
-              id="logo"
-              type="file"
-              accept="image/png,image/svg+xml"
-              onChange={() => toast("Unggah logo belum tersambung ke penyimpanan (contoh).")}
-              className="block w-full text-[10px] text-[#5B6B8C] file:mr-3 file:h-8 file:rounded-lg file:border file:border-slate-200 file:bg-white file:px-3 file:text-[10px] file:font-medium file:text-ink dark:text-slate-400 dark:file:border-slate-700 dark:file:bg-slate-900 dark:file:text-white"
-            />
-          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField label="Email support" type="email" value={form.supportEmail} onChange={(e) => setForm({ ...form, supportEmail: e.target.value })} />
             <TextField label="Telegram support" value={form.supportTelegram} onChange={(e) => setForm({ ...form, supportTelegram: e.target.value })} />
