@@ -94,8 +94,7 @@ select throws_ok($$ update public.profiles set balance = 999999 where id = '0000
 select throws_ok($$ update public.profiles set role = 'admin' where id = '00000000-0000-0000-0000-0000000000a1' $$, '42501', null, 'user cannot promote themselves');
 select throws_ok($$ update public.profiles set status = 'aktif', flagged = false where id = '00000000-0000-0000-0000-0000000000a1' $$, '42501', null, 'user cannot change status / flagged');
 select lives_ok($$ update public.profiles set language = 'en' where id = '00000000-0000-0000-0000-0000000000a1' $$, 'user can change language');
-select is((with u as (update public.profiles set language = 'en' where id = '00000000-0000-0000-0000-0000000000a2' returning 1) select count(*)::int from u),
-          0, 'user cannot modify another user''s profile');
+select lives_ok($$ update public.profiles set language = 'en' where id = '00000000-0000-0000-0000-0000000000a2' $$, 'updating another user''s profile is a silent no-op');
 
 select throws_ok($$ insert into public.balance_ledger (user_id, type, amount, balance_before, balance_after, ref_type, ref_id)
   values ('00000000-0000-0000-0000-0000000000a1', 'deposit', 100, 5000, 5100, 'x', 'y') $$, '42501', null, 'user cannot insert ledger rows');
@@ -109,12 +108,13 @@ select throws_ok($$ insert into public.tickets (user_id, title) values ('0000000
 select is((select count(*)::int from public.services), 1, 'user sees only active services');
 select throws_ok($$ select provider_price from public.services $$, '42501', null, 'user cannot read provider cost');
 select throws_ok($$ select markup_value from public.services $$, '42501', null, 'user cannot read markup');
-select throws_ok($$ select * from public.audit_logs $$, '42501', null, 'user cannot read audit_logs');
+select is((select count(*)::int from public.audit_logs), 0, 'user cannot read audit_logs (RLS hides every row)');
 select throws_ok($$ select * from public.site_settings $$, '42501', null, 'user cannot read site_settings');
 select is((select count(*)::int from public.providers), 0, 'user sees no provider rows');
 select throws_ok($$ select api_key_encrypted from public.providers $$, '42501', null, 'provider key is never selectable');
 
 reset role;
+select is((select language from public.profiles where id = '00000000-0000-0000-0000-0000000000a2'), 'id', 'another user''s profile was not modified');
 
 -- ---------------------------------------------------------------------------------------------------------------
 -- admin

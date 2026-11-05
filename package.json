@@ -22,8 +22,9 @@
     "db:reset": "supabase db reset",
     "db:push": "supabase db push",
     "db:lint": "supabase db lint",
-    "db:types": "supabase gen types typescript --local > lib/supabase/database.types.ts",
-    "db:test": "supabase test db"
+    "db:types": "supabase gen types typescript --linked > lib/supabase/database.types.ts",
+    "db:test": "node scripts/db-test.mjs",
+    "db:test:docker": "supabase test db"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
