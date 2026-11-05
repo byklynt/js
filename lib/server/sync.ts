@@ -62,7 +62,8 @@ export async function applyState(order: ActiveOrder, state: { status: string; ra
   let refunded = false;
   // Refund by the FINAL status, not by "status just changed": a run that crashed half way is repaired by the next one.
   const { data: cur } = await db.from("orders").select("status,cancelled_by,needs_manual_check").eq("id", order.id).single();
-  if (cur && (cur.status === "dibatalkan" || cur.status === "sebagian" || (cur.status === "gagal_kirim" && !cur.needs_manual_check))) {
+  // An order an admin cancelled for a violation is never refunded by the sync (the SQL function refuses too).
+  if (cur && cur.cancelled_by !== "admin" && (cur.status === "dibatalkan" || cur.status === "sebagian" || (cur.status === "gagal_kirim" && !cur.needs_manual_check))) {
     const reason = cur.status as "dibatalkan" | "sebagian" | "gagal_kirim";
     const res = (await callFn("create_refund_for_order", { p_order: order.id, p_reason: reason }))[0];
     refunded = Boolean(res?.created);

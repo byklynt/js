@@ -92,7 +92,7 @@ export async function listRefunds(o: { cursor?: string | null; limit?: number } 
   const [orders, ledger, owing] = await Promise.all([
     orderIds.length ? sb.from("orders").select(ORDER_SELECT).in("id", orderIds) : Promise.resolve({ data: [] }),
     refunds.length ? sb.from("balance_ledger").select("*").eq("ref_type", "refund").in("ref_id", refunds.map((r) => r.id)) : Promise.resolve({ data: [] }),
-    cursor ? Promise.resolve({ data: [] }) : sb.from("orders").select(ORDER_SELECT).in("status", ["dibatalkan", "sebagian", "gagal_kirim"]).eq("refunded_amount", 0).eq("needs_manual_check", false).order("id", { ascending: false }).limit(100),
+    cursor ? Promise.resolve({ data: [] }) : sb.from("orders").select(ORDER_SELECT).in("status", ["dibatalkan", "sebagian", "gagal_kirim"]).eq("refunded_amount", 0).eq("needs_manual_check", false).or("cancelled_by.is.null,cancelled_by.neq.admin").order("id", { ascending: false }).limit(100),
   ]);
   const byOrder = new Map(((orders.data ?? []) as unknown as Parameters<typeof toAdminOrder>[0][]).map((r) => [String(r.id), toAdminOrder(r)]));
   const ledgerBy = new Map<string, LedgerEntry[]>();

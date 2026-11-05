@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Ban, Crown, Eye, KeyRound, Minus, Plus, ShieldCheck, Users as UsersIcon } from "lucide-react";
+import { Ban, Crown, Eye, KeyRound, Minus, Plus, ShieldCheck, Users as UsersIcon, Wallet } from "lucide-react";
 import type { AdminDeposit, AdminOrder, AdminUser } from "@/lib/admin-data";
 import { loadUserDetailAction } from "@/lib/admin-list-actions";
-import { BAN_REASONS } from "@/lib/account-status";
+import { BAN_REASONS, SETTLE_CHOICES } from "@/lib/account-status";
 import { formatDate } from "@/lib/format";
 import { formatIdr } from "@/lib/balance";
 import { setUserManualApproval,
@@ -12,6 +12,7 @@ import { setUserManualApproval,
   resetUserPassword,
   setUserReseller,
   setUserStatus,
+  settleBannedBalance,
 } from "@/lib/admin-actions";
 import { PageHeader } from "@/components/shell/page-header";
 import { DataToolbar } from "@/components/ui/data-toolbar";
@@ -43,6 +44,7 @@ type Pending =
   | { kind: "balance"; user: AdminUser; direction: "tambah" | "kurangi" }
   | { kind: "ban"; user: AdminUser }
   | { kind: "unban"; user: AdminUser }
+  | { kind: "settle"; user: AdminUser }
   | { kind: "reset"; user: AdminUser }
   | { kind: "reseller"; user: AdminUser; next: boolean };
 
@@ -69,6 +71,8 @@ export function UsersView({
   const [detailId, setDetailId] = useState<string | null>(null);
   const [banReason, setBanReason] = useState("");
   const [banNote, setBanNote] = useState("");
+  const [settleChoice, setSettleChoice] = useState("");
+  const [settleReason, setSettleReason] = useState("");
   // The drawer shows the latest orders / deposits / ledger rows of ONE user: loaded from the server when it opens.
   const [detail, setDetail] = useState<{ id: string; orders: AdminOrder[]; deposits: AdminDeposit[]; ledger: LedgerEntry[] } | null>(null);
   useEffect(() => {
@@ -109,6 +113,7 @@ export function UsersView({
           u.status === "aktif"
             ? { label: "Blokir", icon: Ban, tone: "danger" as const, onSelect: () => setPending({ kind: "ban", user: u }) }
             : { label: "Aktifkan", icon: ShieldCheck, onSelect: () => setPending({ kind: "unban", user: u }) },
+          ...(u.status === "diblokir" && u.balance > 0 ? [{ label: "Selesaikan saldo", icon: Wallet, onSelect: () => setPending({ kind: "settle", user: u }) }] : []),
           { label: u.manualApproval ? "Matikan persetujuan manual" : "Wajibkan persetujuan manual", icon: ShieldCheck, onSelect: () => void run(setUserManualApproval({ userId: u.id, manualApproval: !u.manualApproval })) },
           { label: "Reset password", icon: KeyRound, onSelect: () => setPending({ kind: "reset", user: u }) },
           {
@@ -138,7 +143,7 @@ export function UsersView({
     { key: "balance", header: "Saldo", cell: (u) => formatIdr(u.balance), className: "whitespace-nowrap" },
     { key: "spent", header: "Total belanja", cell: (u) => formatIdr(u.totalSpent), className: "whitespace-nowrap", hideBelowLg: true },
     { key: "rank", header: "Peringkat", cell: (u) => <RankChip rank={u.rank} /> },
-    { key: "status", header: "Status", cell: (u) => <UserStatusChip status={u.status} /> },
+    { key: "status", header: "Status", cell: (u) => <UserStatusChip status={u.status} balance={u.balance} /> },
     { key: "date", header: "Terdaftar", cell: (u) => <time dateTime={u.createdAt}>{formatDate(u.createdAt)}</time>, className: "whitespace-nowrap", hideBelowLg: true },
     { key: "actions", header: "Aksi", cell: menuFor, className: "w-16 text-right" },
   ];
@@ -180,7 +185,7 @@ export function UsersView({
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <RankChip rank={u.rank} />
-                    <UserStatusChip status={u.status} />
+                    <UserStatusChip status={u.status} balance={u.balance} />
                   </div>
                   <p className="text-[10px] text-[#5B6B8C] dark:text-slate-400">
                     Saldo <span className="font-semibold text-ink dark:text-white">{formatIdr(u.balance)}</span> - Belanja{" "}
@@ -228,6 +233,7 @@ export function UsersView({
             setBanReason("");
             setBanNote("");
           }
+          return result.ok; // false keeps the typed BLOKIR, the password and the reason in the dialog
         }}
       >
         <div className="space-y-3">
@@ -257,6 +263,49 @@ export function UsersView({
             />
           </label>
         </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pending?.kind === "settle"}
+        onClose={() => setPending(null)}
+        title={`Selesaikan saldo ${pending?.user.username ?? ""}`}
+        description={`Akun ini diblokir dan saldonya (${formatIdr(pending?.user.balance ?? 0)}) tetap ditahan. Pilih keputusan, tulis alasan, lalu konfirmasi dengan password adminmu. Setiap perubahan saldo tercatat di Mutasi Saldo dan log audit.`}
+        confirmLabel="Simpan keputusan"
+        tone="primary"
+        requirePassword
+        onConfirm={async (password) => {
+          if (pending?.kind !== "settle") return;
+          const result = await run(settleBannedBalance({ userId: pending.user.id, choice: settleChoice || undefined, reason: settleReason, password }));
+          if (result.ok) {
+            setPending(null);
+            setSettleChoice("");
+            setSettleReason("");
+          }
+          return result.ok;
+        }}
+      >
+        <fieldset className="space-y-2">
+          <legend className="text-[11px] font-medium text-ink dark:text-slate-100">Keputusan</legend>
+          {SETTLE_CHOICES.map((c) => (
+            <label key={c.id} className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-200 px-3 py-2 text-[11px] dark:border-slate-700">
+              <input type="radio" name="settle-choice" value={c.id} checked={settleChoice === c.id} onChange={() => setSettleChoice(c.id)} className="mt-0.5" />
+              <span>
+                <span className="font-semibold text-ink dark:text-white">{c.label}</span>
+                <span className="block text-[#5B6B8C] dark:text-slate-400">{c.hint}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+        <label className="block text-[11px] font-medium text-ink dark:text-slate-100">
+          Alasan
+          <textarea
+            value={settleReason}
+            onChange={(e) => setSettleReason(e.target.value)}
+            maxLength={150}
+            rows={2}
+            className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] text-ink dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+        </label>
       </ConfirmDialog>
 
       <ConfirmDialog

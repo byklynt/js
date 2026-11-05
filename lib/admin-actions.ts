@@ -151,6 +151,36 @@ export async function setUserStatus(input: unknown) {
   });
 }
 
+const SETTLE_PREFIX = { kembalikan: "Saldo dikembalikan ke pengguna", hanguskan: "Saldo dihanguskan (pelanggaran)" } as const;
+
+/** What to do with the balance of a BLOCKED account. The balance is never touched by the block itself. */
+export async function settleBannedBalance(input: unknown) {
+  return run(S.settleBalanceSchema, input, async (d, admin) => {
+    if (!(await reauth(admin, d.password))) return fail("Password salah.");
+    const user = await profileOf(d.userId);
+    if (!user || user.role === "admin") return fail("Pengguna tidak ditemukan.");
+    if (user.status !== "diblokir") return fail("Hanya untuk akun yang diblokir.");
+    const { data: bal } = await supabaseAdmin().from("profiles").select("balance").eq("id", user.id).single();
+    const before = Number(bal?.balance ?? 0);
+    if (d.choice !== "tahan") {
+      if (before <= 0) return fail("Tidak ada saldo yang perlu diselesaikan.");
+      // admin_adjust_balance takes at most Rp 100.000.000 per call: settle in chunks. Every chunk has its own ledger entry and audit row.
+      const actionId = randomBytes(8).toString("hex");
+      const reason = `${SETTLE_PREFIX[d.choice]}: ${d.reason}`.slice(0, 200);
+      let left = before;
+      for (let i = 0; left > 0; i++) {
+        const part = Math.min(left, 100_000_000);
+        await callFn("admin_adjust_balance", { p_admin: admin.sub, p_user: user.id, p_amount: -part, p_reason: reason, p_ref: `settle:${user.id}:${actionId}:${i}` });
+        left -= part;
+      }
+    }
+    const { data: after } = await supabaseAdmin().from("profiles").select("balance").eq("id", user.id).single();
+    await audit(admin, "user.balance.settle", "user", user.id, { balance: before }, { choice: d.choice, reason: d.reason, balance: Number(after?.balance ?? 0) });
+    const msg = { kembalikan: `Saldo ${rupiah(before)} milik ${user.username} dikembalikan (dikurangkan dari akun).`, hanguskan: `Saldo ${rupiah(before)} milik ${user.username} dihanguskan.`, tahan: `Saldo ${user.username} tetap ditahan.` };
+    return ok(msg[d.choice]);
+  });
+}
+
 export async function setUserReseller(input: unknown) {
   return run(S.resellerSchema, input, async (d, admin) => {
     const user = await profileOf(d.userId);
@@ -238,6 +268,19 @@ export async function cancelOrder(input: unknown) {
     const after = (await getOrder(order.id))!;
     await audit(admin, "order.cancel", "order", order.id, before, { status: "dibatalkan", refundedAmount: after.refundedAmount });
     return ok(`Pesanan #${order.id} dibatalkan dan ${rupiah(after.refundedAmount)} dikembalikan ke saldo.`);
+  });
+}
+
+/** Cancel an order for a policy violation: NO refund, no ledger entry (one Postgres function does cancel + notify + audit). */
+export async function cancelOrderViolation(input: unknown) {
+  return run(S.cancelViolationSchema, input, async (d, admin) => {
+    if (!(await reauth(admin, d.password))) return fail("Password salah.");
+    const order = await getOrder(d.orderId);
+    if (!order) return fail("Pesanan tidak ditemukan.");
+    await callFn("admin_cancel_order_violation", { p_order: Number(order.id), p_admin: admin.sub, p_reason: d.reason, ...(d.note ? { p_note: d.note } : {}) });
+    // Stop the work at the provider too. Best effort: if the provider later reports Canceled the sync must (and does) not refund.
+    if (order.providerOrderId) await createProviderClient().cancelOrder(order.providerId, order.providerOrderId).catch(() => undefined);
+    return ok(`Pesanan #${order.id} dibatalkan karena pelanggaran. Tidak ada refund.`);
   });
 }
 

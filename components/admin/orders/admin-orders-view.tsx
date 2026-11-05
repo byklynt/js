@@ -8,6 +8,7 @@ import {
   bulkUpdateOrderStatus,
   cancelOrder,
   releaseHeldOrder,
+  cancelOrderViolation,
   syncOrderNowAction,
   resendOrder,
   resolveOrderManualCheck,
@@ -24,6 +25,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { RowsSkeleton } from "@/components/ui/list-states";
 import { Pagination } from "@/components/ui/pagination";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { VIOLATION_REASONS } from "@/lib/account-status";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { PasswordField, TextField } from "@/components/ui/text-field";
@@ -42,6 +44,7 @@ type Dialogs =
   | { kind: "status"; order: AdminOrder }
   | { kind: "counts"; order: AdminOrder }
   | { kind: "cancel"; order: AdminOrder }
+  | { kind: "violation"; order: AdminOrder }
   | { kind: "check"; order: AdminOrder };
 
 const statusOptions = orderStatusFilters.filter((f) => f.id !== "semua") as { id: OrderStatus; label: string }[];
@@ -225,6 +228,8 @@ export function AdminOrdersView({ orders, stuckIds = [], sync }: { orders: Admin
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [bulkStatus, setBulkStatus] = useState<OrderStatus>("selesai");
   const [dialog, setDialog] = useState<Dialogs | null>(null);
+  const [violationReason, setViolationReason] = useState("");
+  const [violationNote, setViolationNote] = useState("");
 
   const filtered = useMemo(
     () =>
@@ -311,6 +316,13 @@ export function AdminOrdersView({ orders, stuckIds = [], sync }: { orders: Admin
                           onSelect: () => void run(resendOrder({ orderId: order.id })),
                         },
                         {
+                          label: "Batalkan tanpa refund (pelanggaran)",
+                          icon: Ban,
+                          tone: "danger" as const,
+                          disabled: !["menunggu", "diproses", "berjalan"].includes(order.status),
+                          onSelect: () => setDialog({ kind: "violation", order }),
+                        },
+                        {
                           label: "Batalkan dan refund",
                           icon: Ban,
                           tone: "danger",
@@ -325,6 +337,7 @@ export function AdminOrdersView({ orders, stuckIds = [], sync }: { orders: Admin
                   <InfoChip icon={User}>Pengguna: {order.username}</InfoChip>
                   <InfoChip icon={Server}>Provider: {order.providerId.replace("prv_", "#")}</InfoChip>
                   <InfoChip icon={RotateCw}>ID provider: {order.providerOrderId || "-"}</InfoChip>
+                  {order.violationReason ? <InfoChip icon={Ban}>Dibatalkan karena pelanggaran: {order.violationReason}</InfoChip> : null}
                   {order.refundedAmount > 0 ? <InfoChip icon={Undo2}>Refund: {formatIdr(order.refundedAmount)}</InfoChip> : null}
                   {stuck.has(order.id) ? <InfoChip icon={TriangleAlert}>Macet</InfoChip> : null}
                   {order.held ? <InfoChip icon={TriangleAlert}>Menunggu persetujuan</InfoChip> : null}
@@ -410,6 +423,57 @@ export function AdminOrdersView({ orders, stuckIds = [], sync }: { orders: Admin
           return result.error;
         }}
       />
+      <ConfirmDialog
+        open={dialog?.kind === "violation"}
+        onClose={() => setDialog(null)}
+        title={`Batalkan pesanan #${dialog?.kind === "violation" ? dialog.order.id : ""} tanpa refund?`}
+        description={
+          dialog?.kind === "violation"
+            ? `Pesanan dibatalkan karena melanggar ketentuan layanan. ${formatIdr(dialog.order.charge)} milik ${dialog.order.username} TIDAK dikembalikan. Pengguna diberi tahu dengan pesan umum dan tindakan ini dicatat di log audit.`
+            : ""
+        }
+        confirmLabel="Batalkan tanpa refund"
+        requireText="BATAL"
+        requirePassword
+        onConfirm={async (password) => {
+          if (dialog?.kind !== "violation") return;
+          const result = await run(cancelOrderViolation({ orderId: dialog.order.id, reason: violationReason || undefined, note: violationNote.trim() || undefined, password }));
+          if (result.ok) {
+            setDialog(null);
+            setViolationReason("");
+            setViolationNote("");
+          }
+          return result.ok; // false keeps the typed BATAL, the password and the reason
+        }}
+      >
+        <div className="space-y-3">
+          <label className="block text-[11px] font-medium text-ink dark:text-slate-100">
+            Alasan pembatalan
+            <select
+              value={violationReason}
+              onChange={(e) => setViolationReason(e.target.value)}
+              className="mt-1 block h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-[12px] text-ink dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            >
+              <option value="">Pilih alasan</option>
+              {VIOLATION_REASONS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-[11px] font-medium text-ink dark:text-slate-100">
+            Catatan (opsional)
+            <textarea
+              value={violationNote}
+              onChange={(e) => setViolationNote(e.target.value)}
+              maxLength={300}
+              rows={2}
+              className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] text-ink dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            />
+          </label>
+        </div>
+      </ConfirmDialog>
       <ConfirmDialog
         open={dialog?.kind === "cancel"}
         onClose={() => setDialog(null)}

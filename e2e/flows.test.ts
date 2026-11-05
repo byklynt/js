@@ -287,14 +287,18 @@ describe.skipIf(!enabled)("browser flows: signup, order, ticket, language, admin
     await page.getByRole("button", { name: "Blokir", exact: true }).click();
     await page.getByText("Pilih alasan pemblokiran.").first().waitFor({ timeout: 20_000 });
     expect(await status()).toBe("aktif");
+    // the dialog keeps what was typed when the server rejects the form
+    expect(await page.getByLabel("Ketik BLOKIR untuk konfirmasi").inputValue()).toBe("BLOKIR");
+    expect(await page.locator('[role="dialog"] input[type="password"], dialog input[type="password"]').last().inputValue()).toBe(password);
     // 2. with the content-policy reason it is blocked
     const options = await page.locator("select option").allInnerTexts();
     expect(options).toContain("Pelanggaran kebijakan konten");
     await page.locator("select").selectOption("Pelanggaran kebijakan konten");
-    await fillConfirm(); // the dialog clears its fields after every attempt
     await page.getByRole("button", { name: "Blokir", exact: true }).click();
     await expect.poll(status, { timeout: 30_000 }).toBe("diblokir");
-    const log = (await sb().from("audit_logs").select("action,admin_id,before,after").eq("action", "user.ban").eq("target_id", id.k)).data ?? [];
+    const logRows = async () => (await sb().from("audit_logs").select("action,admin_id,before,after").eq("action", "user.ban").eq("target_id", id.k)).data ?? [];
+    await expect.poll(async () => (await logRows()).length, { timeout: 20_000 }).toBe(1); // the audit row is written right after the status flips
+    const log = await logRows();
     expect(log).toHaveLength(1);
     expect(log[0]).toMatchObject({ admin_id: id.a, before: { status: "aktif" }, after: { status: "diblokir", reason: "Pelanggaran kebijakan konten" } });
     await ctx.close();

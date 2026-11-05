@@ -63,7 +63,7 @@ type RefundBasis = {
   quantity: number;
   remains: number;
   /** "user" = the user asked to cancel (policy refund). Anything else = system rules. */
-  cancelledBy?: "user" | "provider" | null;
+  cancelledBy?: "user" | "provider" | "admin" | null;
   cancelPolicyPercent?: number | null;
 };
 
@@ -88,6 +88,8 @@ export function computeExpectedRefund(order: RefundBasis): number {
   switch (order.status) {
     case "dibatalkan":
       // The 100% rule is for provider-side cancellations. A cancellation the user asked for follows the policy.
+      // Cancelled by an admin for a violation: nothing is owed.
+      if (order.cancelledBy === "admin") return 0;
       if (order.cancelledBy === "user") return computeUserCancelRefund({ charge: order.charge, quantity: order.quantity, remains: order.remains }, order.cancelPolicyPercent ?? 0);
       return order.charge;
     case "gagal_kirim":

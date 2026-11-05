@@ -676,6 +676,7 @@ export type Database = {
           sync_error: string | null
           updated_at: string
           user_id: string
+          violation_reason: string | null
         }
         Insert: {
           accepted_at?: string | null
@@ -705,6 +706,7 @@ export type Database = {
           sync_error?: string | null
           updated_at?: string
           user_id: string
+          violation_reason?: string | null
         }
         Update: {
           accepted_at?: string | null
@@ -734,6 +736,7 @@ export type Database = {
           sync_error?: string | null
           updated_at?: string
           user_id?: string
+          violation_reason?: string | null
         }
         Relationships: [
           {
@@ -1648,6 +1651,15 @@ export type Database = {
           p_reason: string
           p_ref?: string
           p_user: string
+        }
+        Returns: number
+      }
+      admin_cancel_order_violation: {
+        Args: {
+          p_admin: string
+          p_note?: string
+          p_order: number
+          p_reason: string
         }
         Returns: number
       }

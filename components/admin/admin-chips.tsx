@@ -1,22 +1,35 @@
 "use client";
 
 import { useId, useState } from "react";
-import { Ban, Check, Clock, Crown, Hourglass, TriangleAlert, X } from "lucide-react";
+import { Ban, Check, Clock, Crown, Hourglass, Lock, TriangleAlert, X } from "lucide-react";
 import type { DepositStatus, ProviderStatus, ReviewStatus, UserRank, UserStatus } from "@/lib/admin-data";
 import { StatusChip, type ChipTone } from "@/components/ui/status-chip";
 import { orderStatusLabels, type OrderStatus } from "@/lib/orders-data";
 
 const icon = "h-3.5 w-3.5";
 
-export function UserStatusChip({ status }: { status: UserStatus }) {
-  return status === "aktif" ? (
-    <StatusChip label="Aktif" tone="emerald">
-      <Check aria-hidden className={icon} />
-    </StatusChip>
-  ) : (
-    <StatusChip label="Diblokir" tone="red">
-      <Ban aria-hidden className={icon} />
-    </StatusChip>
+/** A blocked account that still has a balance also shows "Saldo ditahan" (the block never touches the balance). */
+export function UserStatusChip({ status, balance = 0 }: { status: UserStatus; balance?: number }) {
+  if (status === "aktif") {
+    return (
+      <StatusChip label="Aktif" tone="emerald">
+        <Check aria-hidden className={icon} />
+      </StatusChip>
+    );
+  }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <StatusChip label="Diblokir" tone="red">
+        <Ban aria-hidden className={icon} />
+      </StatusChip>
+      {balance > 0 ? (
+        <span data-testid="held-balance-badge" className="inline-flex">
+          <StatusChip label="Saldo ditahan" tone="amber">
+            <Lock aria-hidden className={icon} />
+          </StatusChip>
+        </span>
+      ) : null}
+    </span>
   );
 }
 

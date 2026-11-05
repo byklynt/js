@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BAN_REASONS } from "@/lib/account-status";
+import { BAN_REASONS, VIOLATION_REASONS } from "@/lib/account-status";
 import { isValidAllowlistEntry } from "@/lib/server/access";
 
 // Server-side validation schemas for every admin form (used by the "use server" actions).
@@ -27,6 +27,18 @@ export const userStatusSchema = z
     note: z.string().trim().max(300, "Catatan maksimal 300 karakter.").optional(),
   })
   .refine((d) => d.status === "aktif" || d.reason !== undefined, { message: "Pilih alasan pemblokiran.", path: ["reason"] });
+export const cancelViolationSchema = z.object({
+  orderId: id,
+  reason: z.enum(VIOLATION_REASONS, { message: "Pilih alasan pembatalan." }),
+  note: z.string().trim().max(300, "Catatan maksimal 300 karakter.").optional(),
+  password,
+});
+export const settleBalanceSchema = z.object({
+  userId: id,
+  choice: z.enum(["kembalikan", "hanguskan", "tahan"], { message: "Pilih salah satu keputusan." }),
+  reason: z.string().trim().min(5, "Alasan minimal 5 karakter.").max(150, "Alasan maksimal 150 karakter."),
+  password,
+});
 export const resellerSchema = z.object({ userId: id, reseller: z.boolean() });
 export const userIdSchema = z.object({ userId: id });
 export const userNoteSchema = z.object({ userId: id, text: z.string().trim().min(2, "Catatan terlalu pendek.").max(300) });

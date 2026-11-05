@@ -58,3 +58,9 @@ Versi saat ini: `LEGAL_VERSION = "2026-11-06"` (satu konstanta untuk "Terakhir d
 ## 6. Cara mengubah teks
 
 Edit `lib/legal-content.ts` (bagian `TERMS`, `REFUND`, `PRIVACY`). `[label](/path)` membuat tautan, `**teks**` huruf tebal. Setelah mengubah isi, naikkan `LEGAL_VERSION`. Aturan konten singkat untuk kartu sebelum order ada di `CONTENT_POLICY_BULLET` (`lib/order-rules.ts`).
+
+## 7. Pembatalan tanpa refund dan saldo akun diblokir (sudah ada di kode)
+
+- **Batalkan tanpa refund (pelanggaran)**: Admin > Pesanan > menu pesanan. Wajib mengetik `BATAL`, password admin, dan alasan (Pelanggaran kebijakan konten, SARA/kekerasan, Penipuan, Lainnya) + catatan opsional. Satu fungsi database membatalkan pesanan (`cancelled_by = 'admin'`, `violation_reason`), menolak refund/permintaan batal yang menunggu, memberi tahu pengguna ("Pesananmu dibatalkan karena melanggar ketentuan layanan."), dan menulis audit `order.cancel_violation`. **Tidak ada entri ledger.** Refund otomatis tidak pernah dibuat untuk pesanan ini, termasuk bila penyedia kemudian melapor Canceled. Admin tetap bisa membuat refund manual secara sadar. Pembatalan juga diteruskan ke penyedia (upaya terbaik).
+- **Saldo akun diblokir**: memblokir tidak menyentuh saldo. Admin > Pengguna menampilkan lencana "Saldo ditahan", dan menu **Selesaikan saldo** menawarkan: *kembalikan* (dibayar di luar sistem; saldo dikurangi lewat penyesuaian saldo), *hanguskan* (dikurangi lewat penyesuaian saldo), atau *biarkan ditahan* (hanya audit). Tiap keputusan butuh alasan dan password admin, dan menulis audit `user.balance.settle` (+ `user.balance.adjust` per entri ledger; nominal besar dipecah per Rp 100.000.000). Catatan ledger yang terlihat pengguna: "Saldo dikembalikan ke pengguna: <alasan>" atau "Saldo dihanguskan (pelanggaran): <alasan>".
+- **Keputusan kebijakan tetap milikmu**: kapan saldo boleh dihanguskan, dan apakah teks publik boleh menyebutnya. Teks publik saat ini tidak menyebut saldo hangus.

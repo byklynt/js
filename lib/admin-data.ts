@@ -48,6 +48,8 @@ export type AdminUser = {
 export type AdminOrder = {
   /** What the provider last said (raw text) and the last submit / sync error of this order. */
   providerStatus?: string | null;
+  /** Set when an admin cancelled the order for a policy violation (no refund). */
+  violationReason?: string | null;
   syncError?: string | null;
   id: string;
   userId: string;
@@ -80,7 +82,7 @@ export type AdminOrder = {
   /** Sending to the provider ended in an unknown state (timeout / 5xx). NOT refunded automatically: an admin must check the provider first. */
   needsManualCheck?: boolean;
   /** Who cancelled it. "user" = forced cancel under the refund policy; "provider" = full automatic refund rules. */
-  cancelledBy: "user" | "provider" | null;
+  cancelledBy: "user" | "provider" | "admin" | null;
   cancelPolicyPercent: number | null;
 };
 

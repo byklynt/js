@@ -91,7 +91,7 @@ export function UserDrawer({
               <div>
                 <dt className="text-[#5B6B8C] dark:text-slate-400">Status</dt>
                 <dd className="mt-1">
-                  <UserStatusChip status={user.status} />
+                  <UserStatusChip status={user.status} balance={user.balance} />
                 </dd>
               </div>
               <div className="col-span-2 text-[#5B6B8C] dark:text-slate-400">

@@ -381,6 +381,46 @@ describe.skipIf(!enabled)("refund and cancellation flows (mock provider)", () =>
     });
   }, 60_000);
 
+  it("cancel without refund (violation): no ledger entry, generic notification, audit, and the sync never refunds it afterwards", async () => {
+    await scenario("Violation cancel, then provider reports Canceled", "balance stays start - charge; 0 refund rows; sync x2 and auto refund create nothing", async () => {
+      const o = await makeOrder({ charge: 1500, quantity: 1000 });
+      const ledgerBefore = (await ledgerOf(o.user)).length;
+      const res = await m.db.rpc("admin_cancel_order_violation", { p_order: o.id, p_admin: admin, p_reason: "Pelanggaran kebijakan konten", p_note: "link kampanye" });
+      expect(res.error).toBeNull();
+      expect(await orderRow(o.id)).toMatchObject({ status: "dibatalkan", cancelled_by: "admin", refunded_amount: 0 });
+      expect((await m.db.from("orders").select("violation_reason").eq("id", o.id).single()).data!.violation_reason).toBe("Pelanggaran kebijakan konten");
+      expect((await ledgerOf(o.user)).length).toBe(ledgerBefore); // NO ledger entry
+      expect(await balanceOf(o.user)).toBe(o.startBalance - 1500);
+      const n = (await m.db.from("notifications").select("type,title,body").eq("user_id", o.user)).data ?? [];
+      expect(n.some((x) => x.type === "pesanan" && x.body === "Pesananmu dibatalkan karena melanggar ketentuan layanan.")).toBe(true);
+      const audit = (await m.db.from("audit_logs").select("admin_id,after").eq("action", "order.cancel_violation").eq("target_id", String(o.id))).data ?? [];
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toMatchObject({ admin_id: admin, after: { reason: "Pelanggaran kebijakan konten", note: "link kampanye", refund: 0 } });
+      // the provider keeps going / later reports Canceled: the sync must not refund
+      setProvider(o.providerOrderId, "Canceled", 1000);
+      expect((await syncNow(o.id)).refunded).toBe(false);
+      expect((await syncNow(o.id)).refunded).toBe(false);
+      setProvider(o.providerOrderId, "Partial", 400);
+      expect((await syncNow(o.id)).refunded).toBe(false);
+      expect((await m.refunds.autoRefundForOrder(String(o.id))).created).toBe(false);
+      const direct = await m.db.rpc("create_refund_for_order", { p_order: o.id, p_reason: "dibatalkan" });
+      expect(direct.data?.[0]?.created).toBe(false);
+      expect(await refundRows(o.id)).toHaveLength(0);
+      expect(await refundEntries(o.user)).toHaveLength(0);
+      expect(await orderRow(o.id)).toMatchObject({ status: "dibatalkan", cancelled_by: "admin", refunded_amount: 0 });
+      expect(await balanceOf(o.user)).toBe(o.startBalance - 1500);
+      await expectLedgerSum(o.user);
+      // a finished order cannot be violation-cancelled again, and a non-admin cannot do it
+      const again = await m.db.rpc("admin_cancel_order_violation", { p_order: o.id, p_admin: admin, p_reason: "Penipuan" });
+      expect(again.error?.message).toMatch(/sudah selesai atau dibatalkan/);
+      const o2 = await makeOrder({ charge: 1000, quantity: 100 });
+      const denied = await m.db.rpc("admin_cancel_order_violation", { p_order: o2.id, p_admin: o2.user, p_reason: "Penipuan" });
+      expect(denied.error).not.toBeNull();
+      expect((await orderRow(o2.id)).status).toBe("menunggu");
+      return "balance 1000 left, 0 refunds, sync x3 + auto refund: nothing";
+    });
+  }, 120_000);
+
   it("end of run: every user balance equals SUM(ledger) and /api/cron/sanity reports 0 mismatches", async () => {
     await scenario("Sanity check", "balanceMismatches = 0 and refundMismatches = 0", async () => {
       for (const u of users) await expectLedgerSum(u);

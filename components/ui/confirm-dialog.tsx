@@ -30,7 +30,8 @@ export function ConfirmDialog({
   tone?: "danger" | "primary";
   requireText?: string;
   requirePassword?: boolean;
-  onConfirm: (password: string) => Promise<void> | void;
+  /** Return false when the server rejected the form: the typed text, password and children stay as they are. */
+  onConfirm: (password: string) => Promise<void | boolean> | void | boolean;
   children?: React.ReactNode;
 }) {
   const [typed, setTyped] = useState("");
@@ -60,8 +61,8 @@ export function ConfirmDialog({
     }
     setBusy(true);
     try {
-      await onConfirm(password);
-      reset();
+      const keep = (await onConfirm(password)) === false;
+      if (!keep) reset();
     } catch {
       setError("Terjadi kesalahan. Coba lagi.");
     } finally {
