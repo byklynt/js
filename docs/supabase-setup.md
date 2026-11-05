@@ -125,3 +125,11 @@ cron-job.org: create three jobs with method POST, the URLs above (HTTPS), a cust
 ## 6. Admin sessions ("Cabut sesi")
 
 Supabase cannot revoke a single other session of a user from the server. The panel therefore tracks admin sessions in `admin_sessions` and checks them on every admin request: a revoked session loses the panel at once, but its JWT only expires with the access-token lifetime (1 hour by default). Shorten the JWT expiry in Authentication → Sessions if that matters to you.
+
+### Diagnosis sinkronisasi status pesanan
+
+- `npm run provider:status -- <id pesanan>` (hanya baca): mencetak baris pesanan, jawaban mentah `status` dari provider, hasil parse, dan status internal hasil pemetaan.
+- Kolom `orders.provider_status` (teks mentah terakhir dari provider) dan `orders.sync_error` (kesalahan terakhir, mis. penolakan saat add atau status tak dikenal) tampil di panel admin.
+- Admin > Pesanan: indikator "Sinkronisasi terakhir" dan menu "Sinkronkan sekarang" per pesanan.
+- Status tak dikenal dicatat (`sync.unknown_status`) dan pesanan tidak diubah.
+- Sinkronisasi hanya berjalan bila ada penjadwal: `npm run dev:cron` (dev) atau pg_cron / crontab (produksi, lihat bagian 5). Tanpa penjadwal, pesanan live tidak pernah berubah status.

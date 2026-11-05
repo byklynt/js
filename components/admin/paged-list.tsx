@@ -33,7 +33,7 @@ type Data = {
 type Page<K extends ListKind> = Data[K] & { next: string | null };
 const SEARCHABLE: ListKind[] = ["orders", "deposits", "ledger", "logs", "users"];
 
-export function PagedList<K extends ListKind>({ kind, initial }: { kind: K; initial: Page<K> }) {
+export function PagedList<K extends ListKind>({ kind, initial, sync }: { kind: K; initial: Page<K>; sync?: { lastSuccessAt: string | null; stalled: boolean } }) {
   const [state, setState] = useState<Page<K>>(initial);
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +62,7 @@ export function PagedList<K extends ListKind>({ kind, initial }: { kind: K; init
   const s = state as unknown as Page<ListKind> & Record<string, unknown>;
   let view: React.ReactNode;
   switch (kind) {
-    case "orders": view = <AdminOrdersView orders={s.rows as AdminOrder[]} stuckIds={(s.stuckIds as string[]) ?? []} />; break;
+    case "orders": view = <AdminOrdersView orders={s.rows as AdminOrder[]} stuckIds={(s.stuckIds as string[]) ?? []} sync={sync} />; break;
     case "deposits": view = <DepositsView deposits={s.rows as AdminDeposit[]} />; break;
     case "refunds": view = <AdminRefundsView refunds={s.rows as RefundRow[]} />; break;
     case "refills": view = <AdminRefillsView refills={s.rows as AdminRefill[]} />; break;

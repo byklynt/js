@@ -46,6 +46,9 @@ export type AdminUser = {
 };
 
 export type AdminOrder = {
+  /** What the provider last said (raw text) and the last submit / sync error of this order. */
+  providerStatus?: string | null;
+  syncError?: string | null;
   id: string;
   userId: string;
   username: string;

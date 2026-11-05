@@ -4,10 +4,10 @@ import { callFn } from "./repo/rpc";
 import { logSystem, notifyAdmins, notifyOrderStatus, notifyUser } from "./repo/notify";
 import { loadSettings } from "./repo/settings";
 import { MAX_STATUS_BATCH } from "./providers/types";
-import { providerMode } from "./providers/config";
 import type { ProviderClient } from "./provider-client";
 import { ACTIVE_STATUSES, isActiveStatus, mapProviderStatus } from "./rules";
 import { supabaseAdmin } from "./supabase-admin";
+import { ServiceError } from "./tx";
 
 export const FAILURE_ALERT_THRESHOLD = 3;
 /** Orders checked per provider per tick (the cron runs every 2 minutes; the rest is picked up by the next ticks). */
@@ -17,24 +17,28 @@ export type SyncRun = { providerId: string; startedAt: string; finishedAt: strin
 export type SyncSummary = { runs: SyncRun[]; refundsCreated: number; requestsUpdated: number; stoppedEarly: boolean };
 export type SyncOptions = { /** Epoch ms after which the run stops starting new batches (the next tick continues). */ deadlineAt?: number };
 
-type ActiveOrder = { id: number; user_id: string; provider_order_id: string; status: string; start_count: number; remains: number; cancelled_by: string | null; needs_manual_check: boolean };
+type ActiveOrder = { id: number; user_id: string; provider_order_id: string; status: string; start_count: number; remains: number; cancelled_by: string | null; needs_manual_check: boolean; provider_status: string | null };
 
 /**
  * Apply one provider state to one order. Safe to run any number of times: the status update only fires while the order is
  * still active, and the refund is idempotent per (order, reason) inside Postgres (double sync = one refund).
  */
-async function applyState(order: ActiveOrder, state: { status: string; startCount: number; remains: number }, now: Date): Promise<{ changed: boolean; refunded: boolean }> {
+export async function applyState(order: ActiveOrder, state: { status: string; raw?: string; startCount: number; remains: number }, now: Date): Promise<{ changed: boolean; refunded: boolean }> {
   const db = supabaseAdmin();
   const next = mapProviderStatus(state.status);
   let changed = false;
-  const patch: Record<string, unknown> = { last_synced_at: now.toISOString() };
+  const raw = (state.raw ?? state.status).slice(0, 60);
+  // last_synced_at, what the provider said (raw text) and a clean error slate: a successful read clears an earlier sync error
+  const patch: Record<string, unknown> = { last_synced_at: now.toISOString(), provider_status: raw, sync_error: null };
   if (state.startCount !== Number(order.start_count)) { patch.start_count = state.startCount; changed = true; }
   if (state.remains !== Number(order.remains)) { patch.remains = Math.max(0, state.remains); changed = true; }
   let status = order.status as OrderStatus;
   let transitioned = false;
   if (!next) {
     // Unknown status text: keep the old status and leave a trace.
-    if (state.status.trim()) await logSystem("sync.unknown_status", "order", String(order.id), null, { status: state.status.slice(0, 40) });
+    // An unknown status text is never silently ignored: the order keeps its status, the text is stored on the order and logged ONCE (not every tick).
+    patch.sync_error = `Status provider tidak dikenal: "${raw}"`;
+    if (raw.trim() && order.provider_status !== raw) await logSystem("sync.unknown_status", "order", String(order.id), null, { status: raw });
   } else if (next !== status && isActiveStatus(status)) {
     patch.status = next;
     if (next === "dibatalkan") patch.cancelled_by = "provider"; // provider-side cancel: the 100% automatic rule
@@ -183,6 +187,36 @@ export async function applyLowBalancePolicy(): Promise<number> {
   return disabled;
 }
 
+/** Keeps the last sync error on the order rows (shown in the admin; cleared by the next successful read). */
+async function noteError(ids: number[], message: string) {
+  if (!ids.length) return;
+  await supabaseAdmin().from("orders").update({ sync_error: message.slice(0, 300) }).in("id", ids);
+}
+
+export type SyncOneResult = { providerOrderId: string; providerStatus: string; mapped: OrderStatus | null; before: string; after: string; changed: boolean; refunded: boolean };
+
+/**
+ * "Sinkronkan sekarang": reads the provider's status for ONE order and applies it with the same idempotent rules as the cron tick.
+ * Works for any order that reached the provider; finished orders are only re-read (their status cannot move backwards).
+ */
+export async function syncOrderNow(client: ProviderClient, orderId: number, now = new Date()): Promise<SyncOneResult> {
+  const db = supabaseAdmin();
+  const { data: o } = await db.from("orders").select("id,user_id,provider_id,provider_order_id,status,start_count,remains,cancelled_by,needs_manual_check,provider_status").eq("id", orderId).maybeSingle();
+  if (!o) throw new ServiceError("Pesanan tidak ditemukan.", "no_order");
+  if (!o.provider_order_id) throw new ServiceError("Pesanan ini belum punya ID pesanan provider (belum pernah diterima provider).", "no_provider_order");
+  let state: Awaited<ReturnType<ProviderClient["getOrderStatus"]>>;
+  try {
+    state = await client.getOrderStatus(o.provider_id, o.provider_order_id);
+  } catch (e) {
+    await noteError([o.id], e instanceof Error ? e.message : "error");
+    throw e;
+  }
+  const mapped = mapProviderStatus(state.status);
+  const res = await applyState(o as ActiveOrder, state, now);
+  const { data: after } = await db.from("orders").select("status").eq("id", orderId).single();
+  return { providerOrderId: o.provider_order_id, providerStatus: state.raw ?? state.status, mapped, before: o.status, after: after?.status ?? o.status, changed: res.changed, refunded: res.refunded };
+}
+
 /** One cron tick (every 2 minutes, see docs/supabase-setup.md). */
 export async function syncOrders(client: ProviderClient, now = new Date(), opts: SyncOptions = {}): Promise<SyncSummary> {
   const outOfTime = () => opts.deadlineAt !== undefined && Date.now() > opts.deadlineAt;
@@ -195,8 +229,9 @@ export async function syncOrders(client: ProviderClient, now = new Date(), opts:
   for (const provider of providers ?? []) {
     if (outOfTime()) { stoppedEarly = true; break; }
     const { data: orders } = await db.from("orders")
-      .select("id,user_id,provider_order_id,status,start_count,remains,cancelled_by,needs_manual_check")
-      .eq("provider_id", provider.id).neq("provider_order_id", "").in("status", ACTIVE_STATUSES).order("id").limit(MAX_ORDERS_PER_TICK);
+      .select("id,user_id,provider_order_id,status,start_count,remains,cancelled_by,needs_manual_check,provider_status")
+      // least recently synced first (never-synced first): an old stuck order cannot starve new ones when the batch limit is reached
+      .eq("provider_id", provider.id).neq("provider_order_id", "").in("status", ACTIVE_STATUSES).order("last_synced_at", { ascending: true, nullsFirst: true }).order("id").limit(MAX_ORDERS_PER_TICK);
     const list = (orders ?? []) as ActiveOrder[];
     const run: SyncRun = { providerId: provider.id, startedAt: now.toISOString(), finishedAt: now.toISOString(), ordersChecked: 0, ordersChanged: 0, errors: 0, errorMessage: null };
 
@@ -208,6 +243,7 @@ export async function syncOrders(client: ProviderClient, now = new Date(), opts:
       } catch (e) {
         run.errors++;
         run.errorMessage = e instanceof Error ? e.message : "error";
+        await noteError([order.id], run.errorMessage);
       }
     };
 
@@ -223,6 +259,7 @@ export async function syncOrders(client: ProviderClient, now = new Date(), opts:
         } catch (e) {
           run.errors++;
           run.errorMessage = e instanceof Error ? e.message : "error";
+          await noteError(chunk.map((o) => o.id), run.errorMessage);
           continue;
         }
         for (const order of chunk) {
@@ -230,6 +267,7 @@ export async function syncOrders(client: ProviderClient, now = new Date(), opts:
           if (!state || state instanceof Error) {
             run.errors++;
             run.errorMessage = state instanceof Error ? state.message : "Status tidak ada di jawaban provider.";
+            await noteError([order.id], run.errorMessage);
             continue;
           }
           await apply(order, state);

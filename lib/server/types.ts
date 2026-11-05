@@ -96,6 +96,8 @@ export type AdminAlert = {
 
 /** The provider's side of an order (mock). Raw provider status strings are mapped by mapProviderStatus(). */
 export type ProviderOrderState = {
+  /** The provider's own status text, untouched (for diagnostics). `status` below is the canonical text the sync rules understand. */
+  raw?: string;
   status: string;
   startCount: number;
   remains: number;

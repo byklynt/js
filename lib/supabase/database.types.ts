@@ -665,6 +665,7 @@ export type Database = {
           provider_cost: number
           provider_id: string
           provider_order_id: string
+          provider_status: string | null
           quantity: number
           refunded_amount: number
           remains: number
@@ -672,6 +673,7 @@ export type Database = {
           start_count: number
           status: string
           submit_attempts: number
+          sync_error: string | null
           updated_at: string
           user_id: string
         }
@@ -692,6 +694,7 @@ export type Database = {
           provider_cost?: number
           provider_id: string
           provider_order_id?: string
+          provider_status?: string | null
           quantity: number
           refunded_amount?: number
           remains?: number
@@ -699,6 +702,7 @@ export type Database = {
           start_count?: number
           status?: string
           submit_attempts?: number
+          sync_error?: string | null
           updated_at?: string
           user_id: string
         }
@@ -719,6 +723,7 @@ export type Database = {
           provider_cost?: number
           provider_id?: string
           provider_order_id?: string
+          provider_status?: string | null
           quantity?: number
           refunded_amount?: number
           remains?: number
@@ -726,6 +731,7 @@ export type Database = {
           start_count?: number
           status?: string
           submit_attempts?: number
+          sync_error?: string | null
           updated_at?: string
           user_id?: string
         }

@@ -11,7 +11,8 @@ export const isActiveStatus = (s: OrderStatus) => ACTIVE_STATUSES.includes(s);
 
 /** Provider status strings (Pending, In progress, Processing, Completed, Partial, Canceled) -> internal status. */
 export function mapProviderStatus(raw: string): OrderStatus | null {
-  switch (raw.trim().toLowerCase()) {
+  // case, extra spaces, "_" and "-" do not matter: "In  Progress", "in_progress" and "IN-PROGRESS" are the same status
+  switch (raw.trim().toLowerCase().replace(/[\s_-]+/g, " ")) {
     case "pending":
       return "menunggu";
     case "processing":
@@ -20,6 +21,7 @@ export function mapProviderStatus(raw: string): OrderStatus | null {
     case "inprogress":
       return "berjalan";
     case "completed":
+    case "complete":
       return "selesai";
     case "partial":
       return "sebagian";

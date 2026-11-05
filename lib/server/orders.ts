@@ -84,14 +84,14 @@ export async function submitToProvider(orderId: string | number, deps: OrderDeps
 
   if (ambiguous) {
     // gagal_kirim, but NOT refunded: an admin checks the provider first (resolveManualCheck).
-    await updateOrder(order.id, { status: "gagal_kirim", needs_manual_check: true });
+    await updateOrder(order.id, { status: "gagal_kirim", needs_manual_check: true, sync_error: `Pengiriman tidak jelas hasilnya: ${lastError}`.slice(0, 300) });
     await notifyUser(order.userId, { type: "pesanan", title: `Pesanan #${order.id} sedang kami periksa`, body: "Pengiriman ke provider belum bisa dipastikan. Tim kami memeriksanya dan saldomu akan dikembalikan bila pesanan tidak masuk.", href: `/dashboard/orders?search=${order.id}`, dedupeKey: `order:${order.id}:check` });
     await notifyAdmins({ type: "pesanan", title: `Pesanan #${order.id} perlu dicek manual`, body: "Pengiriman ke provider tidak jelas hasilnya (timeout/5xx). Cek di panel provider sebelum kirim ulang atau refund.", href: "/admin/orders", dedupeKey: `order-check:${order.id}` });
     await logSystem("order.submit_ambiguous", "order", String(order.id), null, { error: lastError });
     return false;
   }
 
-  await updateOrder(order.id, { status: "gagal_kirim", completed_at: new Date().toISOString() });
+  await updateOrder(order.id, { status: "gagal_kirim", completed_at: new Date().toISOString(), sync_error: `Ditolak provider: ${lastError}`.slice(0, 300) });
   await callFn("create_refund_for_order", { p_order: Number(order.id), p_reason: "gagal_kirim" });
   await notifyOrderStatus({ id: order.id, userId: order.userId, status: "gagal_kirim" }); // the refund notification follows from the refund itself
   await logSystem("order.submit_failed", "order", String(order.id), null, { attempts: MAX_SUBMIT_ATTEMPTS, error: lastError });

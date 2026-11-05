@@ -28,7 +28,7 @@ import { LIKEO_ID, providerMode } from "@/lib/server/providers/config";
 import { ProviderError } from "@/lib/server/provider-client";
 import { approveRefund, autoRefundForOrder, createManualRefund, rejectRefund, refundableRemaining } from "@/lib/server/refunds";
 import { refundReasonFor } from "@/lib/server/rules";
-import { syncOrders } from "@/lib/server/sync";
+import { syncOrderNow, syncOrders } from "@/lib/server/sync";
 import { replyAsAdmin } from "@/lib/server/tickets";
 import { notifyAnnouncement } from "@/lib/server/repo/announcements";
 import { ipAllowed } from "@/lib/server/access";
@@ -275,6 +275,22 @@ export async function resyncProviders(input: unknown) {
     const res = await syncOrders(createProviderClient());
     await audit(admin, "sync.manual", "provider", "-", null, { checked: res.runs.reduce((n, r) => n + r.ordersChecked, 0), refunds: res.refundsCreated });
     return ok(`Sinkronisasi selesai. ${res.refundsCreated} refund otomatis dibuat.`);
+  });
+}
+
+/** "Sinkronkan sekarang": the provider's status for ONE order, applied with the same rules as the scheduled sync. */
+export async function syncOrderNowAction(input: unknown) {
+  return run(S.orderApproveSchema, input, async (d, admin) => {
+    let res;
+    try {
+      res = await syncOrderNow(createProviderClient(), Number(d.orderId));
+    } catch (e) {
+      if (e instanceof ServiceError) return fail(e.message);
+      return fail(e instanceof ProviderError ? e.message : "Tidak bisa membaca status dari provider.");
+    }
+    await audit(admin, "order.sync_now", "order", d.orderId, { status: res.before }, { status: res.after, provider: res.providerStatus });
+    const moved = res.before !== res.after ? `Status berubah: ${res.before} -> ${res.after}.` : `Status tetap ${res.after}.`;
+    return ok(`Provider menjawab "${res.providerStatus}" (${res.mapped ?? "tidak dikenal"}). ${moved}${res.refunded ? " Refund otomatis dibuat." : ""}`);
   });
 }
 

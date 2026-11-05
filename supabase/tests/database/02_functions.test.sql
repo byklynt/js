@@ -118,7 +118,7 @@ insert into ctx select 'adj', public.admin_adjust_balance('00000000-0000-0000-00
 select is((select v from ctx where k = 'adj'), '7875', 'adjustment returns the new balance (5875 + 2000)');
 select is((select count(*)::int from public.audit_logs where action = 'user.balance.adjust' and target_id = '00000000-0000-0000-0000-0000000000a1'), 1, 'audit log written in the same transaction');
 select throws_ok($$ select public.admin_adjust_balance('00000000-0000-0000-0000-0000000000ad', '00000000-0000-0000-0000-0000000000a1', -999999, 'potong terlalu besar') $$, 'P0001', 'Saldo tidak cukup.', 'adjustment cannot make the balance negative');
-select is((select count(*)::int from public.audit_logs where action = 'user.balance.adjust'), 1, 'failed adjustment left no audit row');
+select is((select count(*)::int from public.audit_logs where action = 'user.balance.adjust' and target_id = '00000000-0000-0000-0000-0000000000a1'), 1, 'failed adjustment left no audit row');
 
 -- rate_limit_hit --------------------------------------------------------------------------------------------------
 select is((select allowed from public.rate_limit_hit('t:k', 2, 60)), true, 'hit 1 allowed');

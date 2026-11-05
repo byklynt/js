@@ -35,7 +35,7 @@ export async function getAdapter(): Promise<ProviderAdapter> {
 function toState(s: ProviderOrderStatus): ProviderOrderState {
   const mapped: MappedProviderStatus = s.status;
   const status = mapped === null ? s.raw : mapped === "gagal" ? "Failed" : toProviderStatus(mapped);
-  return { status, startCount: s.startCount, remains: s.remains };
+  return { status, raw: s.raw, startCount: s.startCount, remains: s.remains };
 }
 
 export function createProviderClient(): ProviderClient {

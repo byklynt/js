@@ -8,12 +8,13 @@ import {
   bulkUpdateOrderStatus,
   cancelOrder,
   releaseHeldOrder,
+  syncOrderNowAction,
   resendOrder,
   resolveOrderManualCheck,
   setOrderCounts,
   updateOrderStatus,
 } from "@/lib/admin-actions";
-import { formatIdr } from "@/lib/balance";
+import { formatDateTime, formatIdr } from "@/lib/balance";
 import { PageHeader } from "@/components/shell/page-header";
 import { DataToolbar } from "@/components/ui/data-toolbar";
 import { RecordCard } from "@/components/ui/record-card";
@@ -216,7 +217,7 @@ function CountsDialog({
   );
 }
 
-export function AdminOrdersView({ orders, stuckIds = [] }: { orders: AdminOrder[]; stuckIds?: string[] }) {
+export function AdminOrdersView({ orders, stuckIds = [], sync }: { orders: AdminOrder[]; stuckIds?: string[]; sync?: { lastSuccessAt: string | null; stalled: boolean } }) {
   const run = useAdminRunner();
   const initial = useParamFilter<Filter>(filterOptions.map((f) => f.id), "semua");
   const list = useListState<Filter>(initial);
@@ -257,6 +258,15 @@ export function AdminOrdersView({ orders, stuckIds = [] }: { orders: AdminOrder[
   return (
     <div>
       <PageHeader title="Pesanan" subtitle="Pantau dan tangani pesanan pengguna." />
+      {sync ? (
+        <p className="-mt-2 mb-3 flex flex-wrap items-center gap-2 text-[11px] text-[#5B6B8C] dark:text-slate-400" data-testid="sync-indicator">
+          <span>
+            Sinkronisasi terakhir:{" "}
+            {sync.lastSuccessAt ? <time dateTime={sync.lastSuccessAt}>{formatDateTime(sync.lastSuccessAt)}</time> : "belum pernah berhasil"}
+          </span>
+          {sync.stalled ? <span className="inline-flex h-6 items-center rounded-full bg-red-50 px-2.5 text-[10px] font-medium text-red-500 dark:bg-red-500/15 dark:text-red-300">Sinkronisasi terhenti</span> : null}
+        </p>
+      ) : null}
 
       <DataToolbar
         filter={{ options: filterOptions, value: list.filter, onChange: list.setFilter, ariaLabel: "Filter status pesanan" }}
@@ -290,6 +300,7 @@ export function AdminOrdersView({ orders, stuckIds = [] }: { orders: AdminOrder[
                       label={`Aksi untuk pesanan ${order.id}`}
                       items={[
                         ...(order.held ? [{ label: "Setujui dan kirim", icon: RefreshCcw, onSelect: () => void run(releaseHeldOrder({ orderId: order.id })) }] : []),
+                        ...(order.providerOrderId ? [{ label: "Sinkronkan sekarang", icon: RefreshCcw, onSelect: () => void run(syncOrderNowAction({ orderId: order.id })) }] : []),
                         { label: "Ubah status", icon: ListOrdered, onSelect: () => setDialog({ kind: "status", order }) },
                         { label: "Atur awal dan sisa", icon: Gauge, onSelect: () => setDialog({ kind: "counts", order }) },
                         ...(order.needsManualCheck ? [{ label: "Cek manual di provider", icon: TriangleAlert, onSelect: () => setDialog({ kind: "check", order }) }] : []),

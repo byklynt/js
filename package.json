@@ -27,7 +27,8 @@
     "test:e2e": "node scripts/run-e2e.mjs",
     "dev:cron": "node scripts/dev-cron.mjs",
     "cron:enable": "node scripts/cron-admin.mjs enable",
-    "cron:disable": "node scripts/cron-admin.mjs disable"
+    "cron:disable": "node scripts/cron-admin.mjs disable",
+    "provider:status": "tsx scripts/provider-status.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
