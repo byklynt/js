@@ -17,6 +17,8 @@ import { createClient } from "@/lib/supabase/server";
 export type AdminLoginResult =
   | { status: "ok"; message?: string }
   | { status: "needs_2fa" }
+  /** A backup code was entered: the admin must confirm (in Indonesian) that this REMOVES the authenticator before anything is changed. */
+  | { status: "confirm_backup"; message: string }
   | { status: "error"; message: string };
 
 const GENERIC_ERROR = "Username atau password salah";
@@ -27,7 +29,10 @@ const loginSchema = z.object({
   password: z.string().min(1, "Password wajib diisi.").max(200),
 });
 
-const codeSchema = z.object({ code: z.string().trim().regex(/^(\d{6}|[a-z0-9]{4}-[a-z0-9]{4})$/i, "Masukkan 6 digit kode atau kode cadangan.") });
+const codeSchema = z.object({ code: z.string().trim().regex(/^(\d{6}|[a-z0-9]{4}-[a-z0-9]{4})$/i, "Masukkan 6 digit kode atau kode cadangan."), confirmBackup: z.boolean().optional() });
+
+const BACKUP_CONFIRM_MESSAGE =
+  "Kode cadangan akan MENONAKTIFKAN verifikasi dua langkah di akunmu. Setelah masuk, kamu wajib mengatur ulang aplikasi autentikator (memindai kode QR baru) dan menyimpan kode cadangan baru. Kode cadangan ini hanya bisa dipakai sekali. Lanjutkan?";
 
 /** The session is fully authenticated: record it, alert, audit. */
 async function finishLogin(admin: { id: string; username: string }, sid: string | undefined, ip: string) {
@@ -55,7 +60,7 @@ export async function adminLogin(input: unknown): Promise<AdminLoginResult> {
 
   const { data: profile } = await supabaseAdmin().from("profiles").select("id,username,role,status").eq("id", data.user.id).maybeSingle();
   if (!profile || profile.role !== "admin" || profile.status !== "aktif") {
-    await supabase.auth.signOut(); // a normal user must not keep a session from the admin door
+    await supabase.auth.signOut({ scope: "local" }); // a normal user must not keep a session from the admin door
     return { status: "error", message: GENERIC_ERROR };
   }
 
@@ -93,13 +98,17 @@ export async function adminVerify2fa(input: unknown): Promise<AdminLoginResult> 
   const totp = factors?.totp?.[0];
 
   if (BACKUP_CODE_RE.test(parsed.data.code)) {
+    // Nothing is consumed or removed until the admin has confirmed what a backup code does.
+    if (!parsed.data.confirmBackup) return { status: "confirm_backup", message: BACKUP_CONFIRM_MESSAGE };
     if (!(await consumeBackupCode(who.id, parsed.data.code))) return { status: "error", message: WRONG_CODE };
     for (const f of factors?.all ?? []) await supabaseAdmin().auth.admin.mfa.deleteFactor({ id: f.id, userId: who.id });
     await clearBackupCodes(who.id);
     await resetRateLimit(key);
     await logAdminAction({ adminId: who.id, adminName: who.username, action: "auth.2fa_backup_used", targetType: "admin", targetId: who.id, before: { enabled: true }, after: { enabled: false } });
     await finishLogin(who, who.sid, ip);
-    return { status: "ok", message: "Kode cadangan dipakai. Verifikasi dua langkah direset: atur ulang sekarang." };
+    // Removing the factor also ends this session on the Auth side: say so, and send the admin back to the password step.
+    await supabase.auth.signOut({ scope: "local" });
+    return { status: "ok", message: "Kode cadangan dipakai dan verifikasi dua langkah dinonaktifkan. Masuk lagi dengan password, lalu atur ulang aplikasi autentikator (pindai kode QR baru) dan simpan kode cadangan yang baru." };
   }
 
   if (!totp) return { status: "error", message: "Verifikasi dua langkah belum diatur untuk akun ini." };
@@ -114,7 +123,7 @@ export async function adminLogout(): Promise<void> {
   const who = await loadIdentity();
   if (who?.sid) await revokeAdminSession(who.sid, who.id);
   const supabase = await createClient();
-  await supabase.auth.signOut();
+  await supabase.auth.signOut({ scope: "local" });
   if (who?.profileRole === "admin") {
     await logAdminAction({ adminId: who.id, adminName: who.username, action: "auth.logout", targetType: "admin", targetId: who.id, before: null, after: null });
   }

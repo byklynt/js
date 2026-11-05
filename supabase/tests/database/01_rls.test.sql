@@ -105,7 +105,9 @@ select throws_ok($$ insert into public.refunds (order_id, user_id, amount, reaso
   values (1, '00000000-0000-0000-0000-0000000000a1', 1000, 'manual', 'admin') $$, '42501', null, 'user cannot create refunds');
 select throws_ok($$ insert into public.tickets (user_id, title) values ('00000000-0000-0000-0000-0000000000a1', 'x') $$, '42501', null, 'tickets are created only via the server function');
 
-select is((select count(*)::int from public.services), 1, 'user sees only active services');
+select is((select count(*)::int from public.services where id = 'S1'), 1, 'user sees the active service');
+select is((select count(*)::int from public.services where id = 'S2'), 0, 'user does not see the inactive service');
+select is((select count(*)::int from public.services where not active), 0, 'user sees no inactive service at all');
 select throws_ok($$ select provider_price from public.services $$, '42501', null, 'user cannot read provider cost');
 select throws_ok($$ select markup_value from public.services $$, '42501', null, 'user cannot read markup');
 select is((select count(*)::int from public.audit_logs), 0, 'user cannot read audit_logs (RLS hides every row)');

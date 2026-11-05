@@ -27,6 +27,7 @@ export async function verifyPasswordFor(email: string, password: string): Promis
   const client = createStateless(supabaseUrl(), supabaseAnonKey(), { auth: { persistSession: false, autoRefreshToken: false } });
   const { data, error } = await client.auth.signInWithPassword({ email, password });
   if (error || !data.session) return false;
-  await client.auth.signOut().catch(() => undefined);
+  // scope "local": only this throw-away client session ends. The default (global) would revoke EVERY session of the user, including the one in use.
+  await client.auth.signOut({ scope: "local" }).catch(() => undefined);
   return true;
 }

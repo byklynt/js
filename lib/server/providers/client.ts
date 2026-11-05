@@ -61,6 +61,12 @@ export function createProviderClient(): ProviderClient {
       const p = (await loadSettings()).pricing;
       return Math.round(b.currency.toUpperCase() === p.currency.toUpperCase() ? b.balance * p.rateIdr : b.balance);
     },
+    async getRefillStatuses(_providerId, refillIds) {
+      return (await getAdapter()).getRefillStatuses(refillIds);
+    },
+    async getCancelStatuses(_providerId, orderIds) {
+      return (await getAdapter()).getCancelStatuses(orderIds);
+    },
     async getOrdersStatus(_providerId, ids) {
       const res = await (await getAdapter()).getOrdersStatus(ids);
       const out: Record<string, ProviderOrderState | Error> = {};

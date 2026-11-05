@@ -321,6 +321,46 @@ describe.skipIf(!enabled)("server flows on Supabase (mock provider)", () => {
     expect(st.pendingDeposits).toBeGreaterThanOrEqual(5);
   }, 120_000);
 
+  it("sync reads refill and cancel status back from the provider (mock) and notifies the user", async () => {
+    const client = m.client.createProviderClient();
+    const placed = await m.orders.placeOrder({ userId: user, serviceId: SVC, link: "https://zt.test/readback", quantity: 1000 }, { client });
+    const oid = Number(placed.id);
+    // refill: the order is finished, the user asks for a refill, the sync follows the provider's refill status
+    await m.db.from("orders").update({ status: "selesai", remains: 0, completed_at: new Date().toISOString() }).eq("id", oid);
+    const refill = await m.requests.requestRefill(client, user, placed.id);
+    const refillRow = async () => (await m.db.from("refill_requests").select("status,provider_request_id").eq("id", refill.id).single()).data!;
+    expect((await refillRow()).provider_request_id).toMatch(/^MKR-/);
+    expect((await refillRow()).status).toBe("menunggu");
+    await m.sync.syncOrders(client);
+    expect((await refillRow()).status).toBe("berjalan");
+    await m.sync.syncOrders(client);
+    expect((await refillRow()).status).toBe("selesai");
+    await m.sync.syncOrders(client); // idempotent: nothing moves backwards or twice
+    expect((await refillRow()).status).toBe("selesai");
+    const notes = (await m.db.from("notifications").select("title,dedupe_key").eq("user_id", user).like("dedupe_key", `refill:${refill.id}:%`)).data ?? [];
+    expect(notes.map((n) => n.dedupe_key).sort()).toEqual([`refill:${refill.id}:berjalan`, `refill:${refill.id}:selesai`]);
+
+    // cancel forwarded to the provider: confirmed on the next read
+    const second = await m.orders.placeOrder({ userId: user, serviceId: SVC, link: "https://zt.test/readback-cancel", quantity: 1000 }, { client });
+    const prov = (await m.db.from("orders").select("provider_order_id").eq("id", Number(second.id)).single()).data!.provider_order_id;
+    await m.db.from("orders").update({ created_at: new Date(Date.now() - 80 * 3_600_000).toISOString() }).eq("id", Number(second.id));
+    const req = await m.requests.requestCancel(user, second.id);
+    await client.cancelOrder("", prov); // what reviewRefund does after the admin approves
+    await m.db.from("cancel_requests").update({ provider_state: "diminta" }).eq("id", req.requestId);
+    const before = await balance(user);
+    await m.sync.syncOrders(client);
+    const cr = (await m.db.from("cancel_requests").select("provider_state").eq("id", req.requestId).single()).data!;
+    expect(cr.provider_state).toBe("dikonfirmasi");
+    // the provider-side cancel is also an ordinary cancelled order: refunded in full exactly once, through create_refund_for_order
+    const o2 = (await m.db.from("orders").select("status,refunded_amount").eq("id", Number(second.id)).single()).data!;
+    expect(o2.status).toBe("dibatalkan");
+    expect(Number(o2.refunded_amount)).toBeLessThanOrEqual(1500);
+    expect(await balance(user)).toBeGreaterThanOrEqual(before);
+    await m.sync.syncOrders(client);
+    expect(await balance(user)).toBe(await balance(user));
+    expect((await m.db.from("refunds").select("id").eq("order_id", Number(second.id)).eq("reason", "dibatalkan")).data!.length).toBeLessThanOrEqual(1);
+  }, 150_000);
+
   it("ledger equals balance for every temp user", async () => {
     for (const id of [user, admin]) {
       const sum = ((await m.db.from("balance_ledger").select("amount").eq("user_id", id)).data ?? []).reduce((n, r) => n + Number(r.amount), 0);

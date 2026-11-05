@@ -69,9 +69,14 @@ I could **not** read Likeo's API documentation. Everything below marked "assumed
 
 **Not done / placeholders**
 - Kurs is a manual setting (`TODO: fetch automatically`).
-- There is no database: imported services, pricing and the provider switch live in the dev store file (`.data/dev-store.json`); orders still live in memory like the rest of the mock data.
-- The status sync has to be called by a scheduler (`/api/cron/sync-orders`); locally use "Sinkronkan" in the admin or call it with `CRON_SECRET`.
-- Provider-side refill status is not read back (the existing request flow keeps its simple lifecycle).
+- Everything is stored in Supabase now (providers, services, orders, ...); see `docs/supabase-setup.md`.
+- The status sync is called by a scheduler (`/api/cron/sync-orders`, Bearer `CRON_SECRET`): `npm run dev:cron` locally, pg_cron in production (`docs/supabase-setup.md` section 5).
 - Payment gateway: untouched.
+
+**Refill and cancel status read-back (assumptions, all isolated in `likeo.ts` / `mock.ts`)**
+- `refill_status`: `POST action=refill_status&refills=1,2,3` (up to 100 ids) answers a list `[{ "refill": "1", "status": "Completed" }, { "refill": "2", "status": { "error": "..." } }]`. A single `refill=1` answering `{ "status": "Completed" }` is accepted for one id. Status texts: `Pending` -> menunggu, `In progress` / `Processing` -> berjalan, `Completed` -> selesai, `Rejected` / `Error` / `Failed` / `Canceled` -> ditolak; any other text keeps the current state. The sync only moves a request forward (menunggu -> berjalan -> selesai/ditolak), notifies the user on each real change (dedupe key `refill:<id>:<state>`), and never moves it back.
+- Cancel: the standard API has **no separate cancel-status call**. `action=cancel&orders=1,2` answers `[{ "order": 1, "cancel": 1 }]` or `{ "error": ... }` (this is what `requestCancel` reads). Confirmation is therefore derived from the ORDER status: `Canceled` = confirmed, `Completed` / `Partial` / `Fail` = refused (too late), anything else = still pending. `cancel_requests.provider_state` (`diminta` -> `dikonfirmasi` / `ditolak` / `gagal`) records it; a refusal alerts the admins (the user was already refunded by the cancel policy). A cancellation the provider performs on its own is the ordinary `Canceled` order status: the sync refunds 100% through `create_refund_for_order` (idempotent per order and reason), so the same order can never be refunded twice.
+- The mock (`PROVIDER_MODE=mock`): a refill id `MKR-...` reads `In progress` then `Completed` (an id containing `REJECT` ends `Rejected`); `requestCancel` marks an active order `Canceled` (confirmed on the next read) and refuses `Completed` / `Partial` ones.
+- Tests: `lib/server/providers/__tests__/refill-cancel.test.ts` (adapter + mock) and `lib/server/__tests__/db-flows.test.ts` (sync against the database).
 
 Send the real API docs and I will adjust the adapter (paths, field names, error texts, currency).

@@ -32,10 +32,20 @@ export function todayFinance(db: AdminDb, today: string) {
   return { revenue, cost, refunds, profit: revenue - cost - refunds };
 }
 
+/**
+ * The sync is "stalled" when the provider has had NO SUCCESSFUL run (errors = 0) for STALL_MINUTES while the job should tick every 2 minutes.
+ * It only counts as a problem when there is something to sync or the job has run before: a fresh install that never ran is not "stalled".
+ */
+export function isSyncStalled(input: { lastSuccessAt: string | null; hasRunBefore: boolean; hasWork: boolean }, now: Date, stallMinutes = STALL_MINUTES): boolean {
+  if (!input.hasWork && !input.hasRunBefore) return false;
+  return !input.lastSuccessAt || now.getTime() - new Date(input.lastSuccessAt).getTime() > stallMinutes * 60_000;
+}
+
 export function syncHealth(db: AdminDb, now = new Date()) {
   return db.providers.map((p) => {
-    const runs = db.syncRuns.filter((r) => r.providerId === p.id);
+    const runs = db.syncRuns.filter((r) => r.providerId === p.id); // newest first
     const last = runs[0];
+    const lastSuccess = runs.find((r) => r.errors === 0);
     const consecutiveFailures = runs.findIndex((r) => r.errors === 0);
     return {
       providerId: p.id,
@@ -44,10 +54,9 @@ export function syncHealth(db: AdminDb, now = new Date()) {
       lastErrors: last?.errors ?? 0,
       failingRuns: consecutiveFailures === -1 ? runs.length : consecutiveFailures,
       minutesAgo: last ? Math.round((now.getTime() - new Date(last.finishedAt).getTime()) / 60_000) : null,
-      lastSyncedAt: last?.finishedAt ?? null,
-      /** No run for 10 minutes while the cron should tick every 2: the job stopped. */
-      // Only a problem when there is something to sync: with no running orders "never ran" is simply "nothing to do".
-      stalled: db.orders.some((o) => o.providerId === p.id && isActiveStatus(o.status)) && (!last || now.getTime() - new Date(last.finishedAt).getTime() > STALL_MINUTES * 60_000),
+      /** "Sinkronisasi terakhir": the last SUCCESSFUL run. */
+      lastSyncedAt: lastSuccess?.finishedAt ?? null,
+      stalled: isSyncStalled({ lastSuccessAt: lastSuccess?.finishedAt ?? null, hasRunBefore: runs.length > 0, hasWork: db.orders.some((o) => o.providerId === p.id && isActiveStatus(o.status)) }, now),
     };
   });
 }

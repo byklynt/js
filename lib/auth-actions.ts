@@ -9,6 +9,8 @@ import { siteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import { resolveLoginEmail } from "@/lib/server/user-auth";
 import { createClient } from "@/lib/supabase/server";
+import { REMEMBER_COOKIE, REMEMBER_MAX_AGE } from "@/lib/supabase/remember";
+import { cookies } from "next/headers";
 
 export type AuthResult = { success: true; message?: string } | { success: false; message: string };
 
@@ -57,13 +59,14 @@ export async function register(payload: RegisterPayload): Promise<AuthResult> {
 export async function login(payload: LoginPayload): Promise<AuthResult> {
   const parsed = loginSchema.safeParse(payload);
   if (!parsed.success) return { success: false, message: GENERIC };
-  const { username, password } = parsed.data;
+  const { username, password, rememberMe } = parsed.data;
   const key = `login:${await getClientIp()}:${username.toLowerCase()}`;
   const limit = await hitRateLimit(key, LOGIN_LIMIT.limit, LOGIN_LIMIT.windowSeconds);
   if (!limit.allowed) return { success: false, message: `Terlalu banyak percobaan. Coba lagi dalam ${minutes(limit.retryAfterSeconds)} menit.` };
 
   const email = await resolveLoginEmail(username);
-  const supabase = await createClient();
+  // "Ingat saya": persistent (30 day) session cookies when ticked, browser-session cookies otherwise (see lib/supabase/remember.ts).
+  const supabase = await createClient({ remember: Boolean(rememberMe) });
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error || !data.user) {
     if (error?.code === "email_not_confirmed") return { success: false, message: "Email belum dikonfirmasi. Buka link konfirmasi di emailmu." };
@@ -71,10 +74,11 @@ export async function login(payload: LoginPayload): Promise<AuthResult> {
   }
   const { data: profile } = await supabaseAdmin().from("profiles").select("status").eq("id", data.user.id).maybeSingle();
   if (!profile || profile.status !== "aktif") {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: "local" });
     return { success: false, message: "Akunmu sedang diblokir. Hubungi support." };
   }
   await resetRateLimit(key);
+  (await cookies()).set(REMEMBER_COOKIE, rememberMe ? "1" : "0", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", ...(rememberMe ? { maxAge: REMEMBER_MAX_AGE } : {}) });
   await supabaseAdmin().from("profiles").update({ last_login_at: new Date().toISOString() }).eq("id", data.user.id);
   return { success: true };
 }
@@ -93,7 +97,8 @@ export async function loginWithGoogle(): Promise<AuthResult> {
 
 export async function logout(): Promise<void> {
   const supabase = await createClient();
-  await supabase.auth.signOut();
+  await supabase.auth.signOut({ scope: "local" });
+  (await cookies()).delete(REMEMBER_COOKIE);
 }
 
 /** Password reset: always answers the same, whether or not the e-mail is registered. */

@@ -164,4 +164,21 @@ describe.skipIf(!enabled)("money functions under concurrency (real database)", (
     expect(Number(o.refunded_amount)).toBeLessThanOrEqual(Number(o.charge));
     expect(await balance(u)).toBe(await ledgerSum(u));
   }, 60_000);
+
+  it("cron lease: six parallel acquires of one job -> exactly one wins; release and expiry free it", async () => {
+    const name = `zt-lease-${run}`;
+    const owners = Array.from({ length: 6 }, (_, i) => `o${i}`);
+    const results = await Promise.all(owners.map((o) => db.rpc("acquire_cron_lease", { p_name: name, p_ttl_seconds: 60, p_owner: o })));
+    expect(results.every((r) => !r.error)).toBe(true);
+    const winners = results.map((r, i) => (r.data === true ? owners[i] : null)).filter(Boolean) as string[];
+    expect(winners).toHaveLength(1);
+    expect((await db.rpc("acquire_cron_lease", { p_name: name, p_ttl_seconds: 60, p_owner: "late" })).data).toBe(false);
+    await db.rpc("release_cron_lease", { p_name: name, p_owner: "someone-else" }); // only the owner can release
+    expect((await db.rpc("acquire_cron_lease", { p_name: name, p_ttl_seconds: 60, p_owner: "late" })).data).toBe(false);
+    await db.rpc("release_cron_lease", { p_name: name, p_owner: winners[0] });
+    expect((await db.rpc("acquire_cron_lease", { p_name: name, p_ttl_seconds: 1, p_owner: "next" })).data).toBe(true);
+    await new Promise((r) => setTimeout(r, 1500)); // the 1 s lease expires by itself (a crashed run cannot block the job)
+    expect((await db.rpc("acquire_cron_lease", { p_name: name, p_ttl_seconds: 60, p_owner: "after-expiry" })).data).toBe(true);
+    await db.from("cron_leases").delete().eq("name", name);
+  }, 60_000);
 });

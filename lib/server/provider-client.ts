@@ -14,6 +14,9 @@ export interface ProviderClient {
   cancelOrder(providerId: string, providerOrderId: string): Promise<{ requestId: string }>;
   refillOrder(providerId: string, providerOrderId: string): Promise<{ requestId: string }>;
   getBalance(providerId: string): Promise<number>;
+  /** Read back refill requests (provider refill ids) and the outcome of forwarded cancellations (provider order ids). */
+  getRefillStatuses?(providerId: string, refillIds: string[]): Promise<Record<string, import("./providers/types").RefillStatusItem>>;
+  getCancelStatuses?(providerId: string, providerOrderIds: string[]): Promise<Record<string, import("./providers/types").CancelStatusItem>>;
   /** Optional batch status (up to 100 ids per call). Without it the sync job asks one order at a time. */
   getOrdersStatus?(providerId: string, providerOrderIds: string[]): Promise<Record<string, ProviderOrderState | Error>>;
 }

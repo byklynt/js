@@ -555,7 +555,7 @@ export async function reviewRefill(input: unknown) {
 export async function reviewRefund(input: unknown) {
   return run(S.refundReviewSchema, input, async (d, admin) => {
     const db = supabaseAdmin();
-    const { data: refund } = await db.from("refunds").select("id,status,amount,reason,user_id,order_id,policy_percent,overridden,profiles(username)").eq("id", d.id).maybeSingle();
+    const { data: refund } = await db.from("refunds").select("id,status,amount,reason,user_id,order_id,policy_percent,overridden,cancel_request_id,profiles(username)").eq("id", d.id).maybeSingle();
     if (!refund) return fail("Refund tidak ditemukan.");
     const username = (refund.profiles as unknown as { username: string } | null)?.username ?? "pengguna";
     const before = { status: refund.status, amount: Number(refund.amount) };
@@ -566,11 +566,14 @@ export async function reviewRefund(input: unknown) {
       const res = await approveRefund(refund.id, admin.sub, { overrideAmount: d.overrideAmount, overrideReason: d.overrideReason });
       if (!res.duplicate && refund.reason === "user_cancel" && order?.providerOrderId) {
         // Best effort: the panel-side cancellation and refund already happened; ask the provider to stop the order too.
+        let providerState: "diminta" | "gagal" = "gagal";
         try {
           await createProviderClient().cancelOrder(order.providerId, order.providerOrderId);
+          providerState = "diminta"; // the sync job reads the outcome back (confirmed / refused)
         } catch {
-          /* provider unreachable: the order is cancelled here either way */
+          /* provider unreachable or refused: the order is cancelled here either way */
         }
+        if (refund.cancel_request_id) await db.from("cancel_requests").update({ provider_state: providerState }).eq("id", refund.cancel_request_id);
       }
       await audit(admin, refund.reason === "user_cancel" ? "refund.approve_user_cancel" : "refund.approve", "refund", refund.id, before, {
         status: res.status, amount: Number(res.amount), userId: refund.user_id, policyPercent: refund.policy_percent, overridden: d.overrideAmount !== undefined, overrideReason: d.overrideReason ?? null,

@@ -23,7 +23,7 @@ async function ready() {
 let code = 1;
 try {
   if (!(await ready())) throw new Error("server did not start");
-  const r = spawnSync("npx", ["vitest", "run", "--config", "vitest.e2e.config.ts"], {
+  const r = spawnSync("npx", ["vitest", "run", "--config", "vitest.e2e.config.ts", ...process.argv.slice(2)], {
     stdio: "inherit",
     shell: win,
     env: { ...process.env, RUN_E2E: "1", E2E_BASE: `http://localhost:${PORT}` },

@@ -15,6 +15,7 @@ delete from public.audit_logs where
   or (target_type = 'deposit' and target_id in (select id from zt_deposits))
   or target_id in (select id::text from zt_users) or admin_id in (select id from zt_users);
 delete from public.audit_logs where action = 'webhook.rejected' and created_at > now() - interval '45 minutes';
+delete from public.sanity_runs where created_at > now() - interval '45 minutes';
 delete from public.refunds where user_id in (select id from zt_users);
 delete from public.refill_requests where user_id in (select id from zt_users);
 delete from public.cancel_requests where user_id in (select id from zt_users);

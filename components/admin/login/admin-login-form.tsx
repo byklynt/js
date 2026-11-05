@@ -23,6 +23,7 @@ export function AdminLoginForm({ startAtCode = false }: { startAtCode?: boolean 
   const [errors, setErrors] = useState<{ identifier?: string; password?: string; code?: string }>({});
   const [alert, setAlert] = useState<AlertState>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [backupWarning, setBackupWarning] = useState<string | null>(null);
 
   function finish() {
     setAlert({ type: "success", message: "Berhasil masuk! Mengalihkan ke dasbor admin..." });
@@ -56,7 +57,7 @@ export function AdminLoginForm({ startAtCode = false }: { startAtCode?: boolean 
     }
   }
 
-  async function handleCode(e: FormEvent) {
+  async function handleCode(e: FormEvent, confirmBackup = false) {
     e.preventDefault();
     setAlert(null);
     if (!/^(\d{6}|[a-z0-9]{4}-[a-z0-9]{4})$/i.test(code)) {
@@ -66,8 +67,16 @@ export function AdminLoginForm({ startAtCode = false }: { startAtCode?: boolean 
     setErrors({});
     setSubmitting(true);
     try {
-      const result = await adminVerify2fa({ code });
-      if (result.status === "ok") finish();
+      const result = await adminVerify2fa({ code, confirmBackup });
+      if (result.status === "confirm_backup") setBackupWarning(result.message);
+      else if (result.status === "ok" && result.message) {
+        // A backup code was used: 2FA is switched off and the session ended. Back to the password step with the explanation.
+        setBackupWarning(null);
+        setCode("");
+        setPassword("");
+        setStep("credentials");
+        setAlert({ type: "success", message: result.message });
+      } else if (result.status === "ok") finish();
       else if (result.status === "error") {
         setAlert({ type: "error", message: result.message });
         toast(result.message, "error");
@@ -121,8 +130,22 @@ export function AdminLoginForm({ startAtCode = false }: { startAtCode?: boolean 
       ) : (
         <form noValidate onSubmit={handleCode} className="mt-7 space-y-4">
           <FormAlert state={alert} />
+          {backupWarning ? (
+            <div role="alertdialog" aria-labelledby="backup-title" className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+              <p id="backup-title" className="font-bold">Pakai kode cadangan?</p>
+              <p>{backupWarning}</p>
+              <div className="flex gap-2">
+                <button type="button" disabled={submitting} onClick={(e) => handleCode(e as unknown as FormEvent, true)} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60">
+                  Ya, nonaktifkan 2FA dan masuk
+                </button>
+                <button type="button" onClick={() => { setBackupWarning(null); setCode(""); }} className="rounded-lg border border-amber-400 px-3 py-2 text-xs font-semibold hover:bg-amber-100 dark:hover:bg-amber-500/20">
+                  Batal
+                </button>
+              </div>
+            </div>
+          ) : null}
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Akun ini memakai verifikasi dua langkah. Masukkan 6 digit kode dari aplikasi autentikator, atau satu kode cadangan. Setiap kode hanya berlaku sekali: jika baru saja memakainya, tunggu kode berikutnya (sekitar 30 detik).
+            Akun ini memakai verifikasi dua langkah. Masukkan 6 digit kode dari aplikasi autentikator, atau, jika tidak bisa membuka aplikasinya, satu kode cadangan (xxxx-xxxx; memakainya menonaktifkan 2FA dan kamu harus mengaturnya ulang). Setiap kode hanya berlaku sekali: jika baru saja memakainya, tunggu kode berikutnya (sekitar 30 detik).
           </p>
           <TextInput
             label="Kode verifikasi"

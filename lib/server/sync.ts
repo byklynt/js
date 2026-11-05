@@ -14,7 +14,8 @@ export const FAILURE_ALERT_THRESHOLD = 3;
 export const MAX_ORDERS_PER_TICK = 1000;
 
 export type SyncRun = { providerId: string; startedAt: string; finishedAt: string; ordersChecked: number; ordersChanged: number; errors: number; errorMessage: string | null };
-export type SyncSummary = { runs: SyncRun[]; refundsCreated: number };
+export type SyncSummary = { runs: SyncRun[]; refundsCreated: number; requestsUpdated: number; stoppedEarly: boolean };
+export type SyncOptions = { /** Epoch ms after which the run stops starting new batches (the next tick continues). */ deadlineAt?: number };
 
 type ActiveOrder = { id: number; user_id: string; provider_order_id: string; status: string; start_count: number; remains: number; cancelled_by: string | null; needs_manual_check: boolean };
 
@@ -59,9 +60,18 @@ async function applyState(order: ActiveOrder, state: { status: string; startCoun
   return { changed, refunded };
 }
 
-/** Moves cancel / refill requests forward based on what the provider and the order now say. */
-async function updateRequests(now: Date) {
+const REFILL_RANK = { menunggu: 0, berjalan: 1, selesai: 2, ditolak: 2 } as const;
+
+/**
+ * Moves cancel / refill requests forward based on what the provider and the order now say.
+ * - A pending USER cancel is decided by an admin, but if the order already ended another way the request is moot (provider cancel -> the
+ *   normal order sync already created the 100% refund through create_refund_for_order, which is idempotent).
+ * - Refill requests that were sent to the provider are read back (refill_status): the user is notified on every real change.
+ * - Cancellations an admin forwarded to the provider (cancel_requests.provider_state = 'diminta') are read back: confirmed or refused.
+ */
+export async function updateRequests(client: ProviderClient, now: Date): Promise<number> {
   const db = supabaseAdmin();
+  let updated = 0;
   const { data: open } = await db.from("cancel_requests").select("id,user_id,order_id,orders!inner(status,cancelled_by)").in("status", ["menunggu", "berjalan"]);
   for (const c of (open ?? []) as unknown as { id: string; user_id: string; order_id: number; orders: { status: string; cancelled_by: string | null } }[]) {
     const o = c.orders;
@@ -72,18 +82,75 @@ async function updateRequests(now: Date) {
     if (o.status === "dibatalkan") {
       await db.from("cancel_requests").update({ status: "selesai" }).eq("id", c.id);
       await waiting("Pesanan sudah dibatalkan oleh provider; refund penuh diberikan otomatis.");
+      updated++;
     } else if (!isActiveStatus(o.status as OrderStatus)) {
       const reason = "Pesanan sudah selesai sebelum pembatalan diproses.";
       await waiting(reason);
       await db.from("cancel_requests").update({ status: "ditolak", reject_reason: reason }).eq("id", c.id);
       await notifyUser(c.user_id, { type: "pesanan", title: `Pembatalan #${c.order_id} ditolak`, body: reason, href: `/dashboard/orders?search=${c.order_id}`, dedupeKey: `cancel-rejected:${c.id}` });
+      updated++;
     }
   }
-  // The provider's refill status is not read back yet. Only the mock moves requests along by itself; with a real provider
-  // an admin sets "berjalan" / "selesai" / "ditolak" on /admin/refills.
-  if (providerMode() === "mock") {
-    await db.from("refill_requests").update({ status: "berjalan" }).eq("status", "menunggu");
+
+  // Refill requests: read the provider's status back.
+  if (client.getRefillStatuses) {
+    const { data: refills } = await db.from("refill_requests").select("id,user_id,order_id,status,provider_request_id").in("status", ["menunggu", "berjalan"]).not("provider_request_id", "is", null).order("created_at").limit(200);
+    const ids = [...new Set((refills ?? []).map((r) => r.provider_request_id as string))];
+    if (ids.length) {
+      let results: Awaited<ReturnType<NonNullable<ProviderClient["getRefillStatuses"]>>> = {};
+      try {
+        results = await client.getRefillStatuses("", ids);
+      } catch (e) {
+        await logSystem("sync.refill_status_failed", "refill", "-", null, { error: e instanceof Error ? e.message.slice(0, 120) : "error" });
+      }
+      for (const r of refills ?? []) {
+        const item = results[r.provider_request_id as string];
+        if (!item || !item.ok || !item.state) continue;
+        const current = r.status as keyof typeof REFILL_RANK;
+        if (item.state === current || REFILL_RANK[item.state] <= REFILL_RANK[current]) continue; // only forward, never back
+        const { data: changed } = await db.from("refill_requests").update({ status: item.state, ...(item.state === "ditolak" ? { reject_reason: "Ditolak oleh provider." } : {}) }).eq("id", r.id).eq("status", current).select("id");
+        if (!changed?.length) continue; // a parallel run (or an admin) already moved it
+        updated++;
+        await notifyUser(r.user_id, {
+          type: "pesanan", title: `Refill pesanan #${r.order_id} ${item.state === "selesai" ? "selesai" : item.state === "ditolak" ? "ditolak" : "diproses"}`,
+          body: item.state === "ditolak" ? "Permintaan refill ditolak provider. Buka tiket bila ada pertanyaan." : "Lihat statusnya di halaman Refill.",
+          href: "/dashboard/refill", dedupeKey: `refill:${r.id}:${item.state}`,
+        });
+      }
+    }
   }
+
+  // Cancellations forwarded to the provider: confirmed or refused.
+  if (client.getCancelStatuses) {
+    const { data: sent } = await db.from("cancel_requests").select("id,user_id,order_id,orders!inner(provider_order_id,status,cancelled_by)").eq("provider_state", "diminta").limit(200);
+    type Sent = { id: string; user_id: string; order_id: number; orders: { provider_order_id: string; status: string; cancelled_by: string | null } };
+    const rows = ((sent ?? []) as unknown as Sent[]).filter((x) => x.orders.provider_order_id);
+    if (rows.length) {
+      let results: Awaited<ReturnType<NonNullable<ProviderClient["getCancelStatuses"]>>> = {};
+      try {
+        results = await client.getCancelStatuses("", [...new Set(rows.map((x) => x.orders.provider_order_id))]);
+      } catch (e) {
+        await logSystem("sync.cancel_status_failed", "order", "-", null, { error: e instanceof Error ? e.message.slice(0, 120) : "error" });
+      }
+      for (const c of rows) {
+        const item = results[c.orders.provider_order_id];
+        if (!item || !item.ok || item.state === "pending") continue;
+        const next = item.state === "confirmed" ? "dikonfirmasi" : "ditolak";
+        const { data: changed } = await db.from("cancel_requests").update({ provider_state: next }).eq("id", c.id).eq("provider_state", "diminta").select("id");
+        if (!changed?.length) continue;
+        updated++;
+        if (next === "dikonfirmasi") {
+          // Confirmed by the provider. An order cancelled provider-side gets its 100% refund through the same idempotent function the
+          // order sync uses; one the admin already cancelled (user cancel) was refunded by the policy and is left alone.
+          if (c.orders.cancelled_by !== "user" && c.orders.status === "dibatalkan") await callFn("create_refund_for_order", { p_order: c.order_id, p_reason: "dibatalkan" });
+          await notifyUser(c.user_id, { type: "pesanan", title: `Pembatalan #${c.order_id} dikonfirmasi provider`, body: "Provider sudah membatalkan pesananmu.", href: `/dashboard/orders?search=${c.order_id}`, dedupeKey: `cancel-confirmed:${c.id}` });
+        } else {
+          await notifyAdmins({ type: "pesanan", title: `Provider menolak pembatalan #${c.order_id}`, body: "Pesanan sudah selesai di provider. Saldo user sudah dikembalikan sesuai kebijakan; periksa selisih biaya.", href: "/admin/orders", dedupeKey: `cancel-provider-rejected:${c.id}` });
+        }
+      }
+    }
+  }
+  return updated;
 }
 
 /** After 3 failing runs in a row for one provider: raise one alert (until it recovers). */
@@ -117,13 +184,16 @@ export async function applyLowBalancePolicy(): Promise<number> {
 }
 
 /** One cron tick (every 2 minutes, see docs/supabase-setup.md). */
-export async function syncOrders(client: ProviderClient, now = new Date()): Promise<SyncSummary> {
+export async function syncOrders(client: ProviderClient, now = new Date(), opts: SyncOptions = {}): Promise<SyncSummary> {
+  const outOfTime = () => opts.deadlineAt !== undefined && Date.now() > opts.deadlineAt;
+  let stoppedEarly = false;
   const db = supabaseAdmin();
   const runs: SyncRun[] = [];
   let refundsCreated = 0;
   const { data: providers } = await db.from("providers").select("id,name").eq("active", true);
 
   for (const provider of providers ?? []) {
+    if (outOfTime()) { stoppedEarly = true; break; }
     const { data: orders } = await db.from("orders")
       .select("id,user_id,provider_order_id,status,start_count,remains,cancelled_by,needs_manual_check")
       .eq("provider_id", provider.id).neq("provider_order_id", "").in("status", ACTIVE_STATUSES).order("id").limit(MAX_ORDERS_PER_TICK);
@@ -144,6 +214,7 @@ export async function syncOrders(client: ProviderClient, now = new Date()): Prom
     if (client.getOrdersStatus) {
       // Up to 100 provider order ids per call.
       for (let i = 0; i < list.length; i += MAX_STATUS_BATCH) {
+        if (outOfTime()) { stoppedEarly = true; break; }
         const chunk = list.slice(i, i + MAX_STATUS_BATCH);
         run.ordersChecked += chunk.length;
         let results: Awaited<ReturnType<NonNullable<typeof client.getOrdersStatus>>>;
@@ -186,7 +257,7 @@ export async function syncOrders(client: ProviderClient, now = new Date()): Prom
     runs.push(run);
     await maybeAlert(provider.id, provider.name, now);
   }
-  await updateRequests(now);
-  await applyLowBalancePolicy();
-  return { runs, refundsCreated };
+  const requestsUpdated = outOfTime() ? 0 : await updateRequests(client, now);
+  if (!outOfTime()) await applyLowBalancePolicy();
+  return { runs, refundsCreated, requestsUpdated, stoppedEarly: stoppedEarly || outOfTime() };
 }

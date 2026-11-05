@@ -6,8 +6,8 @@
 import type { AdminDb } from "@/lib/admin-data";
 import { ProviderError } from "../provider-client";
 import { LIKEO_ID } from "./config";
-import { mapLikeoStatus } from "./likeo";
-import type { BatchStatusItem, CancelResult, ProviderAdapter, ProviderOrderStatus, ProviderServiceInfo } from "./types";
+import { cancelStateFromStatus, mapLikeoStatus, mapRefillStatus } from "./likeo";
+import type { BatchStatusItem, CancelResult, CancelStatusItem, RefillStatusItem, ProviderAdapter, ProviderOrderStatus, ProviderServiceInfo } from "./types";
 
 const row = (id: number, name: string, category: string, rate: number, min: number, max: number, extra: Partial<ProviderServiceInfo> = {}): ProviderServiceInfo => ({
   id: String(id), name, category, rate, min, max, refill: false, cancel: false, type: "Default", ...extra,
@@ -32,6 +32,9 @@ export const MOCK_CATALOG: ProviderServiceInfo[] = [
   row(1015, "Website Traffic | Social Referral", "Website Traffic", 0.7, 1_000, 500_000),
   row(1016, "Reddit Upvotes | Mixed", "Reddit Upvotes", 4.2, 10, 5_000, { type: "Package" }),
 ];
+
+/** Mock refill lifecycle: Pending -> In progress (first read) -> Completed (second read). A refill id containing "REJECT" ends as Rejected. */
+const refillPolls = new Map<string, number>();
 
 const polls = new WeakMap<AdminDb, Map<string, number>>();
 const pollsFor = (db: AdminDb) => {
@@ -93,10 +96,36 @@ export function createMockAdapter(db: AdminDb, providerId: string = LIKEO_ID): P
       if (!db.providerOrders[id]) throw new ProviderError("ID pesanan tidak ditemukan di Likeo.", { kind: "provider" });
       return { refillId: `MKR-${id}` };
     },
+    async getRefillStatuses(refillIds) {
+      guard();
+      const out: Record<string, RefillStatusItem> = {};
+      for (const id of refillIds) {
+        if (!id.startsWith("MKR-")) { out[id] = { ok: false, error: "Status refill tidak ada di jawaban Likeo." }; continue; }
+        const n = (refillPolls.get(id) ?? 0) + 1;
+        refillPolls.set(id, n);
+        const raw = id.includes("REJECT") ? "Rejected" : n === 1 ? "In progress" : "Completed";
+        out[id] = { ok: true, raw, state: mapRefillStatus(raw) };
+      }
+      return out;
+    },
+    async getCancelStatuses(providerOrderIds) {
+      guard();
+      const out: Record<string, CancelStatusItem> = {};
+      for (const id of providerOrderIds) {
+        const state = db.providerOrders[id];
+        out[id] = state ? { ok: true, raw: state.status, state: cancelStateFromStatus(state.status) } : { ok: false, error: "ID pesanan tidak ditemukan di Likeo." };
+      }
+      return out;
+    },
     async requestCancel(ids) {
       guard();
       const out: Record<string, CancelResult> = {};
-      for (const id of ids) out[id] = db.providerOrders[id] ? { ok: true } : { ok: false, error: "ID pesanan tidak ditemukan di Likeo." };
+      for (const id of ids) {
+        const state = db.providerOrders[id];
+        if (!state) out[id] = { ok: false, error: "ID pesanan tidak ditemukan di Likeo." };
+        else if (["Completed", "Partial", "Canceled"].includes(state.status)) out[id] = { ok: false, error: "Pesanan ini tidak bisa dibatalkan di Likeo." };
+        else { state.status = "Canceled"; out[id] = { ok: true }; } // accepted: the next status read confirms it
+      }
       return out;
     },
   };

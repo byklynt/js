@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "./database.types";
 import { supabaseAnonKey, supabaseUrl } from "./env";
+import { authCookieOptions, lifetimeFor, REMEMBER_COOKIE } from "./remember";
 
 /**
  * Refreshes the Supabase session on every matched request (rotates the cookies) and returns the verified JWT claims.
@@ -10,13 +11,15 @@ import { supabaseAnonKey, supabaseUrl } from "./env";
  */
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
+  const remember = request.cookies.get(REMEMBER_COOKIE)?.value === "1";
   const supabase = createServerClient<Database>(supabaseUrl(), supabaseAnonKey(), {
+    cookieOptions: authCookieOptions(remember),
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll(list) {
         for (const { name, value } of list) request.cookies.set(name, value);
         response = NextResponse.next({ request });
-        for (const { name, value, options } of list) response.cookies.set(name, value, options);
+        for (const { name, value, options } of list) response.cookies.set(name, value, lifetimeFor(options, remember));
       },
     },
   });

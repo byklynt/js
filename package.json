@@ -24,7 +24,10 @@
     "admin:create": "node scripts/admin-create.mjs",
     "bootstrap": "tsx scripts/bootstrap.ts",
     "security:scan": "node scripts/bundle-scan.mjs",
-    "test:e2e": "node scripts/run-e2e.mjs"
+    "test:e2e": "node scripts/run-e2e.mjs",
+    "dev:cron": "node scripts/dev-cron.mjs",
+    "cron:enable": "node scripts/cron-admin.mjs enable",
+    "cron:disable": "node scripts/cron-admin.mjs disable"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

@@ -159,7 +159,7 @@ export function AdminDashboard({ data }: { data: Data }) {
                 <div className="min-w-0">
                   <p className="text-[11px] font-medium text-ink dark:text-white">{h.name}</p>
                   <p className="mt-1 text-[10px] text-[#5B6B8C] dark:text-slate-400">
-                    {h.lastSyncedAt ? <>Sinkron terakhir <time dateTime={h.lastSyncedAt}>{formatDateTime(h.lastSyncedAt)}</time></> : "Belum pernah sinkron"}
+                    {h.lastSyncedAt ? <>Sinkronisasi terakhir <time dateTime={h.lastSyncedAt}>{formatDateTime(h.lastSyncedAt)}</time></> : "Belum pernah sinkron berhasil"}
                   </p>
                 </div>
                 {h.stalled ? (

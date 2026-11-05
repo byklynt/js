@@ -410,6 +410,7 @@ export type Database = {
           order_id: number
           policy_percent: number | null
           provider_request_id: string | null
+          provider_state: string | null
           reject_reason: string | null
           remains_at_request: number | null
           status: string
@@ -424,6 +425,7 @@ export type Database = {
           order_id: number
           policy_percent?: number | null
           provider_request_id?: string | null
+          provider_state?: string | null
           reject_reason?: string | null
           remains_at_request?: number | null
           status?: string
@@ -438,6 +440,7 @@ export type Database = {
           order_id?: number
           policy_percent?: number | null
           provider_request_id?: string | null
+          provider_state?: string | null
           reject_reason?: string | null
           remains_at_request?: number | null
           status?: string
@@ -467,6 +470,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      cron_leases: {
+        Row: {
+          last_finished: string | null
+          last_started: string | null
+          locked_by: string
+          locked_until: string
+          name: string
+        }
+        Insert: {
+          last_finished?: string | null
+          last_started?: string | null
+          locked_by?: string
+          locked_until?: string
+          name: string
+        }
+        Update: {
+          last_finished?: string | null
+          last_started?: string | null
+          locked_by?: string
+          locked_until?: string
+          name?: string
+        }
+        Relationships: []
       }
       deposits: {
         Row: {
@@ -1598,6 +1625,10 @@ export type Database = {
       }
     }
     Functions: {
+      acquire_cron_lease: {
+        Args: { p_name: string; p_owner: string; p_ttl_seconds: number }
+        Returns: boolean
+      }
       admin_adjust_balance: {
         Args: {
           p_admin: string
@@ -1871,6 +1902,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      release_cron_lease: {
+        Args: { p_name: string; p_owner: string }
+        Returns: undefined
       }
       request_cancel: {
         Args: { p_order: number; p_user: string }

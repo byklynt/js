@@ -37,6 +37,14 @@ export type ProviderBalance = { balance: number; currency: string };
 export type BatchStatusItem = { ok: true; status: ProviderOrderStatus } | { ok: false; error: string };
 export type CancelResult = { ok: true } | { ok: false; error: string };
 
+/** Refill request state after mapping: menunggu / berjalan / selesai / ditolak, or null for unknown text (keep the old state). */
+export type RefillState = "menunggu" | "berjalan" | "selesai" | "ditolak";
+export type RefillStatusItem = { ok: true; raw: string; state: RefillState | null } | { ok: false; error: string };
+
+/** What the provider says about a cancellation of one order: confirmed (order is canceled), still pending, or rejected (it finished / is partial). */
+export type CancelState = "confirmed" | "pending" | "rejected";
+export type CancelStatusItem = { ok: true; raw: string; state: CancelState } | { ok: false; error: string };
+
 export interface ProviderAdapter {
   readonly mode: "mock" | "live";
   getServices(): Promise<ProviderServiceInfo[]>;
@@ -47,6 +55,10 @@ export interface ProviderAdapter {
   /** Up to 100 ids per call. */
   getOrdersStatus(ids: string[]): Promise<Record<string, BatchStatusItem>>;
   requestRefill(id: string): Promise<{ refillId: string }>;
+  /** Up to 100 refill ids per call (PerfectPanel-style action=refill_status). */
+  getRefillStatuses(refillIds: string[]): Promise<Record<string, RefillStatusItem>>;
+  /** Cancellation outcome per provider order id (derived from the order status: there is no separate cancel-status call in the standard API). */
+  getCancelStatuses(providerOrderIds: string[]): Promise<Record<string, CancelStatusItem>>;
   requestCancel(ids: string[]): Promise<Record<string, CancelResult>>;
 }
 

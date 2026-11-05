@@ -4,6 +4,8 @@ JagoanSosmed runs on Supabase (Postgres + Auth + Storage + Realtime). This file 
 
 ## 1. Create and link the project
 
+> **Region:** the dev project is in `ap-northeast-2` (Seoul), which is fine for development. **Create the production project in Singapore (`ap-southeast-1`)**: it is the closest region to Indonesian users, and a project's region cannot be changed later (you would have to migrate). Keep the app's hosting region next to the database.
+
 1. Create a project at supabase.com (a separate **dev** project and, later, a **production** project).
 2. `npx supabase login`, then `npx supabase link --project-ref <ref>`.
 3. Copy `.env.example` to `.env.local` and fill in:
@@ -55,20 +57,70 @@ The password is typed at a hidden prompt (or read from `ADMIN_CREATE_PASSWORD`);
 - **Authentication → Rate limits**: keep the defaults or tighten; the app adds its own limits in the `rate_limits` table.
 - **Authentication → SMTP**: configure a real SMTP server before production. The built-in mailer is for testing only (very low hourly limit) and password-reset / confirmation e-mails depend on it.
 - **Authentication → Providers → Google** (optional): create an OAuth client in Google Cloud, paste the client id / secret, then set `googleLogin: true` in `lib/features.ts`.
-- **Authentication → Sessions**: session lifetime / inactivity timeout are set here. The "Ingat saya" checkbox does not change the cookie lifetime.
+- **Authentication → Sessions**: session lifetime / inactivity timeout are set here. The "Ingat saya" checkbox decides how the browser keeps the cookies: unticked = browser-session cookies (gone when the browser closes), ticked = 30 days (the refresh-token lifetime configured here still applies on top).
 - **Database → Backups**: enable daily backups; for production consider **Point-in-Time Recovery** (paid add-on).
 - **Storage**: the buckets `avatars` (public) and `ticket-attachments` (private) are created by the migrations. Nothing to do; verify under Storage → Policies.
 
-## 5. Cron
+## 5. Scheduling the jobs
 
-`/api/cron/sync-orders` syncs provider order statuses (every 2 minutes) and must be called with `Authorization: Bearer $CRON_SECRET`.
+Three endpoints do the scheduled work. All of them require `Authorization: Bearer <CRON_SECRET>` (compared in constant time; 401 otherwise, 503 if `CRON_SECRET` is not set), run under a **lease** (`cron_leases`: two overlapping runs never both work; the second answers `202 skipped`, and a crashed run frees itself when the lease expires), and stop themselves before 50 s (the next tick continues). The secret is only ever sent in the header, never in a URL or a log line. **No Vercel Cron is used.**
 
-- **Vercel Cron**: add to `vercel.json`: `{ "crons": [{ "path": "/api/cron/sync-orders", "schedule": "*/2 * * * *" }] }` and set `CRON_SECRET` in the Vercel project (Vercel sends it as the bearer token).
-- **pg_cron + pg_net** (alternative): enable both extensions, then
-  `select cron.schedule('sync-orders', '*/2 * * * *', $$ select net.http_get('https://<your-domain>/api/cron/sync-orders', headers := jsonb_build_object('Authorization', 'Bearer <CRON_SECRET>')) $$);`
-  Keep the secret out of version control (set it in the SQL editor, not in a migration).
+| Endpoint | Schedule | What it does |
+| --- | --- | --- |
+| `POST /api/cron/sync-orders` | every 2 minutes | order status, automatic refunds, refill and cancel read-back, low-balance policy, provider alerts |
+| `POST /api/cron/sanity` | daily 03:00 WIB | ledger vs balances, refund mismatches, stuck orders (`run_sanity_check`) |
+| `POST /api/cron/stats-refresh` | every 30 minutes | provider balance refresh + housekeeping (expired rate-limit counters, sync runs older than 30 days). The dashboard and stats are live SQL aggregates, so there is no materialized view to refresh |
 
-The daily sanity check is `select public.run_sanity_check();` (ledger sum vs balances, refund mismatches, stuck orders).
+### Local (development)
+
+```
+npm run dev       # terminal 1
+npm run dev:cron  # terminal 2: calls the endpoints on http://localhost:3000 every 2 minutes
+```
+
+`CRON_SECRET` comes from `.env.local`; `CRON_INTERVAL_SECONDS` (default 120) and `CRON_BASE_URL` (default `http://localhost:3000`; only localhost or HTTPS is accepted) are optional. One log line per call; Ctrl+C stops it cleanly.
+
+### Production A (default): Supabase pg_cron + pg_net + Vault
+
+Needs the app to have a **public HTTPS URL** (Supabase's servers call it). The secrets are stored in Supabase Vault and read at call time; they are not in the job text, in `cron.job`, or in a URL.
+
+```
+npm run cron:enable -- https://your-app.example            # dry run: prints the SQL with the secret redacted, sends nothing
+npm run cron:enable -- https://your-app.example --confirm  # runs it against the LINKED project
+npm run cron:disable -- --confirm                          # unschedules every jago-* job (add --purge to delete the Vault secrets too)
+```
+
+`cron:enable` is idempotent (Vault secrets are created or updated, jobs are upserted by name from `supabase/cron/enable-cron.sql`). It reads `CRON_SECRET` from `.env.local`, writes the generated SQL to a temporary owner-only file that is deleted right after, and never prints the secret. **Do not run it until the app is deployed and `CRON_SECRET` is set on the server too.**
+
+Verify (SQL editor):
+
+```sql
+select jobid, jobname, schedule, active from cron.job where jobname like 'jago-%';
+select j.jobname, d.status, d.return_message, d.start_time, d.end_time
+  from cron.job_run_details d join cron.job j using (jobid)
+ where j.jobname like 'jago-%' order by d.start_time desc limit 20;
+-- pg_net is asynchronous: the HTTP result of each call
+select id, status_code, left(content::text, 200) as body, error_msg, created
+  from net._http_response order by created desc limit 20;
+select name, locked_until, last_started, last_finished from public.cron_leases;   -- is a run in progress?
+```
+
+What failures look like: `cron.job_run_details.status = 'failed'` with "Cron belum dikonfigurasi" (the Vault secrets are missing: run `cron:enable` again); `net._http_response.status_code = 401` (the Vault `jago_cron_secret` differs from `CRON_SECRET` on the server), `503` (`CRON_SECRET` not set on the server), `202` (a previous run was still going: normal, harmless), timeouts or `error_msg` (the app is unreachable). The admin dashboard also shows "Sinkronisasi terakhir" per provider and a red **Sinkronisasi terhenti** chip after 10 minutes without a successful run.
+
+Pause one job: `select cron.alter_job((select jobid from cron.job where jobname = 'jago-sync-orders'), active := false);` (use `true` to resume). Pause everything: `npm run cron:disable -- --confirm`.
+
+### Production B: a plain crontab (VPS) or cron-job.org
+
+HTTPS only, and the secret in the header, never in the URL.
+
+```
+# /etc/cron.d/jagoansosmed   (CRON_SECRET lives in a root-only file, e.g. /etc/jagoansosmed.cron.env containing CRON_SECRET=...)
+*/2 * * * *  root  . /etc/jagoansosmed.cron.env && curl -fsS -m 60 -X POST -H "Authorization: Bearer $CRON_SECRET" https://your-app.example/api/cron/sync-orders   >/dev/null
+0 20 * * *   root  . /etc/jagoansosmed.cron.env && curl -fsS -m 60 -X POST -H "Authorization: Bearer $CRON_SECRET" https://your-app.example/api/cron/sanity        >/dev/null
+*/30 * * * * root  . /etc/jagoansosmed.cron.env && curl -fsS -m 60 -X POST -H "Authorization: Bearer $CRON_SECRET" https://your-app.example/api/cron/stats-refresh >/dev/null
+```
+
+cron-job.org: create three jobs with method POST, the URLs above (HTTPS), a custom request header `Authorization: Bearer <CRON_SECRET>`, timeout 60 s, schedule every 2 minutes / daily / every 30 minutes, and turn on failure notifications. Overlapping calls are safe (lease).
 
 ## 6. Admin sessions ("Cabut sesi")
 

@@ -8,7 +8,7 @@ import { ProviderError } from "../provider-client";
 import { redact } from "./config";
 import {
   MAX_STATUS_BATCH,
-  type BatchStatusItem, type CancelResult, type MappedProviderStatus, type ProviderAdapter, type ProviderBalance,
+  type BatchStatusItem, type CancelResult, type CancelStatusItem, type RefillState, type RefillStatusItem, type MappedProviderStatus, type ProviderAdapter, type ProviderBalance,
   type ProviderOrderStatus, type ProviderServiceInfo,
 } from "./types";
 
@@ -57,6 +57,38 @@ export function mapLikeoStatus(raw: string): MappedProviderStatus {
   }
 }
 
+/** Pending -> menunggu, In progress / Processing -> berjalan, Completed -> selesai, Rejected / Error / Failed / Canceled -> ditolak. */
+export function mapRefillStatus(raw: string): RefillState | null {
+  switch (raw.trim().toLowerCase().replace(/[\s_-]+/g, " ")) {
+    case "pending":
+      return "menunggu";
+    case "processing":
+    case "in progress":
+    case "inprogress":
+      return "berjalan";
+    case "completed":
+    case "complete":
+      return "selesai";
+    case "rejected":
+    case "error":
+    case "fail":
+    case "failed":
+    case "canceled":
+    case "cancelled":
+      return "ditolak";
+    default:
+      return null;
+  }
+}
+
+/** Cancellation outcome from the order status: Canceled = confirmed; Completed / Partial / Fail = too late (rejected); anything else is still pending. */
+export function cancelStateFromStatus(raw: string): "confirmed" | "pending" | "rejected" {
+  const mapped = mapLikeoStatus(raw);
+  if (mapped === "dibatalkan") return "confirmed";
+  if (mapped === "selesai" || mapped === "sebagian" || mapped === "gagal") return "rejected";
+  return "pending";
+}
+
 // ---------------------------------------------------------------------------
 // Error text (Indonesian)
 // ---------------------------------------------------------------------------
@@ -94,6 +126,7 @@ const addBody = z.object({ order: text });
 const statusRow = z.object({ status: z.string(), start_count: num.optional().default(0), remains: num.optional().default(0), charge: num.optional(), currency: z.string().optional() });
 const balanceBody = z.object({ balance: num, currency: z.string().optional().default("USD") });
 const refillBody = z.object({ refill: text });
+const refillStatusRow = z.object({ refill: text, status: z.union([z.string(), z.object({ error: z.string() })]) });
 const cancelRow = z.object({ order: text, cancel: z.union([z.number(), z.string(), z.object({ error: z.string() })]) });
 
 // ---------------------------------------------------------------------------
@@ -225,6 +258,36 @@ export function createLikeoAdapter(opts: LikeoOptions): ProviderAdapter {
       const p = refillBody.safeParse(await once("refill", { order: id }));
       if (!p.success) throw bad("refill");
       return { refillId: p.data.refill };
+    },
+
+    async getRefillStatuses(refillIds) {
+      const out: Record<string, RefillStatusItem> = {};
+      for (let i = 0; i < refillIds.length; i += MAX_STATUS_BATCH) {
+        const chunk = refillIds.slice(i, i + MAX_STATUS_BATCH);
+        const json = await read("refill_status", { refills: chunk.join(",") });
+        // Multi form: [{ "refill": "1", "status": "Completed" }, { "refill": "2", "status": { "error": "..." } }]; a lone object is accepted for one id.
+        const rows = Array.isArray(json) ? json : [json];
+        for (const row of rows) {
+          const p = refillStatusRow.safeParse(row);
+          if (p.success) out[p.data.refill] = typeof p.data.status === "object" ? { ok: false, error: translateProviderError(p.data.status.error) } : { ok: true, raw: p.data.status, state: mapRefillStatus(p.data.status) };
+          else if (chunk.length === 1 && typeof row === "object" && row !== null && typeof (row as { status?: unknown }).status === "string") {
+            const raw = (row as { status: string }).status;
+            out[chunk[0]] = { ok: true, raw, state: mapRefillStatus(raw) };
+          }
+        }
+        for (const id of chunk) out[id] ??= { ok: false, error: "Status refill tidak ada di jawaban Likeo." };
+      }
+      return out;
+    },
+
+    async getCancelStatuses(providerOrderIds) {
+      const out: Record<string, CancelStatusItem> = {};
+      const statuses = await this.getOrdersStatus(providerOrderIds);
+      for (const id of providerOrderIds) {
+        const item = statuses[id];
+        out[id] = item?.ok ? { ok: true, raw: item.status.raw, state: cancelStateFromStatus(item.status.raw) } : { ok: false, error: item?.ok === false ? item.error : "Status tidak ada di jawaban Likeo." };
+      }
+      return out;
     },
 
     async requestCancel(ids) {
