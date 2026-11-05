@@ -34,7 +34,7 @@ export const dashboardCopy = {
 // Stat cards
 // ---------------------------------------------------------------------------
 
-export type StatTone = "sky" | "amber" | "emerald" | "rose";
+export type StatTone = "sky" | "amber" | "emerald" | "rose" | "slate";
 
 export type UserStats = { balance: number; totalOrders: number; rank: string; totalSpent: number };
 export const emptyUserStats: UserStats = { balance: 0, totalOrders: 0, rank: "Starter", totalSpent: 0 };

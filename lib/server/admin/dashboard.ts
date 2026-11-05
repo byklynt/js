@@ -22,6 +22,7 @@ type Dash = {
   seriesHari: RevenuePoint[]; series7: RevenuePoint[]; series30: RevenuePoint[];
   platforms: Record<"hari" | "7" | "30", { platform: string; value: number }[]>;
   stuck: number; stuckNoProvider: number; thinMargin: number; flaggedUsers: number; refundMismatches: number;
+  failedCount: number; syncErrors: number;
   failedOrders: { id: string; username: string; charge: number }[]; activeByProvider: string[]; importedServices: number;
 };
 
@@ -58,7 +59,8 @@ export async function loadDashboardData() {
   mini.syncRuns = (runs.data ?? []).map((r) => ({ id: r.id, providerId: r.provider_id, startedAt: r.started_at, finishedAt: r.finished_at, ordersChecked: r.orders_checked, ordersChanged: r.orders_changed, errors: r.errors, errorMessage: r.error_message }));
   mini.orders = (d.activeByProvider ?? []).map((providerId) => ({ providerId, status: "berjalan" }) as AdminOrder);
   const now = new Date();
-  const health = syncHealth(mini, now);
+  // One row per provider in the providers table (name, last successful sync, state); an inactive provider is not synced at all.
+  const health = syncHealth(mini, now).map((h) => ({ ...h, active: providers.find((p) => p.id === h.providerId)?.status === "aktif" }));
   const failing = health.filter((h) => h.failingRuns > 0).map((h) => h.providerId);
   let providerError = Number(d.stuckNoProvider);
   if (failing.length && Number(d.stuck) > providerError) {
@@ -91,6 +93,7 @@ export async function loadDashboardData() {
     providerBalances: providerBalances(mini),
     alerts: (alerts.data ?? []).map((a) => ({ id: a.id, at: a.created_at, providerId: a.provider_id ?? "", message: a.message })),
     failedOrders: d.failedOrders ?? [],
+    failedCount: Number(d.failedCount ?? (d.failedOrders ?? []).length),
     stuckCount: stuckTotal,
     stuck: { total: stuckTotal, providerError, waiting, main: stuckTotal === 0 ? null : providerError >= waiting ? ("provider_error" as const) : ("waiting_provider" as const) },
     pendingDeposits: Number(d.pendingDeposits),
@@ -106,6 +109,6 @@ export async function loadDashboardData() {
     maintenance: settings.general.maintenance,
     stallMinutes: STALL_MINUTES,
     anyStalled: health.some((h) => h.stalled),
-    reconciliation: { discrepancies: 0, balanceMismatches: bm, refundMismatches: Number(d.refundMismatches) },
+    reconciliation: { discrepancies: Number(d.syncErrors ?? 0), balanceMismatches: bm, refundMismatches: Number(d.refundMismatches) },
   };
 }

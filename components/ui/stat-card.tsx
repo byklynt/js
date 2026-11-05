@@ -18,6 +18,11 @@ const toneClasses: Record<StatTone, { icon: string; strip: string }> = {
     strip:
       "bg-[#E8F7EE] text-emerald-600 hover:bg-[#D8F0E2] dark:bg-primary-soft dark:text-primary-accent dark:hover:bg-primary-border",
   },
+  /** Neutral: used by "Perlu Tindakan" cards whose count is 0. */
+  slate: {
+    icon: "text-slate-400 dark:text-slate-500",
+    strip: "bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700",
+  },
   rose: {
     icon: "text-red-500 dark:text-primary-accent",
     strip:

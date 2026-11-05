@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Ban, CircleCheck, Headset, RefreshCw, Send, ShoppingCart, ShieldAlert, TrendingDown, TrendingUp, Undo2, UserSearch, Users, Wallet, WalletCards } from "lucide-react";
+import { CircleCheck, RefreshCw, Send, ShoppingCart, ShieldAlert, TrendingUp, Users, Wallet } from "lucide-react";
 import type { loadDashboardData } from "@/lib/server/admin/dashboard";
 import { resendAllFailedOrders, resyncProviders } from "@/lib/admin-actions";
 import { formatDateTime, formatIdr } from "@/lib/balance";
@@ -17,6 +17,7 @@ import { useAdminRunner } from "@/components/admin/use-admin-runner";
 import { OrderStatusChip } from "@/components/orders/order-status-chip";
 import { DepositStatusChip, LowBalanceChip, ProviderStatusChip } from "@/components/admin/admin-chips";
 import { PlatformChart, RevenueChart } from "./admin-charts";
+import { attentionCards } from "@/lib/admin-attention";
 
 type Data = Awaited<ReturnType<typeof loadDashboardData>>;
 type Range = "hari" | "7" | "30";
@@ -65,18 +66,8 @@ export function AdminDashboard({ data }: { data: Data }) {
   const profitTotal = revenue.reduce((s, p) => s + p.profit, 0);
   const platformData = data.series.platforms[range];
   const orderTotal = platformData.reduce((s, p) => s + p.value, 0);
-  const stuckCause = data.stuck.main === "provider_error" ? "Penyebab: provider error" : data.stuck.main === "waiting_provider" ? "Penyebab: menunggu provider" : "Lihat pesanan";
-  const attention = [
-    { label: "Tiket Menunggu", value: data.stats.pendingTickets, icon: Headset, tone: "rose" as const, actionLabel: "Buka tiket", actionHref: "/admin/tickets?status=menunggu" },
-    { label: "Order Gagal Kirim", value: data.failedOrders.length, icon: Ban, tone: "amber" as const, actionLabel: "Lihat pesanan", actionHref: "/admin/orders?status=gagal_kirim" },
-    { label: "Order Macet", value: data.stuck.total, icon: ShoppingCart, tone: "sky" as const, actionLabel: stuckCause, actionHref: "/admin/orders?status=macet" },
-    { label: "Refund Tidak Sesuai", value: data.reconciliation.refundMismatches, icon: Undo2, tone: "rose" as const, actionLabel: "Periksa refund", actionHref: "/admin/refunds?mismatch=1" },
-    { label: "Deposit Menunggu", value: data.pendingDeposits, icon: WalletCards, tone: "amber" as const, actionLabel: "Lihat deposit", actionHref: "/admin/deposits?status=menunggu" },
-    { label: "Margin Tipis", value: data.thinMargin, icon: TrendingDown, tone: "amber" as const, actionLabel: "Lihat layanan", actionHref: "/admin/services?margin=thin" },
-    { label: "Perlu Ditinjau", value: data.flaggedUsers, icon: UserSearch, tone: "rose" as const, actionLabel: "Lihat pengguna", actionHref: "/admin/users?status=review" },
-  ]
-    .filter((c) => c.value > 0)
-    .map((c) => ({ ...c, value: c.value.toLocaleString("id-ID") }));
+  const attention = attentionCards(data);
+  const allClear = attention.every((c) => c.value === "0");
 
   return (
     <div className="space-y-6">
@@ -117,24 +108,26 @@ export function AdminDashboard({ data }: { data: Data }) {
       ) : null}
 
       <section aria-label="Perlu Tindakan" className="space-y-3">
-        <h2 className="text-[12px] font-semibold text-ink dark:text-white">Perlu Tindakan</h2>
-        {attention.length === 0 ? (
-          <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-emerald-50 px-3 text-[10px] font-medium text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300">
-            Semua aman
-            <CircleCheck className="h-3.5 w-3.5" aria-hidden />
-          </span>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:gap-[16px]">
-            {attention.map((stat, i) => (
-              <motion.div key={stat.label} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, delay: 0.1 + i * 0.05, ease: "easeOut" }}>
-                <StatCard {...stat} />
-              </motion.div>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-[12px] font-semibold text-ink dark:text-white">Perlu Tindakan</h2>
+          {allClear ? (
+            <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-emerald-50 px-3 text-[10px] font-medium text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300">
+              Semua aman
+              <CircleCheck className="h-3.5 w-3.5" aria-hidden />
+            </span>
+          ) : null}
+        </div>
+        {/* All seven cards are always shown; a count of 0 is neutral (grey) instead of the card disappearing. */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:gap-[16px]" data-testid="attention-cards">
+          {attention.map((stat, i) => (
+            <motion.div key={stat.label} data-testid="attention-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, delay: 0.1 + i * 0.05, ease: "easeOut" }}>
+              <StatCard {...stat} />
+            </motion.div>
+          ))}
+        </div>
       </section>
 
-      <div className={data.failedOrders.length > 0 ? "grid gap-4 lg:grid-cols-2" : "space-y-3"}>
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card
           title="Kesehatan Sinkronisasi"
           subtitle="Status pesanan disinkronkan tiap 2 menit."
@@ -153,16 +146,21 @@ export function AdminDashboard({ data }: { data: Data }) {
             </Button>
           }
         >
-          <ul className="space-y-2">
+          {data.syncHealth.length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-slate-300 px-3 py-3 text-[10px] text-[#5B6B8C] dark:border-slate-700 dark:text-slate-400">Belum ada provider terdaftar. Tambahkan lewat halaman Provider.</p>
+          ) : null}
+          <ul className="space-y-2" aria-label="Provider">
             {data.syncHealth.map((h) => (
-              <li key={h.providerId} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/70 px-3 py-2 dark:border-slate-800">
+              <li key={h.providerId} data-testid="sync-provider" className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/70 px-3 py-2 dark:border-slate-800">
                 <div className="min-w-0">
                   <p className="text-[11px] font-medium text-ink dark:text-white">{h.name}</p>
                   <p className="mt-1 text-[10px] text-[#5B6B8C] dark:text-slate-400">
                     {h.lastSyncedAt ? <>Sinkronisasi terakhir <time dateTime={h.lastSyncedAt}>{formatDateTime(h.lastSyncedAt)}</time></> : "Belum pernah sinkron berhasil"}
                   </p>
                 </div>
-                {h.stalled ? (
+                {!h.active ? (
+                  <span className="inline-flex h-8 items-center rounded-full bg-slate-100 px-3 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">Nonaktif</span>
+                ) : h.stalled ? (
                   <span className="inline-flex h-8 items-center rounded-full bg-red-50 px-3 text-[10px] font-medium text-red-500 dark:bg-red-500/15 dark:text-red-300">Sinkronisasi terhenti</span>
                 ) : h.failingRuns >= 3 ? (
                   <Link href="/admin/logs" className="inline-flex h-8 items-center rounded-full bg-red-50 px-3 text-[10px] font-medium text-red-500 hover:underline dark:bg-red-500/15 dark:text-red-300">Gagal {h.failingRuns}x berturut-turut</Link>
@@ -181,38 +179,37 @@ export function AdminDashboard({ data }: { data: Data }) {
           ) : null}
         </Card>
 
-        {data.failedOrders.length > 0 ? (
         <Card
           title="Pesanan Gagal Kirim"
           subtitle="Saldo pengguna sudah dikembalikan otomatis."
           action={
-            <Button variant="outline" disabled={data.failedOrders.length === 0} onClick={() => setResendOpen(true)}>
+            <Button variant="outline" disabled={data.failedCount === 0} onClick={() => setResendOpen(true)}>
               <Send className="h-3.5 w-3.5" aria-hidden />
               Kirim ulang semua
             </Button>
           }
         >
-          {false ? (
-            <p className="text-[10px] text-[#5B6B8C] dark:text-slate-400">Tidak ada pesanan gagal kirim.</p>
+          {data.failedCount === 0 ? (
+            <p className="flex items-center gap-2 rounded-2xl border border-slate-200/70 px-3 py-2.5 text-[10px] text-[#5B6B8C] dark:border-slate-800 dark:text-slate-400" data-testid="failed-empty">
+              <ShieldAlert className="h-3.5 w-3.5" aria-hidden /> Tidak ada pesanan gagal kirim.
+            </p>
           ) : (
-            <ul className="space-y-2">
-              {data.failedOrders.slice(0, 4).map((o) => (
-                <li key={o.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/70 px-3 py-2 dark:border-slate-800">
-                  <p className="flex items-center gap-2 text-[11px] font-medium text-ink dark:text-white">
-                    <span className="shrink-0 rounded-full bg-primary-solid px-2.5 py-1 text-[9.5px] font-semibold text-white">#{o.id}</span>
-                    <span className="truncate">{o.username}</span>
-                  </p>
-                  <span className="text-[10px] text-[#5B6B8C] dark:text-slate-400">{formatIdr(o.charge)}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="space-y-2">
+                {data.failedOrders.slice(0, 4).map((o) => (
+                  <li key={o.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/70 px-3 py-2 dark:border-slate-800">
+                    <p className="flex items-center gap-2 text-[11px] font-medium text-ink dark:text-white">
+                      <span className="shrink-0 rounded-full bg-primary-solid px-2.5 py-1 text-[9.5px] font-semibold text-white">#{o.id}</span>
+                      <span className="truncate">{o.username}</span>
+                    </p>
+                    <span className="text-[10px] text-[#5B6B8C] dark:text-slate-400">{formatIdr(o.charge)}</span>
+                  </li>
+                ))}
+              </ul>
+              {data.failedCount > 4 ? <Link href="/admin/orders?status=gagal_kirim" className={`${linkClass} mt-2 inline-block`}>Lihat semua {data.failedCount.toLocaleString("id-ID")} pesanan</Link> : null}
+            </>
           )}
         </Card>
-        ) : (
-          <p className="flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-4 py-2.5 text-[10px] text-[#5B6B8C] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-            <ShieldAlert className="h-3.5 w-3.5" aria-hidden /> Tidak ada pesanan gagal kirim.
-          </p>
-        )}
       </div>
 
       <Card
@@ -222,7 +219,7 @@ export function AdminDashboard({ data }: { data: Data }) {
       >
         <ul className="grid gap-2 md:grid-cols-3">
           {[
-            { label: "Status beda dengan provider", value: data.reconciliation.discrepancies, hint: "Dibereskan oleh sinkronisasi berikutnya.", href: "/admin/orders?status=berjalan" },
+            { label: "Status beda dengan provider", value: data.reconciliation.discrepancies, hint: "Pesanan aktif yang jawaban providernya tidak dikenal atau gagal dibaca. Detailnya ada di tiap pesanan.", href: "/admin/orders?status=berjalan" },
             { label: "Saldo tidak cocok dengan buku besar", value: data.reconciliation.balanceMismatches.length, hint: data.reconciliation.balanceMismatches.map((m) => m.username).join(", ") || "Semua saldo cocok.", href: "/admin/ledger" },
             { label: "Refund tidak sesuai perhitungan", value: data.reconciliation.refundMismatches, hint: "Periksa di halaman Refund.", href: "/admin/refunds?mismatch=1" },
           ].map((r) => (
@@ -321,7 +318,7 @@ export function AdminDashboard({ data }: { data: Data }) {
         open={resendOpen}
         onClose={() => setResendOpen(false)}
         title="Kirim ulang semua pesanan gagal?"
-        description={`${data.failedOrders.length} pesanan akan dikirim lagi ke provider dan saldo pengguna dipotong lagi. Pesanan dengan saldo kurang dilewati. Masukkan password adminmu.`}
+        description={`${data.failedCount} pesanan akan dikirim lagi ke provider dan saldo pengguna dipotong lagi. Pesanan dengan saldo kurang dilewati. Masukkan password adminmu.`}
         confirmLabel="Kirim ulang"
         tone="primary"
         requirePassword

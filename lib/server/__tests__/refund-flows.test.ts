@@ -421,6 +421,22 @@ describe.skipIf(!enabled)("refund and cancellation flows (mock provider)", () =>
     });
   }, 120_000);
 
+  it("admin_dashboard: failedCount is the REAL number of failed orders (the list is capped at 20), syncErrors counts active orders with a sync problem", async () => {
+    await scenario("Dashboard RPC counts", "failedCount grows by 25 although the list stays at 20; syncErrors grows by 1", async () => {
+      const dash = async () => (await m.db.rpc("admin_dashboard")).data as unknown as { failedCount: number; syncErrors: number; failedOrders: unknown[] };
+      const before = await dash();
+      const o = await makeOrder({ charge: 1000, quantity: 100 });
+      await m.db.from("orders").update({ sync_error: "Status provider tidak dikenal: \"x\"" }).eq("id", o.id);
+      const rows = Array.from({ length: 25 }, (_, i) => ({ user_id: o.user, service_id: SVC, provider_id: m.config.LIKEO_ID, link: `https://zt.test/${run}/failed-${i}`, quantity: 100, charge: 0, remains: 100, status: "gagal_kirim", needs_manual_check: true }));
+      expect((await m.db.from("orders").insert(rows)).error).toBeNull();
+      const after = await dash();
+      expect(after.failedCount - before.failedCount).toBe(25);
+      expect(after.failedOrders.length).toBeLessThanOrEqual(20);
+      expect(after.syncErrors - before.syncErrors).toBe(1);
+      return `failedCount +${after.failedCount - before.failedCount}, list ${after.failedOrders.length}, syncErrors +${after.syncErrors - before.syncErrors}`;
+    });
+  }, 120_000);
+
   it("end of run: every user balance equals SUM(ledger) and /api/cron/sanity reports 0 mismatches", async () => {
     await scenario("Sanity check", "balanceMismatches = 0 and refundMismatches = 0", async () => {
       for (const u of users) await expectLedgerSum(u);
