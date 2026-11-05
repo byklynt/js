@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import { requireAdmin } from "@/lib/auth-server";
-import { withAdminDb } from "@/lib/server/admin-snapshot";
 
 /**
  * Wraps an admin page's data loading: dynamic (reads the session), guarded by requireAdmin(),
@@ -17,8 +16,7 @@ export function AdminData({ children }: { children: () => React.ReactNode | Prom
 
 async function Guarded({ render }: { render: () => React.ReactNode | Promise<React.ReactNode> }) {
   await requireAdmin();
-  // getDb() inside the page's render function = a snapshot built from Supabase for THIS request (lib/server/admin-snapshot.ts).
-  return withAdminDb(async () => <>{await render()}</>);
+  return <>{await render()}</>;
 }
 
 function PageSkeleton() {

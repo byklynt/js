@@ -1,19 +1,17 @@
 import type { Metadata } from "next";
 import { AdminData } from "@/components/admin/admin-fetch";
 import { AnnouncementsView } from "@/components/admin/announcements/announcements-view";
-import { getDb } from "@/lib/admin-db";
-import { audienceCount } from "@/lib/server/announcements";
+import { audienceCount, listAnnouncements } from "@/lib/server/repo/announcements";
 
 export const metadata: Metadata = { title: "Pengumuman - Admin JagoanSosmed" };
 
 export default function Page() {
   return (
     <AdminData>
-      {() => {
-        const db = getDb();
+      {async () => {
         // Placeholder reach: how many active accounts match each audience.
-        const counts = { semua: audienceCount(db, "semua"), reseller: audienceCount(db, "reseller") };
-        return <AnnouncementsView announcements={db.announcements} counts={counts} />;
+        const counts = { semua: await audienceCount("semua"), reseller: await audienceCount("reseller") };
+        return <AnnouncementsView announcements={await listAnnouncements()} counts={counts} />;
       }}
     </AdminData>
   );

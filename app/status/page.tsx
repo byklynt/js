@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { LegalPage } from "@/components/legal/legal-page";
-import { loadSyncHealthDb } from "@/lib/server/admin-snapshot";
+import { loadSyncHealthDb } from "@/lib/server/admin/sync-health";
 import { STALL_MINUTES, syncHealth } from "@/lib/server/metrics";
 import { formatDateTime } from "@/lib/balance";
 

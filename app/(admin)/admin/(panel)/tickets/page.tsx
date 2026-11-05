@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { AdminData } from "@/components/admin/admin-fetch";
-import { AdminTicketsView } from "@/components/admin/tickets/admin-tickets-view";
-import { getDb } from "@/lib/admin-db";
+import { PagedList } from "@/components/admin/paged-list";
+import { listTicketsPage } from "@/lib/server/admin/lists";
 
 export const metadata: Metadata = { title: "Tiket - Admin JagoanSosmed" };
 
 export default function Page() {
-  return <AdminData>{() => <AdminTicketsView tickets={getDb().tickets} />}</AdminData>;
+  return <AdminData>{async () => <PagedList kind="tickets" initial={await listTicketsPage()} />}</AdminData>;
 }

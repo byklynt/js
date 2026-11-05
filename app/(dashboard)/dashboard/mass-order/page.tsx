@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { MassOrderPage } from "@/components/massorder/mass-order-page";
-import { getDb } from "@/lib/admin-db";
 import { countServices } from "@/lib/server/services";
 
 export const metadata: Metadata = { title: "Order Massal - JagoanSosmed" };

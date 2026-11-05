@@ -257,6 +257,70 @@ describe.skipIf(!enabled)("server flows on Supabase (mock provider)", () => {
     expect((await m.db.from("profiles").select("language").eq("id", user).single()).data!.language).toBe("en");
   });
 
+  it("admin lists: keyset pagination (no duplicates, nothing lost), SQL search, aggregates, services paging, soft-failing shell stats", async () => {
+    const lists = await import("@/lib/server/admin/lists");
+    const dash = await import("@/lib/server/admin/dashboard");
+    const stats = await import("@/lib/server/admin/stats");
+    const shell = await import("@/lib/server/admin/shell-stats");
+    const adminServices = await import("@/lib/server/admin-services");
+    // five deposits created within the same second must still page cleanly (ties are broken by id)
+    const rows = Array.from({ length: 5 }, (_, i) => ({ user_id: user, method: `ZT-metode-${i}`, amount: 10_000 + i, status: "menunggu" }));
+    expect((await m.db.from("deposits").insert(rows)).error).toBeNull();
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    for (let i = 0; i < 20; i++) {
+      const page: { rows: { id: string; method: string }[]; next: string | null } = await lists.listDeposits({ limit: 2, cursor });
+      expect(page.rows.length).toBeLessThanOrEqual(2);
+      seen.push(...page.rows.map((r) => r.id));
+      cursor = page.next;
+      if (!cursor) break;
+    }
+    expect(new Set(seen).size).toBe(seen.length); // no duplicates
+    const mine = ((await m.db.from("deposits").select("id").eq("user_id", user)).data ?? []).map((d) => d.id);
+    for (const id of mine) expect(seen).toContain(id); // nothing lost
+    expect((await lists.listDeposits({ q: "ZT-metode-3" })).rows.map((d) => d.method)).toEqual(["ZT-metode-3"]);
+    expect((await lists.listDeposits({ cursor: "tidak-valid" })).rows.length).toBeGreaterThan(0); // a forged cursor is ignored, never injected
+    expect((await lists.listOrders({ q: "zt.test/flow" })).rows.length).toBeGreaterThanOrEqual(1);
+    expect((await lists.listOrders({ q: "zt.test/flow%,().*" , limit: 1 })).rows).toBeDefined(); // odd characters cannot break the filter
+    const username = (await m.db.from("profiles").select("username").eq("id", user).single()).data!.username;
+    const users = await lists.listUsers({ q: username });
+    expect(users.rows.map((u) => u.id)).toContain(user);
+    expect(users.rows.find((u) => u.id === user)!.totalSpent).toBeGreaterThan(0);
+    const detail = await lists.loadUserDetail(user);
+    expect(detail.orders.length).toBeGreaterThan(0);
+    expect(detail.ledger.length).toBeGreaterThan(0);
+    expect((await lists.listLedger({ limit: 3 })).rows.length).toBeLessThanOrEqual(3);
+    expect(Array.isArray((await lists.listLogs()).rows)).toBe(true);
+    expect(Array.isArray((await lists.listRefunds()).rows)).toBe(true);
+    expect(Array.isArray((await lists.listRefills()).rows)).toBe(true);
+    expect(Array.isArray((await lists.listTicketsPage()).rows)).toBe(true);
+
+    const d = await dash.loadDashboardData();
+    expect(d.stats.ordersToday).toBeGreaterThanOrEqual(1);
+    expect(d.series.revenue.hari).toHaveLength(12);
+    expect(d.series.revenue["7"]).toHaveLength(7);
+    expect(d.series.revenue["30"]).toHaveLength(30);
+    expect(d.finance.revenue).toBeGreaterThanOrEqual(1500);
+    expect(d.pendingDeposits).toBeGreaterThanOrEqual(5);
+    expect(d.series.platforms["30"].some((p) => p.platform === "Instagram")).toBe(true);
+    expect(d.reconciliation.balanceMismatches).toEqual([]);
+    const ds = await stats.loadStatsDataset();
+    expect(ds.daily.some((f) => f.serviceId === SVC && f.orders >= 1 && f.revenue >= 1500)).toBe(true);
+    expect(ds.signups).toHaveLength(180);
+    expect(ds.spenders.some((x) => x.id === user)).toBe(true);
+
+    const svcPage = await adminServices.adminServicesPage({ search: SVC });
+    expect(svcPage.items.map((x) => x.id)).toEqual([SVC]);
+    expect(svcPage.items[0].categoryLabel).toBe(`ZT Kategori ${run}`);
+    const meta = await adminServices.adminServicesMeta();
+    expect(meta.categories.some((c) => c.id === `zt-cat-${run}`)).toBe(true);
+    const s2 = await adminServices.adminServicesPage({ category: `zt-cat-${run}`, limit: 1 });
+    expect(s2.total).toBeGreaterThanOrEqual(1);
+    const st = await shell.getShellStats();
+    expect(st.ok).toBe(true);
+    expect(st.pendingDeposits).toBeGreaterThanOrEqual(5);
+  }, 120_000);
+
   it("ledger equals balance for every temp user", async () => {
     for (const id of [user, admin]) {
       const sum = ((await m.db.from("balance_ledger").select("amount").eq("user_id", id)).data ?? []).reduce((n, r) => n + Number(r.amount), 0);

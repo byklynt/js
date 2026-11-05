@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Ban, CircleCheck, Headset, RefreshCw, Send, ShoppingCart, ShieldAlert, TrendingDown, TrendingUp, Undo2, UserSearch, Users, Wallet, WalletCards } from "lucide-react";
-import type { getDashboardData } from "@/lib/admin-db";
+import type { loadDashboardData } from "@/lib/server/admin/dashboard";
 import { resendAllFailedOrders, resyncProviders } from "@/lib/admin-actions";
 import { formatDateTime, formatIdr } from "@/lib/balance";
 import { HeaderLine } from "@/components/shell/header-zone";
@@ -18,7 +18,7 @@ import { OrderStatusChip } from "@/components/orders/order-status-chip";
 import { DepositStatusChip, LowBalanceChip, ProviderStatusChip } from "@/components/admin/admin-chips";
 import { PlatformChart, RevenueChart } from "./admin-charts";
 
-type Data = ReturnType<typeof getDashboardData>;
+type Data = Awaited<ReturnType<typeof loadDashboardData>>;
 type Range = "hari" | "7" | "30";
 
 const rangeItems: { value: Range; label: string }[] = [

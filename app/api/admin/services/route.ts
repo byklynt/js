@@ -1,7 +1,5 @@
 import { requireAdmin } from "@/lib/auth-server";
-import { getDb } from "@/lib/admin-db";
 import { adminServicesPage } from "@/lib/server/admin-services";
-import { withAdminDb } from "@/lib/server/admin-snapshot";
 
 const HEADERS = { "Cache-Control": "private, no-store" };
 
@@ -14,12 +12,12 @@ export async function GET(request: Request) {
   }
   const p = new URL(request.url).searchParams;
   const filter = p.get("filter") ?? "semua";
-  const page = await withAdminDb(async () => adminServicesPage(getDb(), {
+  const page = await adminServicesPage({
     thinMargin: filter === "margin",
     category: filter !== "semua" && filter !== "margin" ? filter.slice(0, 80) : undefined,
     search: p.get("search")?.slice(0, 80) ?? undefined,
     cursor: p.get("cursor"),
     limit: Number(p.get("limit")) || undefined,
-  }));
+  });
   return Response.json(page, { headers: HEADERS });
 }

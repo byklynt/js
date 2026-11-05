@@ -2,8 +2,8 @@ import type { AdminDb } from "@/lib/admin-data";
 
 /**
  * Balance writes happen ONLY in Postgres (apply_ledger_entry). This file keeps the pure reconcile check for AdminDb values that
- * hold the WHOLE ledger (unit tests, fixtures). An admin request snapshot holds only a window of the ledger, so there the same
- * check is done by verify_balances() in Postgres instead (see lib/server/snapshot-flags.ts).
+ * hold the WHOLE ledger (unit tests, fixtures). In the app the same
+ * check is done by verify_balances() in Postgres (dashboard, sanity job).
  */
 export type Mismatch = { userId: string; username: string; stored: number; computed: number; diff: number };
 

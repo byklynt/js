@@ -1,7 +1,8 @@
 import { requireAdmin } from "@/lib/auth-server";
-import { getDb } from "@/lib/admin-db";
-import { finalPrice } from "@/lib/admin-data";
-import { withAdminDb } from "@/lib/server/admin-snapshot";
+import { finalPrice, setPriceRounding } from "@/lib/admin-data";
+import { loadProviders } from "@/lib/server/repo/providers";
+import { loadServicesOf } from "@/lib/server/repo/services-repo";
+import { loadSettings } from "@/lib/server/repo/settings";
 
 /** Escape a CSV cell and neutralise spreadsheet formulas (=, +, -, @). */
 function cell(value: string | number | boolean): string {
@@ -17,16 +18,16 @@ export async function GET() {
   } catch {
     return new Response("Tidak diizinkan.", { status: 401 });
   }
-  return withAdminDb(async () => {
-  const db = getDb();
-  const known = new Set(db.providers.map((p) => p.id));
-  const provider = (id: string) => db.providers.find((p) => p.id === id)?.name ?? id;
+  const [providers, settings] = await Promise.all([loadProviders(), loadSettings()]);
+  setPriceRounding(settings.pricing.roundTo);
   const header = "id,nama,provider,id_provider,harga_provider,markup_jenis,markup,harga_akhir,min,maks,refill,batal,aktif,urutan";
-  const rows = db.services
-    .filter((s) => known.has(s.providerId))
-    .map((s) => [s.id, s.name, provider(s.providerId), s.providerServiceId, s.providerPrice, s.markupType, s.markup, finalPrice(s), s.min, s.max, s.refill, s.cancel, s.active, s.sort].map(cell).join(","));
-  return new Response([header, ...rows].join("\n"), {
+  const lines: string[] = [header];
+  for (const p of providers) {
+    for (const s of await loadServicesOf(p.id)) {
+      lines.push([s.id, s.name, p.name, s.providerServiceId, s.providerPrice, s.markupType, s.markup, finalPrice(s), s.min, s.max, s.refill, s.cancel, s.active, s.sort].map(cell).join(","));
+    }
+  }
+  return new Response(lines.join("\n"), {
     headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="layanan-jagoansosmed.csv"', "Cache-Control": "private, no-store" },
-  });
   });
 }

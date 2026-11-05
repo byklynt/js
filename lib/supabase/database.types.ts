@@ -1608,6 +1608,22 @@ export type Database = {
         }
         Returns: number
       }
+      admin_dashboard: { Args: { p_tz?: string }; Returns: Json }
+      admin_services_meta: { Args: { p_min_margin?: number }; Returns: Json }
+      admin_services_page: {
+        Args: {
+          p_category?: string
+          p_limit?: number
+          p_min_margin?: number
+          p_offset?: number
+          p_search?: string
+          p_thin?: boolean
+        }
+        Returns: {
+          service: Json
+          total: number
+        }[]
+      }
       admin_shell_stats: {
         Args: { p_since: string }
         Returns: {
@@ -1615,6 +1631,10 @@ export type Database = {
           revenue: number
           tickets_waiting: number
         }[]
+      }
+      admin_stats_dataset: {
+        Args: { p_from: string; p_tz?: string }
+        Returns: Json
       }
       apply_ledger_entry: {
         Args: {
@@ -1737,6 +1757,15 @@ export type Database = {
           deposit_id: string
           duplicate: boolean
         }[]
+      }
+      effective_provider_cost: {
+        Args: {
+          p_cost: number
+          p_qty: number
+          p_remains: number
+          p_status: string
+        }
+        Returns: number
       }
       fmt_rupiah: { Args: { p_amount: number }; Returns: string }
       internal_audit: {

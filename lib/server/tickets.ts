@@ -131,9 +131,10 @@ export async function unreadCount(userId: string): Promise<number> {
 }
 
 /** Admin: one page of tickets (newest activity first). */
-export async function listAllTickets(opts: { status?: TicketStatus; limit?: number } = {}): Promise<AdminTicket[]> {
+export async function listAllTickets(opts: { status?: TicketStatus; limit?: number; before?: string } = {}): Promise<AdminTicket[]> {
   let q = supabaseAdmin().from("tickets").select(SELECT).order("updated_at", { ascending: false }).limit(opts.limit ?? 100);
   if (opts.status) q = q.eq("status", opts.status);
+  if (opts.before) q = q.lt("updated_at", opts.before);
   const { data } = await q;
   return toAdminTickets((data ?? []) as unknown as TicketRow[], true);
 }

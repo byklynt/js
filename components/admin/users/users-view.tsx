@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Ban, Crown, Eye, KeyRound, Minus, Plus, ShieldCheck, Users as UsersIcon } from "lucide-react";
 import type { AdminDeposit, AdminOrder, AdminUser } from "@/lib/admin-data";
+import { loadUserDetailAction } from "@/lib/admin-list-actions";
 import { formatDate } from "@/lib/format";
 import { formatIdr } from "@/lib/balance";
 import { setUserManualApproval,
@@ -54,15 +55,9 @@ function Avatar({ name }: { name: string }) {
 
 export function UsersView({
   users,
-  orders,
-  deposits,
-  ledger,
   flaggedIds = [],
 }: {
   users: AdminUser[];
-  orders: AdminOrder[];
-  deposits: AdminDeposit[];
-  ledger: LedgerEntry[];
   flaggedIds?: string[];
 }) {
   const run = useAdminRunner();
@@ -71,6 +66,19 @@ export function UsersView({
   const [pending, setPending] = useState<Pending | null>(null);
   const [tempPassword, setTempPassword] = useState<{ username: string; password: string } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  // The drawer shows the latest orders / deposits / ledger rows of ONE user: loaded from the server when it opens.
+  const [detail, setDetail] = useState<{ id: string; orders: AdminOrder[]; deposits: AdminDeposit[]; ledger: LedgerEntry[] } | null>(null);
+  useEffect(() => {
+    if (!detailId) return;
+    let alive = true;
+    void loadUserDetailAction(detailId).then((d) => {
+      if (alive && d) setDetail({ id: detailId, ...d });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [detailId]);
+  const loaded = detail && detail.id === detailId ? detail : null;
 
   const filtered = useMemo(
     () =>
@@ -185,9 +193,9 @@ export function UsersView({
 
       <UserDrawer
         user={detailUser}
-        orders={orders}
-        deposits={deposits}
-        ledger={ledger}
+        orders={loaded?.orders ?? []}
+        deposits={loaded?.deposits ?? []}
+        ledger={loaded?.ledger ?? []}
         onClose={() => setDetailId(null)}
       />
 

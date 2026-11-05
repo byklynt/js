@@ -1,10 +1,13 @@
-/**
- * Admin service list, paginated and filtered on the server (the admin page never receives the whole catalogue).
- * Pure functions over AdminDb so they can be tested.
- */
-import type { AdminDb, AdminService } from "@/lib/admin-data";
-import { marginPercent } from "@/lib/server/pricing";
+import "server-only";
+import type { AdminService } from "@/lib/admin-data";
+import { loadSettings } from "@/lib/server/repo/settings";
+import { toAdminService } from "@/lib/server/repo/services-repo";
+import { supabaseAdmin } from "@/lib/server/supabase-admin";
 
+/**
+ * Admin service list: filtered, searched and paginated in Postgres (admin_services_page / admin_services_meta). The admin page never
+ * receives the whole catalogue: one page at a time plus the category counts.
+ */
 export type AdminServicesQuery = {
   /** A category id, or undefined for all. */
   category?: string;
@@ -20,35 +23,25 @@ export type AdminServicesMeta = { total: number; thinCount: number; categories: 
 
 export const ADMIN_PAGE_SIZE = 15;
 
-/** Services of removed demo providers are not part of the catalogue. */
-function listed(db: AdminDb): AdminService[] {
-  const known = new Set(db.providers.map((p) => p.id));
-  return db.services.filter((s) => known.has(s.providerId));
-}
-
-export function adminServicesMeta(db: AdminDb): AdminServicesMeta {
-  const services = listed(db);
-  const min = db.settings.pricing.minMarginPercent;
-  const cats = new Map<string, { id: string; label: string; count: number }>();
-  let thin = 0;
-  for (const s of services) {
-    const c = cats.get(s.categoryId);
-    if (c) c.count++;
-    else cats.set(s.categoryId, { id: s.categoryId, label: s.categoryLabel, count: 1 });
-    if (s.active && marginPercent(s) < min) thin++;
-  }
-  return { total: services.length, thinCount: thin, categories: Array.from(cats.values()) };
-}
-
-export function adminServicesPage(db: AdminDb, q: AdminServicesQuery = {}): AdminServicesPage {
-  const min = db.settings.pricing.minMarginPercent;
-  const needle = (q.search ?? "").trim().toLowerCase();
+export async function adminServicesPage(q: AdminServicesQuery = {}): Promise<AdminServicesPage> {
   const limit = Math.min(Math.max(Math.floor(q.limit ?? ADMIN_PAGE_SIZE) || ADMIN_PAGE_SIZE, 1), 100);
   const offset = Number.isInteger(Number(q.cursor)) && Number(q.cursor) > 0 ? Number(q.cursor) : 0;
-  const matched = listed(db)
-    .filter((s) => (q.thinMargin ? s.active && marginPercent(s) < min : !q.category || s.categoryId === q.category))
-    .filter((s) => needle.length < 2 || s.id.includes(needle) || s.name.toLowerCase().includes(needle))
-    .sort((a, b) => a.sort - b.sort);
+  const minMargin = (await loadSettings()).pricing.minMarginPercent;
+  const { data, error } = await supabaseAdmin().rpc("admin_services_page", {
+    p_category: q.category, p_thin: Boolean(q.thinMargin), p_search: q.search?.trim() || undefined, p_min_margin: minMargin, p_offset: offset, p_limit: limit,
+  });
+  if (error) throw new Error(`admin_services_page: ${error.message}`);
+  const rows = (data ?? []) as { service: Record<string, unknown>; total: number }[];
+  const total = rows.length ? Number(rows[0].total) : 0;
+  const items = rows.map((r) => toAdminService({ ...(r.service as Record<string, unknown>), category: { label: String(r.service.category_label ?? "Lainnya") } } as never));
   const next = offset + limit;
-  return { items: matched.slice(offset, next), nextCursor: next < matched.length ? String(next) : null, total: matched.length };
+  return { items, nextCursor: next < total ? String(next) : null, total };
+}
+
+export async function adminServicesMeta(): Promise<AdminServicesMeta> {
+  const minMargin = (await loadSettings()).pricing.minMarginPercent;
+  const { data, error } = await supabaseAdmin().rpc("admin_services_meta", { p_min_margin: minMargin });
+  if (error) throw new Error(`admin_services_meta: ${error.message}`);
+  const m = data as unknown as { total: number; thin: number; categories: { id: string; label: string; count: number }[] };
+  return { total: Number(m.total), thinCount: Number(m.thin), categories: m.categories ?? [] };
 }

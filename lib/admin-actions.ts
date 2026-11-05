@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z, type ZodType } from "zod";
 import { requireAdmin } from "@/lib/auth-server";
 import type { SessionPayload } from "@/lib/session";
-import { getDb } from "@/lib/admin-db";
+import { actionDb as getDb, withActionDb } from "@/lib/server/action-context";
 import { logAdminAction } from "@/lib/admin-audit";
 import { verifyAdminPassword } from "@/lib/admin-password";
 import { revokeAdminSession as revokeSession, revokeOtherAdminSessions as revokeOthers } from "@/lib/server/admin-sessions";
@@ -20,7 +20,6 @@ import { getOrder, updateOrder } from "@/lib/server/repo/orders";
 import { loadSettings, saveRuleSet, saveSettings } from "@/lib/server/repo/settings";
 import { callFn } from "@/lib/server/repo/rpc";
 import { saveServices } from "@/lib/server/repo/services-repo";
-import { withAdminDb } from "@/lib/server/admin-snapshot";
 import { loadProvider, updateProvider } from "@/lib/server/repo/providers";
 import { applyCatalogSync, previewCatalogSync } from "@/lib/server/repo/services-repo";
 import { notifyOrderStatus, notifyUser } from "@/lib/server/repo/notify";
@@ -54,7 +53,8 @@ const fail = (error: string): ActionResult => ({ ok: false, error });
 async function run<Schema extends ZodType>(
   schema: Schema,
   input: unknown,
-  handler: (data: z.infer<Schema>, admin: SessionPayload) => Promise<ActionResult> | ActionResult
+  handler: (data: z.infer<Schema>, admin: SessionPayload) => Promise<ActionResult> | ActionResult,
+  opts: { services?: boolean } = {}
 ): Promise<ActionResult> {
   let admin: SessionPayload;
   try {
@@ -66,7 +66,7 @@ async function run<Schema extends ZodType>(
   const parsed = schema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Data tidak valid.");
   try {
-    const result = await withAdminDb(async () => {
+    const result = await withActionDb(async () => {
       const db = getDb();
       // Handlers that edit settings / order rules / price history mutate this request's snapshot; whatever changed is written back below.
       const settingsBefore = JSON.stringify(settingsPart(db.settings));
@@ -83,7 +83,7 @@ async function run<Schema extends ZodType>(
         if (fresh.length) await supabaseAdmin().from("price_updates").insert(fresh.map((u) => ({ service_id: u.serviceId, platform: u.platform, name: u.name, type: u.type, detail: u.detail })));
       }
       return res;
-    });
+    }, opts);
     if (result.ok) {
       // Anything an admin changes (sync apply, prices, switches) must show up in the user area right away.
       revalidatePath("/admin", "layout");
@@ -320,7 +320,7 @@ export async function updateService(input: unknown) {
     await saveServices([service]);
     await audit(admin, "service.update", "service", service.id, before, { ...service, finalPrice: newPrice });
     return ok(`Layanan ${service.id} disimpan. Harga akhir ${rupiah(newPrice)}/1000.`);
-  });
+  }, { services: true });
 }
 
 export async function createService(input: unknown) {
@@ -343,7 +343,7 @@ export async function createService(input: unknown) {
     });
     await audit(admin, "service.create", "service", nextId, null, created);
     return ok(`Layanan ${nextId} ditambahkan.`);
-  });
+  }, { services: true });
 }
 
 export async function bulkMarkup(input: unknown) {
@@ -360,7 +360,7 @@ export async function bulkMarkup(input: unknown) {
     await saveServices(targets);
     await audit(admin, "service.bulk_markup", "service", d.scope, null, { markupType: d.markupType, markup: d.markup, count: targets.length });
     return ok(`Markup diterapkan ke ${targets.length} layanan.`);
-  });
+  }, { services: true });
 }
 
 /** Read-only diff against the provider catalogue (Likeo). Nothing is changed. */
@@ -426,7 +426,7 @@ export async function importServicesCsv(input: unknown) {
     await saveServices(touched);
     await audit(admin, "service.import", "service", "csv", null, { updated });
     return ok(`${updated} layanan diperbarui dari CSV.`);
-  });
+  }, { services: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -855,7 +855,7 @@ export async function releaseHeldOrder(input: unknown) {
 }
 
 export async function previewMarginFix(input: unknown) {
-  return run(S.autoMarkupSchema.omit({ password: true }), input, (d) => ok(undefined, { changes: previewAutoMarkup(getDb(), d.serviceIds) }));
+  return run(S.autoMarkupSchema.omit({ password: true }), input, (d) => ok(undefined, { changes: previewAutoMarkup(getDb(), d.serviceIds) }), { services: true });
 }
 
 export async function applyMarginFix(input: unknown) {
@@ -867,7 +867,7 @@ export async function applyMarginFix(input: unknown) {
     await saveServices(db.services.filter((x) => changes.some((c) => c.serviceId === x.id)));
     await audit(admin, "service.auto_markup", "service", "margin", { services: preview.map((c) => ({ id: c.serviceId, price: c.oldPrice })) }, { services: changes.map((c) => ({ id: c.serviceId, price: c.newPrice })) });
     return ok(changes.length ? `Markup otomatis diterapkan ke ${changes.length} layanan.` : "Tidak ada layanan dengan margin tipis.");
-  });
+  }, { services: true });
 }
 
 export async function changeAdminPassword(input: unknown) {

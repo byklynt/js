@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { AdminData } from "@/components/admin/admin-fetch";
 import { StatsView, type StatsUrlParams } from "@/components/admin/stats/stats-view";
-import { buildStatsDatasetFromDb } from "@/lib/admin-stats-data";
-import { getDb } from "@/lib/admin-db";
+import { loadStatsDataset } from "@/lib/server/admin/stats";
 import { todayIso } from "@/lib/server/time";
 import { requireAdmin } from "@/lib/auth-server";
 import { computeStats, type RangeId, type TabId } from "@/lib/server/stats";
@@ -22,7 +21,7 @@ export default function Page(props: { searchParams: SearchParams }) {
         await requireAdmin();
         const sp = await props.searchParams;
         const one = (k: string) => (Array.isArray(sp[k]) ? sp[k]![0] : sp[k]);
-        const ds = buildStatsDatasetFromDb(getDb());
+        const ds = await loadStatsDataset();
         const tab = TABS.includes(one("tab") as TabId) ? (one("tab") as TabId) : "keuangan";
         const range = RANGES.includes(one("range") as RangeId) ? (one("range") as RangeId) : "30";
         const provider = ds.providers.some((p) => p.id === one("provider")) ? (one("provider") as string) : "semua";
