@@ -1,5 +1,6 @@
 import type { AdminDb } from "@/lib/admin-data";
 import { reconcileBalances } from "./ledger";
+import { snapshotBalanceMismatches } from "./snapshot-flags";
 import type { AdminOrder } from "@/lib/admin-data";
 import { computeExpectedRefund, effectiveProviderCost, isActiveStatus, isStuck, mapProviderStatus, refundReasonFor } from "./rules";
 import { dayOf } from "./time";
@@ -70,7 +71,8 @@ export function providerDiscrepancies(db: AdminDb) {
 
 export function integrityReport(db: AdminDb, now = new Date()) {
   return {
-    balanceMismatches: reconcileBalances(db),
+    // In an admin request the snapshot only holds a window of the ledger: Postgres (verify_balances) computed this instead.
+    balanceMismatches: snapshotBalanceMismatches(db) ?? reconcileBalances(db),
     refundMismatches: refundMismatches(db),
     discrepancies: providerDiscrepancies(db),
     stuck: stuckOrders(db, now).map((o) => o.id),

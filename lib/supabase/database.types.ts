@@ -1573,6 +1573,29 @@ export type Database = {
           },
         ]
       }
+      user_spend: {
+        Row: {
+          orders: number | null
+          total_spent: number | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "balance_mismatches"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "orders_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       admin_adjust_balance: {

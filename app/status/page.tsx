@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { LegalPage } from "@/components/legal/legal-page";
-import { getDb } from "@/lib/admin-db";
+import { loadSyncHealthDb } from "@/lib/server/admin-snapshot";
 import { STALL_MINUTES, syncHealth } from "@/lib/server/metrics";
 import { formatDateTime } from "@/lib/balance";
 
@@ -20,7 +20,7 @@ export default function Page() {
 
 async function Status() {
   await connection();
-  const db = getDb();
+  const db = await loadSyncHealthDb();
   // Provider names stay private: the public page only shows generic lanes.
   const rows = syncHealth(db).map((h, i) => {
     const state = h.stalled ? "Terganggu" : h.failingRuns >= 3 ? "Gangguan" : h.failingRuns > 0 ? "Melambat" : "Normal";

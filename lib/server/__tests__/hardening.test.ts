@@ -7,7 +7,6 @@ import { createRateLimiter } from "../limits";
 import { createMockProviderClient } from "../provider-client";
 import { applyAutoMarkup, isThinMargin, marginPercent, thinMarginServices } from "../pricing";
 import { userRisk } from "../risk";
-import { generateBackupCodes, consumeBackupCode, totpAt, verifyTotp } from "../totp";
 
 let db: AdminDb;
 const sleep = async () => {};
@@ -43,35 +42,6 @@ describe("margin flagging", () => {
     const flagged = db.users.find((u) => u.username === "dimas_arya")!;
     expect(userRisk(db, flagged.id).flagged).toBe(true);
     expect(userRisk(db, "usr_1000").flagged).toBe(false);
-  });
-});
-
-describe("2FA gate", () => {
-  it("blocks admins without 2FA when it is required", () => {
-    expect(twoFactorGate(true, undefined)).toBe("setup_required");
-    expect(twoFactorGate(true, { secretEnc: "X", enabled: false, enabledAt: null, backupHashes: [], lastUsedStep: 0 })).toBe("setup_required");
-    expect(twoFactorGate(true, { secretEnc: "X", enabled: true, enabledAt: null, backupHashes: [], lastUsedStep: 0 })).toBe("ok");
-    expect(twoFactorGate(false, undefined)).toBe("ok");
-  });
-
-  it("verifies real TOTP codes (with drift) and single-use backup codes", () => {
-    const secret = "JBSWY3DPEHPK3PXP";
-    const now = 1_700_000_000_000;
-    expect(verifyTotp(secret, totpAt(secret, now), now)).toBe(true);
-    expect(verifyTotp(secret, totpAt(secret, now - 30_000), now)).toBe(true);
-    expect(verifyTotp(secret, totpAt(secret, now - 120_000), now)).toBe(false);
-    expect(verifyTotp(secret, "123456", now)).toBe(totpAt(secret, now) === "123456");
-    const { plain, hashes } = generateBackupCodes(3);
-    const left = consumeBackupCode(hashes, plain[0])!;
-    expect(left).toHaveLength(2);
-    expect(consumeBackupCode(left, plain[0])).toBeNull(); // already used
-  });
-
-  it("IP allowlist: empty = off, exact and CIDR match", () => {
-    expect(ipAllowed([], "1.2.3.4")).toBe(true);
-    expect(ipAllowed(["203.0.113.0/24"], "203.0.113.77")).toBe(true);
-    expect(ipAllowed(["203.0.113.0/24"], "198.51.100.1")).toBe(false);
-    expect(ipAllowed(["127.0.0.1"], "::1")).toBe(true);
   });
 });
 

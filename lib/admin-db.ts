@@ -6,12 +6,8 @@ import { likeoApiUrl, maskedLikeoKey, providerMode } from "@/lib/server/provider
 import { missingRefunds } from "@/lib/server/views";
 import { ordersByPlatform, revenueSeries } from "@/lib/server/series";
 import { dayOf, todayIso } from "@/lib/server/time";
-import { applyPersisted, changedOutside, getStore, markSynced, persistAdminState } from "@/lib/server/store";
-import { checkKeyStability, KEY_CHANGED_MESSAGE } from "@/lib/server/key-check";
-import { encryptSecret } from "@/lib/server/crypto-at-rest";
+import { currentSnapshot } from "@/lib/server/admin-snapshot";
 import {
-  DEV_OWNER_TOTP_SECRET,
-  createEmptyDb,
   mockAdminAccounts,
   setPriceRounding,
   type AdminAccount,
@@ -21,51 +17,15 @@ import {
 } from "@/lib/admin-data";
 
 /**
- * In-memory database (lives on globalThis so it survives HMR). It starts EMPTY (createEmptyDb) and is filled from the dev store
- * (lib/server/store.ts); nothing is seeded at startup. Demo data exists only in lib/dev/demo-seed.ts (`npm run seed:demo`).
- * TODO: replace with the real database. If Supabase is used: keep the role in a `profiles` table,
- * enforce it with RLS, and read it server-side only. Never trust a role sent from the client.
+ * getDb() = the admin snapshot of THIS request (lib/server/admin-snapshot.ts): the latest rows of every table, built from
+ * Supabase for each admin request and held in AsyncLocalStorage. It is the READ side only; admin writes use queries / RPCs.
+ * Outside an admin request there is no snapshot and getDb() throws, instead of quietly serving stale data.
  */
-const globalForDb = globalThis as unknown as { __sgAdminDb?: AdminDb; __sgAdminDbSeed?: string };
-
-/** Bump this string to rebuild the in-memory db from the dev store on the next request. */
-const SEED_VERSION = "empty-1";
-
-/** Dev: shout once at startup if the encryption key no longer matches the stored data. */
-function verifyKey() {
-  if (process.env.VITEST || !process.env.ADMIN_2FA_ENC_KEY) return;
-  try {
-    if (checkKeyStability(getStore()) === "changed") console.error(`
-[2fa] ${KEY_CHANGED_MESSAGE}
-`);
-  } catch (e) {
-    console.error("[2fa]", e instanceof Error ? e.message : e);
-  }
-}
-
 export function getDb(): AdminDb {
-  // The dev store was edited outside this process (e.g. npm run admin:reset-2fa): pick the change up.
-  if (globalForDb.__sgAdminDb && changedOutside()) {
-    applyPersisted(globalForDb.__sgAdminDb);
-    markSynced();
-  }
-  if (!globalForDb.__sgAdminDb || globalForDb.__sgAdminDbSeed !== SEED_VERSION) {
-    const db = createEmptyDb();
-    // A reseed (SEED_VERSION bump, dev restart) must never wipe admin 2FA, sessions or audit logs.
-    const hadSecurity = applyPersisted(db);
-    if (!hadSecurity && process.env.NODE_ENV !== "production" && process.env.ADMIN_2FA_ENC_KEY && !process.env.VITEST) {
-      // First run only, development only: the seeded "owner" account starts with 2FA on (known dev secret) so the
-      // sign-in step can be tried. "admin" starts without 2FA to exercise the forced setup. Remove with the mock store.
-      db.adminSecurity.adm_2 = { secretEnc: encryptSecret(DEV_OWNER_TOTP_SECRET), enabled: true, enabledAt: new Date().toISOString(), backupHashes: [], lastUsedStep: 0 };
-      persistAdminState(db);
-    }
-    globalForDb.__sgAdminDb = db;
-    verifyKey();
-    markSynced();
-    globalForDb.__sgAdminDbSeed = SEED_VERSION;
-  }
-  setPriceRounding(globalForDb.__sgAdminDb.settings.pricing.roundTo);
-  return globalForDb.__sgAdminDb;
+  const db = currentSnapshot();
+  if (!db) throw new Error("getDb() dipanggil di luar permintaan admin (tidak ada snapshot). Bungkus dengan withAdminDb().");
+  setPriceRounding(db.settings.pricing.roundTo);
+  return db;
 }
 
 export function findAdminByIdentifier(identifier: string): AdminAccount | undefined {

@@ -1,62 +1,64 @@
 /**
- * DEMO DATA SEED. Run with: npm run seed:demo [-- --force]
+ * LOCAL-ONLY demo data: npm run seed:demo
  *
- * Fills the dev store with FAKE users, orders, deposits, tickets, ledger and notifications so the screens can be explored
- * with data. Never runs in production. The running app never seeds anything by itself.
- *
- * It keeps what must survive: admin 2FA, sessions, audit logs, passwords, the Likeo provider row and the services imported
- * from the provider. Everything operational (users, orders, ...) is replaced. A backup of the store is written first.
- * Demo users sign in with the password printed at the end.
+ * Creates a few FAKE users, deposits and orders so the screens can be explored. It refuses to run unless
+ * NEXT_PUBLIC_SUPABASE_URL points at the local Supabase stack (127.0.0.1 / localhost, `npm run db:start`). It will never touch
+ * the dev or production project. The bootstrap (npm run bootstrap) is the only seed that is allowed to run anywhere.
  */
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { createEmptyDb } from "../lib/admin-data";
-import { DEMO_PASSWORD, seedDemoDb } from "../lib/dev/demo-seed";
-import { hashPassword } from "../lib/server/password";
-import { applyPersisted, persistAdminState } from "../lib/server/store";
-import { loadCreds, saveCreds } from "../lib/server/user-store";
+import { createClient } from "@supabase/supabase-js";
+import { existsSync, readFileSync } from "node:fs";
 
+if (existsSync(".env.local")) {
+  for (const line of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
+    const i = line.indexOf("=");
+    if (i > 0 && !line.trim().startsWith("#") && process.env[line.slice(0, i).trim()] === undefined) process.env[line.slice(0, i).trim()] = line.slice(i + 1).trim().replace(/^["']|["']$/g, "");
+  }
+}
+
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const host = (() => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
+  }
+})();
+
+if (!["127.0.0.1", "localhost", "::1", "host.docker.internal"].includes(host)) {
+  console.error(`seed:demo menolak berjalan: NEXT_PUBLIC_SUPABASE_URL (${host || "kosong"}) bukan Supabase lokal. Data palsu hanya boleh ada di database LOKAL.`);
+  process.exit(1);
+}
 if (process.env.NODE_ENV === "production") {
   console.error("seed:demo menolak berjalan saat NODE_ENV=production.");
   process.exit(1);
 }
-
-console.warn("PERINGATAN: ini mengisi store dev dengan data PALSU (pengguna, pesanan, deposit, tiket...). Jangan dipakai di data sungguhan.");
-
-const storePath = join(process.cwd(), ".data", "dev-store.json");
-const db = createEmptyDb();
-applyPersisted(db);
-
-if (db.users.length > 0 && !process.argv.includes("--force")) {
-  console.error(`Store sudah berisi ${db.users.length} pengguna. Jalankan ulang dengan --force untuk menimpanya (backup dibuat dulu).`);
+if (!key) {
+  console.error("SUPABASE_SECRET_KEY belum diisi.");
   process.exit(1);
 }
 
-if (existsSync(storePath)) {
-  const dir = join(process.cwd(), ".data", `backup-${new Date().toISOString().replace(/[:.]/g, "-")}`);
-  mkdirSync(dir, { recursive: true });
-  copyFileSync(storePath, join(dir, "dev-store.json"));
-  console.log("Backup store:", dir);
+const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+const password = `Demo-${Math.random().toString(36).slice(2, 10)}!`;
+
+async function main() {
+  const { data: services } = await db.from("services").select("id,min").eq("active", true).limit(3);
+  for (const name of ["demo_budi", "demo_sari", "demo_andi"]) {
+    const { data, error } = await db.auth.admin.createUser({ email: `${name}@contoh.test`, password, email_confirm: true, user_metadata: { username: name } });
+    if (error || !data.user) {
+      console.log(`${name}: dilewati (${error?.message ?? "gagal"})`);
+      continue;
+    }
+    await db.rpc("apply_ledger_entry", { p_user: data.user.id, p_type: "deposit", p_amount: 250_000, p_ref_type: "demo", p_ref_id: `demo:${data.user.id}`, p_note: "Saldo demo", p_by: "seed" });
+    for (const [i, s] of (services ?? []).entries()) {
+      await db.rpc("place_order", { p_user: data.user.id, p_service: s.id, p_link: `https://contoh.test/${name}/${i}`, p_quantity: s.min });
+    }
+    console.log(`${name}: dibuat`);
+  }
+  console.log(`Password semua akun demo: ${password}`);
 }
 
-const demo = seedDemoDb();
-// Replace operational data; keep admin security, sessions, logs, settings, the Likeo row and imported services.
-Object.assign(db, {
-  users: demo.users, orders: demo.orders, deposits: demo.deposits, refunds: demo.refunds, tickets: demo.tickets,
-  ledger: demo.ledger, refillRequests: demo.refillRequests, cancelRequests: demo.cancelRequests, syncRuns: demo.syncRuns, alerts: demo.alerts,
-  priceUpdates: demo.priceUpdates, providerOrders: demo.providerOrders, notifications: demo.notifications, announcements: demo.announcements,
+main().catch((e) => {
+  console.error(e instanceof Error ? e.message : e);
+  process.exit(1);
 });
-const imported = db.services.filter((s) => s.imported);
-db.services = [...demo.services.filter((s) => !s.imported), ...imported];
-// Demo providers keep the demo services working; the Likeo row stays as configured.
-db.providers = [...demo.providers.filter((p) => !p.kind), ...db.providers.filter((p) => p.kind)];
-
-persistAdminState(db);
-const creds = loadCreds();
-const hash = hashPassword(DEMO_PASSWORD);
-for (const u of demo.users) creds[u.id] = { passwordHash: hash };
-saveCreds(creds);
-
-console.log(`Selesai: ${demo.users.length} pengguna demo, ${demo.orders.length} pesanan, ${demo.deposits.length} deposit, ${demo.tickets.length} tiket.`);
-console.log(`Masuk sebagai pengguna demo "jagoansosmed_user" (atau lainnya) dengan password: ${DEMO_PASSWORD}`);
-console.log("Catatan: mode live menyembunyikan penyedia contoh; layanan demo baru tampil bila PROVIDER_MODE=mock.");

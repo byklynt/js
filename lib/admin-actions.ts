@@ -9,16 +9,18 @@ import { logAdminAction } from "@/lib/admin-audit";
 import { verifyAdminPassword } from "@/lib/admin-password";
 import { revokeAdminSession as revokeSession, revokeOtherAdminSessions as revokeOthers } from "@/lib/server/admin-sessions";
 import { createClient as createSupabase } from "@/lib/supabase/server";
-import { finalPrice, setPriceRounding, type AdminService } from "@/lib/admin-data";
+import { finalPrice, setPriceRounding, type AdminService, type SiteSettings } from "@/lib/admin-data";
 import { todayIso } from "@/lib/server/time";
 import * as S from "@/lib/admin-schemas";
-import { applyLedgerEntry } from "@/lib/server/ledger";
 import { creditDeposit } from "@/lib/server/deposits";
 import { approveHeldOrder, resolveManualCheck, resubmitFailedOrder } from "@/lib/server/orders";
 import { createProviderClient, getAdapter } from "@/lib/server/providers/client";
 import { checkLikeo } from "@/lib/server/providers/balance";
 import { getOrder, updateOrder } from "@/lib/server/repo/orders";
-import { loadSettings, saveSettings } from "@/lib/server/repo/settings";
+import { loadSettings, saveRuleSet, saveSettings } from "@/lib/server/repo/settings";
+import { callFn } from "@/lib/server/repo/rpc";
+import { saveServices } from "@/lib/server/repo/services-repo";
+import { withAdminDb } from "@/lib/server/admin-snapshot";
 import { loadProvider, updateProvider } from "@/lib/server/repo/providers";
 import { applyCatalogSync, previewCatalogSync } from "@/lib/server/repo/services-repo";
 import { notifyOrderStatus, notifyUser } from "@/lib/server/repo/notify";
@@ -32,13 +34,10 @@ import { replyAsAdmin } from "@/lib/server/tickets";
 import { notifyAnnouncement } from "@/lib/server/repo/announcements";
 import { ipAllowed } from "@/lib/server/access";
 import { getClientIp } from "@/lib/auth-server";
-import { persistAdminState } from "@/lib/server/store";
 import { randomBytes } from "node:crypto";
-import { hashPassword } from "@/lib/server/password";
-import { loadCreds, saveCreds } from "@/lib/server/user-store";
 import { nextRuleVersion } from "@/lib/order-rules";
 import { applyAutoMarkup, previewAutoMarkup, recordPriceChange } from "@/lib/server/pricing";
-import { ServiceError, withTransaction } from "@/lib/server/tx";
+import { ServiceError } from "@/lib/server/tx";
 
 /**
  * Every export here is a server action reachable from the browser, so each one:
@@ -67,18 +66,38 @@ async function run<Schema extends ZodType>(
   const parsed = schema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Data tidak valid.");
   try {
-    const result = await handler(parsed.data, admin);
+    const result = await withAdminDb(async () => {
+      const db = getDb();
+      // Handlers that edit settings / order rules / price history mutate this request's snapshot; whatever changed is written back below.
+      const settingsBefore = JSON.stringify(settingsPart(db.settings));
+      const rulesBefore = JSON.stringify(db.settings.orderRules);
+      const priceBefore = new Set(db.priceUpdates.map((u) => u.id));
+      const res = await handler(parsed.data, admin);
+      if (res.ok) {
+        if (JSON.stringify(settingsPart(db.settings)) !== settingsBefore) await saveSettings(db.settings, admin.sub);
+        if (JSON.stringify(db.settings.orderRules) !== rulesBefore) {
+          const before = JSON.parse(rulesBefore) as typeof db.settings.orderRules;
+          for (const set of Object.values(db.settings.orderRules)) if (JSON.stringify(set) !== JSON.stringify(before[set.key])) await saveRuleSet(set);
+        }
+        const fresh = db.priceUpdates.filter((u) => !priceBefore.has(u.id));
+        if (fresh.length) await supabaseAdmin().from("price_updates").insert(fresh.map((u) => ({ service_id: u.serviceId, platform: u.platform, name: u.name, type: u.type, detail: u.detail })));
+      }
+      return res;
+    });
     if (result.ok) {
-      persistAdminState(getDb());
-      // Anything an admin changes (sync apply, prices, switches) must show up in the user catalogue right away.
+      // Anything an admin changes (sync apply, prices, switches) must show up in the user area right away.
       revalidatePath("/admin", "layout");
+      revalidatePath("/dashboard", "layout");
     }
     return result;
   } catch (e) {
     if (e instanceof ServiceError) return fail(e.message);
+    console.error("[admin-actions]", e);
     return fail("Terjadi kesalahan di server. Coba lagi.");
   }
 }
+
+const settingsPart = ({ orderRules: _rules, ...rest }: SiteSettings) => (void _rules, rest);
 
 async function audit(
   admin: SessionPayload,
@@ -104,56 +123,53 @@ const rupiah = (n: number) => `Rp ${n.toLocaleString("id-ID")}`;
 export async function adjustBalance(input: unknown) {
   return run(S.adjustBalanceSchema, input, async (d, admin) => {
     if (!(await reauth(admin, d.password))) return fail("Password salah.");
-    const db = getDb();
-    const user = db.users.find((u) => u.id === d.userId);
+    const { data: user } = await supabaseAdmin().from("profiles").select("id,username,balance").eq("id", d.userId).maybeSingle();
     if (!user) return fail("Pengguna tidak ditemukan.");
-    const before = { balance: user.balance };
     const delta = d.direction === "tambah" ? d.amount : -d.amount;
-    // Every balance change goes through the ledger (single transaction, never negative).
-    withTransaction(db, () =>
-      applyLedgerEntry(db, {
-        userId: user.id, type: "adjustment", amount: delta, refType: "admin_adjust", refId: `${user.id}:${Date.now()}`,
-        note: d.reason, createdBy: admin.sub,
-      })
-    );
-    await audit(admin, "user.balance.adjust", "user", user.id, before, { balance: user.balance, delta, reason: d.reason });
+    // The ledger entry and the audit log are written by ONE Postgres function in ONE transaction (never negative).
+    await callFn("admin_adjust_balance", { p_admin: admin.sub, p_user: user.id, p_amount: delta, p_reason: d.reason });
     return ok(`Saldo ${user.username} ${d.direction === "tambah" ? "bertambah" : "berkurang"} ${rupiah(d.amount)}.`);
   });
+}
+
+async function profileOf(userId: string) {
+  const { data } = await supabaseAdmin().from("profiles").select("id,username,email,status,role,rank,manual_approval").eq("id", userId).maybeSingle();
+  return data;
 }
 
 export async function setUserStatus(input: unknown) {
   return run(S.userStatusSchema, input, async (d, admin) => {
     if (!(await reauth(admin, d.password))) return fail("Password salah.");
-    const user = getDb().users.find((u) => u.id === d.userId);
-    if (!user) return fail("Pengguna tidak ditemukan.");
-    const before = { status: user.status };
-    user.status = d.status;
-    await audit(admin, d.status === "diblokir" ? "user.ban" : "user.unban", "user", user.id, before, { status: user.status });
+    const user = await profileOf(d.userId);
+    if (!user || user.role === "admin") return fail("Pengguna tidak ditemukan.");
+    await supabaseAdmin().from("profiles").update({ status: d.status }).eq("id", user.id);
+    // A blocked user loses every session at once (they are also rejected on their next request).
+    if (d.status === "diblokir") await supabaseAdmin().auth.admin.signOut(user.id, "global").catch(() => undefined);
+    await audit(admin, d.status === "diblokir" ? "user.ban" : "user.unban", "user", user.id, { status: user.status }, { status: d.status });
     return ok(d.status === "diblokir" ? `${user.username} diblokir.` : `${user.username} diaktifkan kembali.`);
   });
 }
 
 export async function setUserReseller(input: unknown) {
   return run(S.resellerSchema, input, async (d, admin) => {
-    const user = getDb().users.find((u) => u.id === d.userId);
-    if (!user) return fail("Pengguna tidak ditemukan.");
-    const before = { reseller: user.reseller, rank: user.rank };
-    user.reseller = d.reseller;
-    user.rank = d.reseller ? "Reseller" : "Starter";
-    await audit(admin, "user.reseller", "user", user.id, before, { reseller: user.reseller, rank: user.rank });
+    const user = await profileOf(d.userId);
+    if (!user || user.role === "admin") return fail("Pengguna tidak ditemukan.");
+    const next = { role: d.reseller ? "reseller" : "user", rank: d.reseller ? "Reseller" : "Starter" };
+    await supabaseAdmin().from("profiles").update(next).eq("id", user.id);
+    await audit(admin, "user.reseller", "user", user.id, { reseller: user.role === "reseller", rank: user.rank }, { reseller: d.reseller, rank: next.rank });
     return ok(d.reseller ? `${user.username} kini reseller.` : `${user.username} bukan reseller lagi.`);
   });
 }
 
 export async function resetUserPassword(input: unknown) {
   return run(S.userIdSchema, input, async (d, admin) => {
-    const user = getDb().users.find((u) => u.id === d.userId);
-    if (!user) return fail("Pengguna tidak ditemukan.");
-    // No e-mail sending yet: the admin gets a one-time temporary password to hand to the user (shown once, never stored in clear).
+    const user = await profileOf(d.userId);
+    if (!user || user.role === "admin") return fail("Pengguna tidak ditemukan.");
+    // No e-mail sending from the app yet: the admin gets a one-time temporary password to hand to the user (shown once, never stored by us).
     const temp = `${randomBytes(9).toString("base64url")}9a`;
-    const creds = loadCreds();
-    creds[user.id] = { ...(creds[user.id] ?? { passwordHash: "" }), passwordHash: hashPassword(temp) };
-    saveCreds(creds);
+    const { error } = await supabaseAdmin().auth.admin.updateUserById(user.id, { password: temp });
+    if (error) return fail("Password tidak bisa direset. Coba lagi.");
+    await supabaseAdmin().auth.admin.signOut(user.id, "global").catch(() => undefined);
     await audit(admin, "user.password.reset", "user", user.id, null, { email: user.email });
     return ok(`Password sementara untuk ${user.username} dibuat.`, { tempPassword: temp });
   });
@@ -161,9 +177,9 @@ export async function resetUserPassword(input: unknown) {
 
 export async function addUserNote(input: unknown) {
   return run(S.userNoteSchema, input, async (d, admin) => {
-    const user = getDb().users.find((u) => u.id === d.userId);
+    const user = await profileOf(d.userId);
     if (!user) return fail("Pengguna tidak ditemukan.");
-    user.notes.push(d.text);
+    await supabaseAdmin().from("user_notes").insert({ user_id: user.id, author_id: admin.sub, body: d.text });
     await audit(admin, "user.note.add", "user", user.id, null, { text: d.text });
     return ok("Catatan ditambahkan.");
   });
@@ -301,6 +317,7 @@ export async function updateService(input: unknown) {
         type: "nonaktif", date: todayIso(), detail: "Layanan dinonaktifkan sementara.",
       });
     }
+    await saveServices([service]);
     await audit(admin, "service.update", "service", service.id, before, { ...service, finalPrice: newPrice });
     return ok(`Layanan ${service.id} disimpan. Harga akhir ${rupiah(newPrice)}/1000.`);
   });
@@ -319,6 +336,7 @@ export async function createService(input: unknown) {
       refill: d.refill, refillDays: null, cancel: d.cancel, active: d.active, sort: d.sort,
     };
     db.services.push(created);
+    await saveServices([created]);
     db.priceUpdates.unshift({
       id: `pu_new_${nextId}`, serviceId: nextId, platform: created.platform, name: created.name, type: "baru",
       date: todayIso(), detail: `Layanan baru tersedia dengan harga ${rupiah(finalPrice(created))} per 1000.`,
@@ -339,6 +357,7 @@ export async function bulkMarkup(input: unknown) {
       s.markup = d.markup;
       pushPriceUpdate(s, old, finalPrice(s));
     }
+    await saveServices(targets);
     await audit(admin, "service.bulk_markup", "service", d.scope, null, { markupType: d.markupType, markup: d.markup, count: targets.length });
     return ok(`Markup diterapkan ke ${targets.length} layanan.`);
   });
@@ -389,6 +408,7 @@ export async function importServicesCsv(input: unknown) {
     // Format: id,providerPrice,markup  (header row optional). TODO: full import with validation per column.
     const db = getDb();
     let updated = 0;
+    const touched: AdminService[] = [];
     for (const line of d.csv.split(/\r?\n/)) {
       const [id, price, markup] = line.split(",").map((p) => p.trim());
       const s = db.services.find((x) => x.id === id);
@@ -399,9 +419,11 @@ export async function importServicesCsv(input: unknown) {
       s.providerPrice = priceNum;
       s.markup = markupNum;
       pushPriceUpdate(s, old, finalPrice(s));
+      touched.push(s);
       updated++;
     }
     if (updated === 0) return fail("Tidak ada baris valid. Format: id,harga_provider,markup");
+    await saveServices(touched);
     await audit(admin, "service.import", "service", "csv", null, { updated });
     return ok(`${updated} layanan diperbarui dari CSV.`);
   });
@@ -815,11 +837,10 @@ export async function saveNotificationSettings(input: unknown) {
 
 export async function setUserManualApproval(input: unknown) {
   return run(S.userApprovalSchema, input, async (d, admin) => {
-    const user = getDb().users.find((u) => u.id === d.userId);
+    const user = await profileOf(d.userId);
     if (!user) return fail("Pengguna tidak ditemukan.");
-    const before = { manualApproval: user.manualApproval };
-    user.manualApproval = d.manualApproval;
-    await audit(admin, "user.manual_approval", "user", user.id, before, { manualApproval: d.manualApproval });
+    await supabaseAdmin().from("profiles").update({ manual_approval: d.manualApproval }).eq("id", user.id);
+    await audit(admin, "user.manual_approval", "user", user.id, { manualApproval: user.manual_approval }, { manualApproval: d.manualApproval });
     return ok(d.manualApproval ? `Pesanan dan refund ${user.username} sekarang perlu persetujuan admin.` : `Persetujuan manual untuk ${user.username} dimatikan.`);
   });
 }
@@ -843,6 +864,7 @@ export async function applyMarginFix(input: unknown) {
     const db = getDb();
     const preview = previewAutoMarkup(db, d.serviceIds);
     const changes = applyAutoMarkup(db, d.serviceIds);
+    await saveServices(db.services.filter((x) => changes.some((c) => c.serviceId === x.id)));
     await audit(admin, "service.auto_markup", "service", "margin", { services: preview.map((c) => ({ id: c.serviceId, price: c.oldPrice })) }, { services: changes.map((c) => ({ id: c.serviceId, price: c.newPrice })) });
     return ok(changes.length ? `Markup otomatis diterapkan ke ${changes.length} layanan.` : "Tidak ada layanan dengan margin tipis.");
   });

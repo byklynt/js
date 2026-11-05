@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { H2, LegalPage } from "@/components/legal/legal-page";
-import { getDb } from "@/lib/admin-db";
+import { loadSettings } from "@/lib/server/repo/settings";
 import { cancelPolicySentences, RULE_KEYS } from "@/lib/order-rules";
 
 export const metadata: Metadata = { title: "Kebijakan Refund - JagoanSosmed" };
@@ -20,7 +20,7 @@ export default function Page() {
 
 async function Policy() {
   await connection();
-  const { cancelPolicy, orderRules } = getDb().settings;
+  const { cancelPolicy, orderRules } = await loadSettings();
   const s = cancelPolicySentences(cancelPolicy);
   return (
     <>

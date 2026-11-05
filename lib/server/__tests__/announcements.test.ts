@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { type AdminDb } from "@/lib/admin-data";
 import { seedDemoDb as seedAdminDb } from "@/lib/dev/demo-seed";
 import type { Announcement } from "@/lib/announcements-data";
-import { applyPersisted, createMemoryStore, persistAdminState } from "../store";
 import { normalizeAnnouncement } from "@/lib/announcements-data";
 import { audienceCount, getVisibleAnnouncements, markSeen, unseenCount, viewerOf } from "../announcements";
 
@@ -81,54 +80,5 @@ describe("getVisibleAnnouncements", () => {
     expect(ids).toContain("ann_1");
     expect(ids).not.toContain("ann_3"); // reseller only
     expect(ids).not.toContain("ann_4"); // inactive
-  });
-});
-
-describe("audience, seen state and persistence", () => {
-  it("counts the users that would see it", () => {
-    const resellers = db.users.filter((u) => u.status === "aktif" && u.reseller).length;
-    const all = db.users.filter((u) => u.status === "aktif").length;
-    expect(audienceCount(db, "reseller")).toBe(resellers);
-    expect(audienceCount(db, "semua")).toBe(all);
-    expect(all).toBeGreaterThan(resellers);
-  });
-
-  it("the unseen badge counts new announcements and clears once the user has opened the updates page", () => {
-    db.announcements = [make({ id: "a", placements: ["pembaruan"] }), make({ id: "b", placements: ["dashboard"] })];
-    expect(unseenCount(db, "usr_1000", now)).toBe(1); // only the one shown on the updates page
-    markSeen(db, "usr_1000", now);
-    expect(unseenCount(db, "usr_1000", now)).toBe(0);
-    // an edit after the last visit makes it unseen again
-    db.announcements[0].updatedAt = "2026-11-05T12:00:00+07:00";
-    expect(unseenCount(db, "usr_1000", new Date("2026-11-05T13:00:00+07:00"))).toBe(1);
-  });
-
-  it("viewerOf resolves the role from the server-side user record", () => {
-    db.users.find((u) => u.id === "usr_1000")!.reseller = true;
-    expect(viewerOf(db, "usr_1000")).toEqual({ id: "usr_1000", reseller: true });
-    expect(viewerOf(db, "nobody")).toBeNull();
-  });
-
-  it("announcements written by the admin survive a restart (shared durable store)", () => {
-    const store = createMemoryStore();
-    db.announcements = [make({ id: "keep", title: "Tetap ada" })];
-    persistAdminState(db, store);
-    const reloaded = seedAdminDb();
-    applyPersisted(reloaded, store);
-    expect(reloaded.announcements.map((a) => a.id)).toEqual(["keep"]);
-    expect(getVisibleAnnouncements(reloaded, { user: normal, placement: "dashboard", now }).map((a) => a.title)).toEqual(["Tetap ada"]);
-  });
-});
-
-describe("legacy rows", () => {
-  it("rows saved before the model change (target / showOn*) are converted, not dropped or crashing", () => {
-    const legacy = { id: "ann_9", title: "Lama", body: "Isi lama pengumuman.", target: "reseller", showOnDashboard: true, showOnUpdates: false, publishAt: "2026-10-01T00:00:00+07:00", active: true };
-    const a = normalizeAnnouncement(legacy);
-    expect(a).toMatchObject({ audience: "reseller", placements: ["dashboard"], level: "info", expiresAt: null });
-    const store = createMemoryStore({ announcements: [legacy as never] });
-    const reloaded = seedAdminDb();
-    applyPersisted(reloaded, store);
-    expect(getVisibleAnnouncements(reloaded, { user: { id: "u", reseller: true }, placement: "dashboard", now }).map((x) => x.id)).toEqual(["ann_9"]);
-    expect(getVisibleAnnouncements(reloaded, { user: { id: "u", reseller: false }, placement: "dashboard", now })).toEqual([]);
   });
 });

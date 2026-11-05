@@ -3,7 +3,7 @@ import { cache } from "react";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import type { SessionPayload } from "@/lib/session";
-import { getDb } from "@/lib/admin-db";
+import { loadSettings } from "@/lib/server/repo/settings";
 import { ipAllowed } from "@/lib/server/access";
 import { checkAdminSession } from "@/lib/server/admin-sessions";
 import { createClient } from "@/lib/supabase/server";
@@ -82,8 +82,8 @@ export async function requireAdmin(mode: "page" | "action" = "page", opts: { ski
     if (mode === "action") throw new UnauthorizedError();
     redirect(session ? "/dashboard" : "/admin/login");
   }
-  const db = getDb();
-  if (!ipAllowed(db.settings.security.ipAllowlist, await getClientIp())) {
+  const { security } = await loadSettings();
+  if (!ipAllowed(security.ipAllowlist, await getClientIp())) {
     if (mode === "action") throw new UnauthorizedError("IP_BLOCKED");
     notFound();
   }
@@ -93,7 +93,7 @@ export async function requireAdmin(mode: "page" | "action" = "page", opts: { ski
     if (mode === "action") throw new UnauthorizedError("MFA_REQUIRED");
     redirect("/admin/login");
   }
-  if (!opts.skipGate && !who.mfaEnrolled && db.settings.security.requireAdmin2fa) {
+  if (!opts.skipGate && !who.mfaEnrolled && security.requireAdmin2fa) {
     if (mode === "action") throw new UnauthorizedError("TWO_FACTOR_REQUIRED");
     redirect("/admin/setup-2fa");
   }

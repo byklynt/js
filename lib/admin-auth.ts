@@ -3,13 +3,13 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { logAdminAction } from "@/lib/admin-audit";
-import { getDb } from "@/lib/admin-db";
+import { loadSettings } from "@/lib/server/repo/settings";
+import { supabaseAdmin as sbAdmin } from "@/lib/server/supabase-admin";
 import { getClientIp, loadIdentity } from "@/lib/auth-server";
 import { hitRateLimit, LOGIN_LIMIT, minutes, resetRateLimit } from "@/lib/rate-limit";
 import { ipAllowed } from "@/lib/server/access";
 import { recordAdminSession, revokeAdminSession } from "@/lib/server/admin-sessions";
 import { BACKUP_CODE_RE, clearBackupCodes, consumeBackupCode } from "@/lib/server/backup-codes";
-import { sendAlert } from "@/lib/server/notify";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import { resolveLoginEmail } from "@/lib/server/user-auth";
 import { createClient } from "@/lib/supabase/server";
@@ -33,7 +33,7 @@ const codeSchema = z.object({ code: z.string().trim().regex(/^(\d{6}|[a-z0-9]{4}
 async function finishLogin(admin: { id: string; username: string }, sid: string | undefined, ip: string) {
   const h = await headers();
   if (sid) await recordAdminSession(sid, admin.id, ip, h.get("user-agent") ?? "tidak diketahui");
-  sendAlert(getDb(), "new_admin_login", `Login admin baru: ${admin.username} dari ${ip}.`);
+  if ((await loadSettings()).notifications.toggles.new_admin_login) await sbAdmin().from("admin_alerts").insert({ kind: "new_admin_login", message: `Login admin baru: ${admin.username} dari ${ip}.` });
   await logAdminAction({ adminId: admin.id, adminName: admin.username, action: "auth.login", targetType: "admin", targetId: admin.id, before: null, after: { at: new Date().toISOString() } });
 }
 
@@ -43,7 +43,7 @@ export async function adminLogin(input: unknown): Promise<AdminLoginResult> {
   if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? GENERIC_ERROR };
   const { identifier, password } = parsed.data;
   const ip = await getClientIp();
-  if (!ipAllowed(getDb().settings.security.ipAllowlist, ip)) return { status: "error", message: "Akses dari alamat IP ini tidak diizinkan." };
+  if (!ipAllowed((await loadSettings()).security.ipAllowlist, ip)) return { status: "error", message: "Akses dari alamat IP ini tidak diizinkan." };
 
   const key = `admin-login:${ip}:${identifier.toLowerCase()}`;
   const limit = await hitRateLimit(key, LOGIN_LIMIT.limit, LOGIN_LIMIT.windowSeconds);
