@@ -3,14 +3,15 @@
 import { useRouter } from "next/navigation";
 import { LogOut, Settings } from "lucide-react";
 import { logout } from "@/lib/auth-actions";
-import { userBreadcrumbs, userNav } from "@/lib/nav-config";
+import { buildUserNav, userBreadcrumbs } from "@/lib/nav-config";
+import { EMPTY_COMMUNITY, type CommunityLinks } from "@/lib/community-links";
 import { useUnreadTicketCount } from "@/lib/tickets-store";
 import { useUnseenUpdatesCount } from "@/lib/announcements-store";
 import { DashboardShell } from "@/components/shell/dashboard-shell";
 import { NotificationBell } from "@/components/shell/notification-bell";
 import { CurrencyPill } from "@/components/shell/topbar";
 import type { AccountMenuItem } from "@/components/shell/account-menu";
-import { LegalFooter } from "@/components/legal/legal-page";
+import { LegalFooter } from "@/components/legal/legal-footer";
 
 const accountItems: AccountMenuItem[] = [
   { label: "Akun", icon: Settings, href: "/dashboard/settings" },
@@ -21,10 +22,13 @@ const accountItems: AccountMenuItem[] = [
 export function UserShell({
   username,
   email,
+  community = EMPTY_COMMUNITY,
   children,
 }: {
   username: string;
   email: string;
+  /** Admin-controlled links; each shows only when set. */
+  community?: CommunityLinks;
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -40,7 +44,7 @@ export function UserShell({
     <DashboardShell
       username={username}
       email={email}
-      nav={userNav}
+      nav={buildUserNav(community)}
       account={{ label: "Akun Saya", name: username }}
       breadcrumbs={userBreadcrumbs}
       pill={<CurrencyPill />}
@@ -52,7 +56,7 @@ export function UserShell({
     >
       {children}
       <div className="-mx-4 mt-10 sm:-mx-6 lg:-mx-[53px]">
-        <LegalFooter />
+        <LegalFooter community={community} />
       </div>
     </DashboardShell>
   );

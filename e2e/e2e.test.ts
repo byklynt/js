@@ -185,12 +185,22 @@ describe.skipIf(!enabled)("browser e2e: auth, roles, MFA, data isolation", () =>
     await page.getByPlaceholder("Minimal 8 karakter").fill(password);
     await page.getByRole("button", { name: "Masuk", exact: true }).click();
     await page.waitForURL("**/dashboard", { timeout: 30_000 });
-    await page.getByRole("button", { name: /keluar|logout/i }).first().click().catch(async () => {
-      await page.getByText(/keluar/i).first().click();
-    });
-    await page.waitForTimeout(2500);
-    await page.goto("/dashboard");
-    expect(new URL(page.url()).pathname).toBe("/login");
+    // A click that lands before the page has hydrated does nothing, so: wait for the page to settle, click, and check; retry until the
+    // session is really gone (never a fixed sleep).
+    await expect
+      .poll(
+        async () => {
+          await page.goto("/dashboard");
+          if (new URL(page.url()).pathname === "/login") return "/login";
+          await page.waitForLoadState("networkidle").catch(() => {});
+          await page.getByRole("button", { name: /keluar|logout/i }).first().click({ timeout: 10_000 }).catch(() => {});
+          await page.waitForTimeout(1500);
+          await page.goto("/dashboard");
+          return new URL(page.url()).pathname;
+        },
+        { timeout: 90_000, interval: 500 }
+      )
+      .toBe("/login");
     await ctx.close();
   }, 120_000);
 });

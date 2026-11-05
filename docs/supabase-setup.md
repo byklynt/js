@@ -154,3 +154,12 @@ Setiap layanan mencatat berapa lama pesanan nyata selesai. Dari 3 pesanan selesa
 - **Admin**: Admin > Layanan menampilkan jumlah sampel dan estimasi per layanan; estimasi manual (mis. "5 - 15 menit") tampil sampai data terukur mencapai batas minimum; "Reset statistik" melupakan data lama (dicatat di log audit).
 - **Provider**: respons `services` Likeo hanya berisi `service, name, type, rate, min, max, dripfeed, refill, cancel, category`. Tidak ada kolom rata-rata waktu, jadi tidak ada fallback "Perkiraan penyedia". Kolom `services.avg_time` yang lama tetap kosong.
 - **Alat**: `node scripts/estimate-screenshots.mjs --before <url> --after <url>` membandingkan screenshot halaman terkait antara build sebelum dan sesudah fitur.
+
+## Tautan komunitas (Saluran WhatsApp, Saluran Telegram, Bot Telegram)
+
+- Diatur admin di **Pengaturan Situs > Umum > Tautan Komunitas**; tersimpan di `site_settings.data.community`. Kosong = nonaktif.
+- **Validasi** (`lib/community-links.ts`, dijalankan di server saat menyimpan dan sekali lagi saat dirender): hanya `https`, host harus persis `wa.me` / `whatsapp.com` / `chat.whatsapp.com` (WhatsApp) atau `t.me` / `telegram.me` (Telegram), tanpa nama pengguna/password (termasuk `https://t.me@evil.com`), tanpa port, tanpa spasi, dan harus berisi path ke saluran/bot. `javascript:`, `data:`, `http:` dan host mirip (`wa.me.evil.com`) ditolak dengan pesan berbahasa Indonesia.
+- **Audit**: aksi `settings.community` menyimpan nilai lama dan baru.
+- **Pembacaan sisi pengguna** (`lib/server/community.ts`): `use cache` dengan tag `community-links`, disegarkan paling lama tiap menit dan langsung saat admin menyimpan (`updateTag` setelah baris tersimpan).
+- **Tampil**: grup sidebar "Tautan lainnya" (sebelum Pengaturan, seperti desain lama; tanpa Aplikasi Mobile), kolom "Komunitas" di footer landing, dan baris footer dasbor dan halaman hukum. Tiap tautan hanya muncul bila diisi, dibuka di tab baru dengan `rel="noopener noreferrer"`. Tidak ada `href="#"`: `lib/community-links.test.ts` gagal bila ada item menu tanpa href atau berhref `#`.
+- **Alat**: `node scripts/community-screenshots.mjs --before <url> --after <url>` membandingkan screenshot (terang/gelap, desktop/mobile) sidebar, footer landing, dan pengaturan admin.

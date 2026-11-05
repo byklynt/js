@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Bell, CreditCard, Crown, KeyRound, Plus, Settings, Gauge, ListChecks, ShieldCheck, Trash2, Wallet } from "lucide-react";
+import { Bell, CreditCard, Crown, KeyRound, Link2, Plus, Settings, Gauge, ListChecks, ShieldCheck, Trash2, Wallet } from "lucide-react";
 import type { SiteSettings } from "@/lib/admin-data";
+import { COMMUNITY_FIELDS } from "@/lib/community-links";
 import {
   changeAdminPassword,
+  saveCommunityLinks,
   saveGeneralSettings,
   savePaymentSettings,
   saveRankSettings,
@@ -85,6 +87,48 @@ export function GeneralSettingsForm({ settings }: { settings: SiteSettings["gene
 }
 
 // ---------------------------------------------------------------------------
+
+/** "Tautan Komunitas": optional links shown in the user sidebar and footers. Validated again on the server. */
+export function CommunityLinksForm({ settings }: { settings: SiteSettings["community"] }) {
+  const run = useAdminRunner();
+  const [form, setForm] = useState(settings);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <SettingsSection icon={Link2} title="Tautan Komunitas">
+      <form
+        noValidate
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setError("");
+          const result = await run(saveCommunityLinks(form));
+          setBusy(false);
+          if (!result.ok) setError(result.error);
+        }}
+        className="max-w-[720px] space-y-4"
+        data-testid="community-links-form"
+      >
+        {COMMUNITY_FIELDS.map((f) => (
+          <TextField
+            key={f.key}
+            label={f.label}
+            type="url"
+            inputMode="url"
+            autoComplete="off"
+            value={form[f.key]}
+            onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+            placeholder={f.placeholder}
+            hint={f.kind === "whatsapp" ? "Hanya wa.me, whatsapp.com, atau chat.whatsapp.com (https). Kosongkan untuk menonaktifkan." : "Hanya t.me atau telegram.me (https). Kosongkan untuk menonaktifkan."}
+          />
+        ))}
+        {error ? <p role="alert" className="text-[9.5px] font-medium text-red-500" data-testid="community-links-error">{error}</p> : null}
+        <Button type="submit" loading={busy}>Simpan tautan</Button>
+      </form>
+    </SettingsSection>
+  );
+}
 
 export function PaymentSettingsForm({ settings }: { settings: SiteSettings["payments"] }) {
   const run = useAdminRunner();

@@ -62,6 +62,21 @@ function MenuRow({
     );
   }
 
+  if (item.external) {
+    // Same look as every other row; opens in a new tab. (The old design had no external-link icon, so none is added.)
+    return (
+      <a
+        href={item.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(rowBase, "text-ink hover:bg-primary-50 hover:text-primary-accent dark:font-normal dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-primary-300")}
+      >
+        {content}
+        <span className="sr-only">{t("nav.new_tab")}</span>
+      </a>
+    );
+  }
+
   return (
     <Link
       href={item.href}

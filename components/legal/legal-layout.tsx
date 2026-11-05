@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Logo } from "@/components/shared/logo";
-import { LegalFooter } from "@/components/legal/legal-page";
+import { CommunityLegalFooter } from "@/components/legal/legal-footer-server";
 import { formatLegalDate, LEGAL_VERSION, type LegalBlock, type LegalDoc } from "@/lib/legal-content";
 import { siteConfig } from "@/lib/site-config";
 
@@ -131,7 +131,7 @@ export function LegalLayout({ doc }: { doc: LegalDoc }) {
           </section>
         </main>
       </div>
-      <LegalFooter />
+      <CommunityLegalFooter />
     </div>
   );
 }

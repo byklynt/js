@@ -1,13 +1,6 @@
 import Link from "next/link";
+import { CommunityLegalFooter } from "@/components/legal/legal-footer-server";
 import { Logo } from "@/components/shared/logo";
-import { LEGAL_PATHS } from "@/lib/legal-content";
-
-export const legalLinks = [
-  { label: "Syarat & Ketentuan", href: LEGAL_PATHS.terms },
-  { label: "Kebijakan Refund", href: LEGAL_PATHS.refund },
-  { label: "Kebijakan Privasi", href: LEGAL_PATHS.privacy },
-  { label: "Status Layanan", href: "/status" },
-];
 
 /** Plain, theme-aware shell for the public pages (terms, refund policy, status, maintenance). */
 export function LegalPage({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
@@ -26,23 +19,8 @@ export function LegalPage({ title, subtitle, children }: { title: string; subtit
         {subtitle ? <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p> : null}
         <div className="mt-8 space-y-6 text-sm leading-relaxed">{children}</div>
       </main>
-      <LegalFooter />
+      <CommunityLegalFooter />
     </div>
-  );
-}
-
-export function LegalFooter() {
-  return (
-    <footer className="border-t border-primary-100 px-4 py-6 dark:border-slate-800">
-      <nav aria-label="Tautan hukum" className="mx-auto flex max-w-3xl flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-slate-500 dark:text-slate-400">
-        {legalLinks.map((l) => (
-          <Link key={l.href} href={l.href} className="hover:text-primary-500">
-            {l.label}
-          </Link>
-        ))}
-        <span>&copy; 2026 JagoanSosmed</span>
-      </nav>
-    </footer>
   );
 }
 

@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
+import { COMMUNITY_TAG } from "@/lib/community-links";
 import { z, type ZodType } from "zod";
 import { requireAdmin } from "@/lib/auth-server";
 import type { SessionPayload } from "@/lib/session";
@@ -74,7 +75,11 @@ async function run<Schema extends ZodType>(
       const priceBefore = new Set(db.priceUpdates.map((u) => u.id));
       const res = await handler(parsed.data, admin);
       if (res.ok) {
-        if (JSON.stringify(settingsPart(db.settings)) !== settingsBefore) await saveSettings(db.settings, admin.sub);
+        if (JSON.stringify(settingsPart(db.settings)) !== settingsBefore) {
+          await saveSettings(db.settings, admin.sub);
+          // The user side reads the community links through a cache: drop it AFTER the row is written so the next request sees the new value.
+          updateTag(COMMUNITY_TAG);
+        }
         if (JSON.stringify(db.settings.orderRules) !== rulesBefore) {
           const before = JSON.parse(rulesBefore) as typeof db.settings.orderRules;
           for (const set of Object.values(db.settings.orderRules)) if (JSON.stringify(set) !== JSON.stringify(before[set.key])) await saveRuleSet(set);
@@ -815,6 +820,17 @@ export async function saveGeneralSettings(input: unknown) {
     db.settings.general = { ...db.settings.general, ...d };
     await audit(admin, "settings.update", "settings", "general", before, db.settings.general);
     return ok("Pengaturan umum disimpan.");
+  });
+}
+
+/** "Tautan Komunitas": WhatsApp channel, Telegram channel, Telegram bot. Empty disables a link. The audit row keeps the old and the new value. */
+export async function saveCommunityLinks(input: unknown) {
+  return run(S.communityLinksSchema, input, async (d, admin) => {
+    const db = getDb();
+    const before = { ...db.settings.community };
+    db.settings.community = { ...d };
+    await audit(admin, "settings.community", "settings", "community", before, db.settings.community);
+    return ok("Tautan komunitas disimpan.");
   });
 }
 

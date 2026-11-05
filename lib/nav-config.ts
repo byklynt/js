@@ -19,7 +19,10 @@ import {
   WalletCards,
   BookText,
   BarChart3,
+  Bot,
 } from "lucide-react";
+import { FaTelegram, FaWhatsapp } from "react-icons/fa6";
+import { activeCommunityLinks, EMPTY_COMMUNITY, type CommunityKey, type CommunityLinks } from "@/lib/community-links";
 import type { TKey } from "@/lib/i18n/id";
 
 export type NavIcon = ComponentType<{ className?: string }>;
@@ -38,6 +41,8 @@ export type NavItem = {
   /** Match the exact pathname only (otherwise sub-routes also count as active). */
   exact?: boolean;
   action?: "logout";
+  /** An external link: opens in a new tab with rel="noopener noreferrer". */
+  external?: boolean;
 };
 
 export type Crumb = { label: string; subtitle: string; labelKey?: TKey; subtitleKey?: TKey; /** Extra trail between "Beranda" and the label, e.g. ["Tiket"]. */ parents?: string[] };
@@ -47,9 +52,10 @@ export type Crumb = { label: string; subtitle: string; labelKey?: TKey; subtitle
 // ---------------------------------------------------------------------------
 
 const main = "Menu utama";
+const extra = "Tautan lainnya";
 const account = "Pengaturan";
 
-export const userNav: NavItem[] = [
+const userNavBase: NavItem[] = [
   { label: "Order Baru", labelKey: "nav.order_baru", href: "/dashboard", icon: ShoppingCart, group: main, exact: true },
   { label: "Layanan", labelKey: "nav.layanan", href: "/dashboard/services", icon: ClipboardList, group: main },
   { label: "Pesanan", labelKey: "nav.pesanan", href: "/dashboard/orders", icon: ClipboardCheck, group: main },
@@ -65,6 +71,25 @@ export const userNav: NavItem[] = [
   { label: "Pengaturan", labelKey: "nav.pengaturan", href: "/dashboard/settings", icon: Settings, group: account },
   { label: "Keluar", labelKey: "nav.keluar", icon: LogOut, group: account, action: "logout" },
 ];
+
+/** "Tautan lainnya" (as before commit fdc638f, minus the mobile app): each item only when its URL is set; no URL -> no group. */
+const COMMUNITY_NAV: Record<CommunityKey, { labelKey: NavItem["labelKey"]; icon: NavIcon }> = {
+  whatsappChannel: { labelKey: "nav.saluran_whatsapp", icon: FaWhatsapp },
+  telegramChannel: { labelKey: "nav.saluran_telegram", icon: FaTelegram },
+  telegramBot: { labelKey: "nav.bot_telegram", icon: Bot },
+};
+
+/** The user menu: main items, then the community group (when any link is set), then Pengaturan / Keluar (the order of the old design). */
+export function buildUserNav(community: CommunityLinks = EMPTY_COMMUNITY): NavItem[] {
+  const links: NavItem[] = activeCommunityLinks(community).map((l) => ({
+    label: l.label, labelKey: COMMUNITY_NAV[l.key].labelKey, href: l.href, icon: COMMUNITY_NAV[l.key].icon, group: extra, external: true,
+  }));
+  const at = userNavBase.findIndex((i) => i.group === account);
+  return [...userNavBase.slice(0, at), ...links, ...userNavBase.slice(at)];
+}
+
+/** Without community links. */
+export const userNav: NavItem[] = buildUserNav();
 
 export const userBreadcrumbs: Record<string, Crumb> = {
   "/dashboard": { label: "Order Baru", subtitle: "Buat pesananmu dari sini", labelKey: "crumb.order_baru", subtitleKey: "crumbsub.buat_pesananmu_dari_sini" },

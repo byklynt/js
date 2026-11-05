@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { COMMUNITY_FIELDS, validateCommunityUrl, type CommunityLinks } from "@/lib/community-links";
 import { BAN_REASONS, VIOLATION_REASONS } from "@/lib/account-status";
 import { isValidAllowlistEntry } from "@/lib/server/access";
 
@@ -175,6 +176,18 @@ export const settingsGeneralSchema = z.object({
   supportTelegram: z.string().trim().max(60),
   maintenance: z.boolean(),
 });
+/** Validated on the server (the form only helps): https, exact hosts, no credentials. Empty = disabled. Output is the normalized URLs. */
+export const communityLinksSchema = z
+  .object({ whatsappChannel: z.string().max(400).default(""), telegramChannel: z.string().max(400).default(""), telegramBot: z.string().max(400).default("") })
+  .transform((d, ctx): CommunityLinks => {
+    const out: CommunityLinks = { whatsappChannel: "", telegramChannel: "", telegramBot: "" };
+    for (const f of COMMUNITY_FIELDS) {
+      const r = validateCommunityUrl(d[f.key], f.kind);
+      if (!r.ok) ctx.addIssue({ code: "custom", path: [f.key], message: `${f.label}: ${r.message}` });
+      else out[f.key] = r.value;
+    }
+    return out;
+  });
 export const settingsPaymentsSchema = z.object({
   activeMethods: z.array(z.string()).min(1, "Aktifkan minimal satu metode."),
   minDeposit: z.coerce.number().int().min(1000, "Minimal Rp 1.000.").max(10_000_000),

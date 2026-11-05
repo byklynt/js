@@ -4,6 +4,7 @@ import { MaintenanceGate } from "@/components/dashboard/maintenance-gate";
 import { getCurrentUser } from "@/lib/auth-actions";
 import { LangBoundary } from "@/components/shell/lang-boundary";
 import { UserShell } from "@/components/dashboard/user-shell";
+import { getCommunityLinks } from "@/lib/server/community";
 
 export default function DashboardGroupLayout({ children }: { children: React.ReactNode }) {
   // The signed-in user comes from a cookie (runtime data), so everything is resolved inside a Suspense boundary.
@@ -18,9 +19,10 @@ export default function DashboardGroupLayout({ children }: { children: React.Rea
 async function UserGate({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const community = await getCommunityLinks();
   return (
     <LangBoundary>
-      <UserShell username={user.username} email={user.email}>
+      <UserShell username={user.username} email={user.email} community={community}>
         <Suspense fallback={null}>
           <MaintenanceGate>{children}</MaintenanceGate>
         </Suspense>

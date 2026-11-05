@@ -231,6 +231,8 @@ export type SiteSettings = {
   };
   /** Measured delivery-time estimates: show from this many completed orders; use the most recent `window` orders per service. */
   estimates: { minSamples: number; window: number };
+  /** Optional links shown in the user sidebar and the footers when set (validated in lib/community-links.ts). */
+  community: import("@/lib/community-links").CommunityLinks;
 };
 
 export type PriceUpdate = {
@@ -333,6 +335,7 @@ export function defaultSettings(): SiteSettings {
     cancelPolicy: { ...DEFAULT_CANCEL_POLICY },
     operations: { stuckHours: 24, lowBalanceThreshold: LOW_PROVIDER_BALANCE, autoDisableLowBalance: false },
     estimates: { minSamples: 3, window: 20 },
+    community: { whatsappChannel: "", telegramChannel: "", telegramBot: "" },
   };
 }
 
