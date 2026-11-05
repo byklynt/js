@@ -38,7 +38,7 @@ insert into public.notifications (user_id, type, title) values
   ('00000000-0000-0000-0000-0000000000a2', 'sistem', 'n2');
 insert into public.announcements (title, body, audience) values ('All', 'b', 'semua'), ('Resellers', 'b', 'reseller');
 insert into public.audit_logs (admin_name, action, target_type, target_id) values ('admin_one', 'x', 'user', '1');
-insert into public.site_settings (data) values ('{"secret":"s"}');
+insert into public.site_settings (id, data) values (true, '{"secret":"s"}') on conflict (id) do update set data = excluded.data;
 
 -- ---------------------------------------------------------------------------------------------------------------
 -- Structure
@@ -122,7 +122,7 @@ select is((select language from public.profiles where id = '00000000-0000-0000-0
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000ad","role":"authenticated"}', true);
 set local role authenticated;
 select ok((select count(*) from public.audit_logs) >= 1, 'admin can read audit_logs');
-select is((select count(*)::int from public.providers), 1, 'admin can read providers');
+select ok((select count(*) from public.providers) >= 1, 'admin can read providers');
 select throws_ok($$ select api_key_encrypted from public.providers $$, '42501', null, 'even admin cannot select the encrypted key through the API');
 select ok((select count(*) from public.profiles) >= 3, 'admin can read all profiles');
 select throws_ok($$ update public.profiles set balance = 1 where id = '00000000-0000-0000-0000-0000000000a1' $$, '42501', null, 'admin writes also go through server functions only');

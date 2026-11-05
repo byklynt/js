@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { finalPrice, type AdminDb, type AdminService, type MarkupType } from "@/lib/admin-data";
 import type { Category, Service } from "@/lib/dashboard-data";
 import { isThinMargin, marginPercent, afterProviderPriceChange, markupForMargin } from "../pricing";
-import { logSystem } from "../notifications";
+import { logSystem } from "../system-log";
 import { ServiceError } from "../tx";
 import { LIKEO_ID } from "./config";
 import type { ProviderServiceInfo } from "./types";

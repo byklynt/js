@@ -15,7 +15,7 @@ JagoanSosmed runs on Supabase (Postgres + Auth + Storage + Realtime). This file 
 | `SUPABASE_SECRET_KEY` (or `SUPABASE_SERVICE_ROLE_KEY`) | Project settings → API | **server only**, bypasses RLS. Never `NEXT_PUBLIC_*` |
 | `SUPABASE_DEV_PROJECT_REF` | the dev project ref | the DB integration tests refuse to run against any other project |
 | `NEXT_PUBLIC_SITE_URL` | your site origin | used in e-mail links / OAuth redirects |
-| `PROVIDER_KEY_ENC_KEY` | `openssl rand -base64 32` | encrypts provider API keys at rest |
+| `PROVIDER_KEY_ENC_KEY` | `openssl rand -base64 32` | encrypts provider API keys at rest. Keep it: losing it makes stored provider keys unreadable (re-run `npm run bootstrap` with `LIKEO_API_KEY`) |
 | `CRON_SECRET` | any long random string | protects `/api/cron/*` |
 
 `SUPABASE_DB_PASSWORD` is only needed in your terminal for CLI commands that connect to the database directly. Never write it to a file.
@@ -27,13 +27,19 @@ npm run db:push        # applies supabase/migrations/* to the linked project
 npm run db:types       # regenerates lib/supabase/database.types.ts
 npm run db:lint        # supabase db lint
 npm run db:test        # pgTAP tests (works without Docker, through `supabase db query`)
-npm run test:db        # concurrency / idempotency tests against the DEV project
+npm run test:db        # concurrency + server-flow tests against the DEV project (cleans up after itself)
+npm run test:e2e       # browser e2e (run `npm run build` first)
+npm run security:scan  # no secret value in the build output
+npm run bootstrap      # default settings, rule texts, Likeo provider row (safe to re-run)
 ```
 
 Rules: migrations are timestamped SQL files, committed. **Never edit a migration that is already pushed**: add a new one. Never run `db reset`, drop or truncate on a remote project.
 With Docker installed you can also use a local stack: `npm run db:start`, `npm run db:reset` (local only), `npm run db:test:docker`.
 
-## 3. First admin
+## 3. Bootstrap and first admin
+
+`npm run bootstrap` (after the migrations) creates the default settings (cancel policy 72 jam / 50%), the platform rule texts and the Likeo provider row; the Likeo key from `LIKEO_API_KEY` is stored encrypted. Exchange rate and markup start as "belum diatur": set them under Admin → Provider before the first catalogue sync.
+
 
 ```
 npm run admin:create -- <username> <email>

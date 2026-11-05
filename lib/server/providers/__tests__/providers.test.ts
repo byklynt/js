@@ -6,7 +6,6 @@ import { seedDemoDb as seedAdminDb } from "@/lib/dev/demo-seed";
 import { toPublicProvider } from "@/lib/admin-db";
 import { ProviderError, type ProviderClient } from "../../provider-client";
 import { placeOrder, resolveManualCheck } from "../../orders";
-import { createRateLimiter } from "../../limits";
 import { syncOrders } from "../../sync";
 import { applyCatalog, buildSyncPreview, buildUserCatalog, cleanServiceName, isSupportedType, platformFromCategory, rateToRupiah } from "../catalog";
 import { createProviderClient } from "../client";

@@ -3,7 +3,6 @@ import { finalPrice, type AdminDb } from "@/lib/admin-data";
 import { seedDemoDb as seedAdminDb } from "@/lib/dev/demo-seed";
 import * as S from "@/lib/admin-schemas";
 import { ipAllowed, maintenanceBlocks, requireReauth, twoFactorGate } from "../access";
-import { createRateLimiter } from "../limits";
 import { createMockProviderClient } from "../provider-client";
 import { applyAutoMarkup, isThinMargin, marginPercent, thinMarginServices } from "../pricing";
 import { userRisk } from "../risk";
@@ -14,8 +13,6 @@ beforeEach(() => {
   db = seedAdminDb();
 });
 
-const svc = () => db.services.find((s) => s.active && s.min <= 100 && s.max >= 100)!;
-const deps = (limiter = createRateLimiter()) => ({ client: createMockProviderClient(db), sleep, limiter });
 
 describe("margin flagging", () => {
   it("computes margin on the selling price and flags thin / negative ones", () => {

@@ -6,7 +6,6 @@
  */
 import type { AdminDb } from "@/lib/admin-data";
 import type { Announcement, AnnouncementPlacement, PublicAnnouncement } from "@/lib/announcements-data";
-import { createNotification } from "./notifications";
 
 export type Viewer = { id: string; reseller: boolean };
 
@@ -54,16 +53,4 @@ export function unseenCount(db: AdminDb, userId: string, now = new Date()): numb
 /** TODO(db): persisted per user; today it lives in the dev store (lib/server/store.ts). */
 export function markSeen(db: AdminDb, userId: string, now = new Date()) {
   db.announcementSeen[userId] = now.toISOString();
-}
-
-/** A new (or edited) announcement that is live now notifies the users of its audience once. Scheduled ones: TODO(scheduler). */
-export function notifyAnnouncement(db: AdminDb, a: Announcement, now = new Date()): number {
-  if (!a.active || new Date(a.publishAt).getTime() > now.getTime()) return 0;
-  let created = 0;
-  for (const u of db.users) {
-    if (u.status !== "aktif" || (a.audience === "reseller" && !u.reseller)) continue;
-    const href = a.placements.includes("pembaruan") ? "/dashboard/updates" : "/dashboard";
-    if (createNotification(db, { userId: u.id, type: "pengumuman", title: a.title, body: a.body, href, dedupeKey: `ann:${a.id}:${a.updatedAt}` }, now)) created++;
-  }
-  return created;
 }
