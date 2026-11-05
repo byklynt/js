@@ -10,6 +10,7 @@ import { TextInput } from "./text-input";
 import { PasswordInput } from "./password-input";
 import { GoogleButton } from "./google-button";
 import { features } from "@/lib/features";
+import { LEGAL_PATHS } from "@/lib/legal-content";
 import { FormAlert, type AlertState } from "@/components/shared/form-alert";
 
 type Errors = {
@@ -178,6 +179,11 @@ export function SignupForm() {
             </>
           )}
         </button>
+
+        {/* Implied acceptance (no checkbox). The accepted version and time are stored on the profile by register(). */}
+        <p className="text-center text-[11px] leading-relaxed text-slate-500 dark:text-slate-400" data-testid="signup-consent">
+          Dengan mendaftar, kamu menyetujui <Link href={LEGAL_PATHS.terms} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-accent underline underline-offset-2">Syarat & Ketentuan</Link>, <Link href={LEGAL_PATHS.refund} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-accent underline underline-offset-2">Kebijakan Refund</Link>, dan <Link href={LEGAL_PATHS.privacy} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-accent underline underline-offset-2">Kebijakan Privasi</Link> kami.
+        </p>
       </form>
 
       {features.googleLogin ? (

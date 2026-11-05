@@ -7,6 +7,7 @@ import { features } from "@/lib/features";
 import { hitRateLimit, LOGIN_LIMIT, minutes, resetRateLimit } from "@/lib/rate-limit";
 import { siteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
+import { LEGAL_VERSION } from "@/lib/legal-content";
 import { resolveLoginEmail } from "@/lib/server/user-auth";
 import { createClient } from "@/lib/supabase/server";
 import { REMEMBER_COOKIE, REMEMBER_MAX_AGE } from "@/lib/supabase/remember";
@@ -50,6 +51,11 @@ export async function register(payload: RegisterPayload): Promise<AuthResult> {
     if (error.code === "over_email_send_rate_limit") return { success: false, message: "Terlalu banyak email terkirim. Coba lagi nanti." };
     // The profile trigger rejected the username (a race with another sign-up) or Auth failed.
     return { success: false, message: /database error/i.test(error.message) ? "Username sudah dipakai." : SERVER_ERROR };
+  }
+  // Implied acceptance: remember which legal version was shown at signup (server-side; users cannot write these columns). A failure here must not fail the signup.
+  if (data.user) {
+    const { error: acceptError } = await supabaseAdmin().from("profiles").update({ terms_version: LEGAL_VERSION, terms_accepted_at: new Date().toISOString() }).eq("id", data.user.id);
+    if (acceptError) console.error("[signup] could not store legal acceptance:", acceptError.message);
   }
   // With "Confirm email" switched on there is no session until the link is opened.
   if (!data.session) return { success: true, message: "Pendaftaran berhasil. Cek emailmu untuk konfirmasi, lalu masuk." };

@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import * as OTPAuth from "otpauth";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import { LEGAL_VERSION } from "@/lib/legal-content";
 import { hashPassword } from "@/lib/server/password";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -123,9 +124,11 @@ describe.skipIf(!enabled)("browser flows: signup, order, ticket, language, admin
     await page.getByRole("button", { name: "Daftar", exact: true }).click();
     // Either straight to the dashboard (Confirm e-mail OFF) or the "check your e-mail" notice (ON): never a silent failure.
     await expect.poll(async () => `${new URL(page.url()).pathname}|${await page.locator("body").innerText()}`, { timeout: 40_000 }).toMatch(/\/dashboard\||cek email|konfirmasi|Terlalu banyak email|rate/i);
-    const { data: profile } = await sb().from("profiles").select("id,username,role,balance").eq("username", uName).maybeSingle();
+    const { data: profile } = await sb().from("profiles").select("id,username,role,balance,terms_version,terms_accepted_at").eq("username", uName).maybeSingle();
     if (profile) {
       expect(profile).toMatchObject({ username: uName, role: "user", balance: 0 });
+      expect(profile.terms_version).toBe(LEGAL_VERSION); // implied acceptance at signup is recorded
+      expect(Date.now() - new Date(profile.terms_accepted_at!).getTime()).toBeLessThan(10 * 60_000);
       id.u = profile.id;
       await sb().auth.admin.updateUserById(profile.id, { email_confirm: true }); // so the rest of the journey can sign in whatever the project's e-mail setting is
     } else {

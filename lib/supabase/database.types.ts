@@ -820,6 +820,8 @@ export type Database = {
           referred_by: string | null
           role: string
           status: string
+          terms_accepted_at: string | null
+          terms_version: string | null
           updated_at: string
           username: string
         }
@@ -839,6 +841,8 @@ export type Database = {
           referred_by?: string | null
           role?: string
           status?: string
+          terms_accepted_at?: string | null
+          terms_version?: string | null
           updated_at?: string
           username: string
         }
@@ -858,6 +862,8 @@ export type Database = {
           referred_by?: string | null
           role?: string
           status?: string
+          terms_accepted_at?: string | null
+          terms_version?: string | null
           updated_at?: string
           username?: string
         }

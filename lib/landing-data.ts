@@ -1,3 +1,4 @@
+import { LEGAL_PATHS } from "@/lib/legal-content";
 import { brand } from "@/lib/brand";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -158,8 +159,9 @@ export const footerLinks = {
   bantuan: [
     { label: "Layanan", href: "/services" },
     { label: "Blog", href: "/blog" },
-    { label: "Syarat & Ketentuan", href: "/terms" },
-    { label: "Kebijakan Refund", href: "/refund-policy" },
+    { label: "Syarat & Ketentuan", href: LEGAL_PATHS.terms },
+    { label: "Kebijakan Refund", href: LEGAL_PATHS.refund },
+    { label: "Kebijakan Privasi", href: LEGAL_PATHS.privacy },
     { label: "Status Layanan", href: "/status" },
   ],
 };
