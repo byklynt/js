@@ -22,7 +22,9 @@ delete from public.orders where user_id in (select id from zt_users);
 delete from public.balance_ledger where user_id in (select id from zt_users);
 delete from public.deposits where user_id in (select id from zt_users);
 delete from public.webhook_events where external_id like 'zt-%';
-delete from public.rate_limits where key in (select 'order:' || id::text from zt_users);
+delete from public.rate_limits where key like '%zt\_%' or key like '%tidak\_ada\_%'
+  or exists (select 1 from zt_users u where key like '%' || u.id::text || '%')
+  or (key ~ '^ticket(-reply)?:[0-9a-f-]{36}$' and not exists (select 1 from public.profiles p where key like '%' || p.id::text));
 delete from public.admin_alerts where message like '%zt\_%';
 delete from public.provider_sync_runs where started_at > now() - interval '45 minutes';
 delete from auth.users where id in (select id from zt_users);   -- profiles, notifications, tickets cascade

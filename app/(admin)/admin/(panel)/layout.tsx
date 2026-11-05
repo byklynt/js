@@ -15,7 +15,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 /** Guarded layout: calls requireAdmin() itself (proxy.ts is only the first line of defence). */
 async function PanelGate({ children }: { children: React.ReactNode }) {
   const admin = await requireAdmin();
-  const stats = getShellStats();
+  const stats = await getShellStats();
   return (
     <LangBoundary>
     <AdminShell

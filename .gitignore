@@ -44,3 +44,5 @@ next-env.d.ts
 .data/
 
 !.env.example
+.e2e-server.log
+.e2e-dashboard.png

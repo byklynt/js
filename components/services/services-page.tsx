@@ -36,8 +36,6 @@ export function ServicesPage({ initialSearch = "" }: { initialSearch?: string })
   const [, startTransition] = useTransition();
   const [favorites, setFavorites] = useState<Set<string>>(() => new Set());
   const [favoritesLoaded, setFavoritesLoaded] = useState(false);
-  const favoritesRef = useRef(favorites);
-  favoritesRef.current = favorites;
   const [open, setOpen] = useState<string[]>([]);
   const [groups, setGroups] = useState<Record<string, GroupData>>({});
   const [groupLimit, setGroupLimit] = useState(GROUP_STEP);
@@ -175,7 +173,7 @@ export function ServicesPage({ initialSearch = "" }: { initialSearch?: string })
 
   // Optimistic: the star flips at once; if the server refuses, it flips back.
   const toggleFavorite = useCallback((id: string) => {
-    const on = !favoritesRef.current.has(id);
+    const on = !favorites.has(id);
     const apply = (value: boolean) =>
       setFavorites((prev) => {
         const next = new Set(prev);
@@ -185,7 +183,7 @@ export function ServicesPage({ initialSearch = "" }: { initialSearch?: string })
       });
     apply(on);
     void setFavoriteAction(id, on).then((r) => { if (!r.ok) apply(!on); }).catch(() => apply(!on));
-  }, []);
+  }, [favorites]);
   const toggleExpandedService = useCallback((id: string) => setExpandedServiceId((prev) => (prev === id ? null : id)), []);
 
   const toggleFavoritesOnly = useCallback(() => {

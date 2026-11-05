@@ -1,6 +1,7 @@
 import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 import type { Database } from "./database.types";
 import { supabaseAnonKey, supabaseUrl } from "./env";
 
@@ -9,6 +10,8 @@ import { supabaseAnonKey, supabaseUrl } from "./env";
  * (RLS applies). Use supabase.auth.getUser() (validated by the Auth server), never getSession(), to decide who someone is.
  */
 export async function createClient() {
+  // Supabase Auth reads the clock (Date.now). With Cache Components that is only allowed once the render is truly per-request.
+  await connection();
   const cookieStore = await cookies();
   return createServerClient<Database>(supabaseUrl(), supabaseAnonKey(), {
     cookies: {

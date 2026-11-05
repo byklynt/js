@@ -7,6 +7,7 @@ import { missingRefunds } from "@/lib/server/views";
 import { ordersByPlatform, revenueSeries } from "@/lib/server/series";
 import { dayOf, todayIso } from "@/lib/server/time";
 import { currentSnapshot } from "@/lib/server/admin-snapshot";
+import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import {
   mockAdminAccounts,
   setPriceRounding,
@@ -61,21 +62,30 @@ export function toPublicProvider(p: ProviderRecord): PublicProvider {
   };
 }
 
-/** Numbers shown in the shell: today's revenue + items needing attention. */
-export function getShellStats() {
-  const db = getDb();
-  const today = todayIso();
-  const todayRevenue = db.deposits
-    .filter((d) => d.status === "berhasil" && dayOf(d.createdAt) === today)
-    .reduce((sum, d) => sum + d.amount, 0);
-  const pendingTickets = db.tickets.filter((t) => t.status === "menunggu").length;
-  const pendingDeposits = db.deposits.filter((d) => d.status === "menunggu").length;
-  return { todayRevenue, pendingTickets, pendingDeposits };
+/** Numbers shown in the shell: today's revenue + items needing attention. Three small queries (not the admin snapshot): the layout runs on every admin page. */
+export async function getShellStats() {
+  const sb = supabaseAdmin();
+  const startOfDay = new Date(`${todayIso()}T00:00:00+07:00`).toISOString();
+  const [revenue, tickets, deposits] = await Promise.all([
+    sb.from("deposits").select("amount").eq("status", "berhasil").gte("updated_at", startOfDay).limit(5000),
+    sb.from("tickets").select("id", { count: "exact", head: true }).eq("status", "menunggu"),
+    sb.from("deposits").select("id", { count: "exact", head: true }).eq("status", "menunggu"),
+  ]);
+  return {
+    todayRevenue: (revenue.data ?? []).reduce((n, d) => n + Number(d.amount), 0),
+    pendingTickets: tickets.count ?? 0,
+    pendingDeposits: deposits.count ?? 0,
+  };
 }
 
 export function getDashboardData() {
   const db = getDb();
-  const stats = getShellStats();
+  const today0 = todayIso();
+  const stats = {
+    todayRevenue: db.deposits.filter((d) => d.status === "berhasil" && dayOf(d.createdAt) === today0).reduce((sum, d) => sum + d.amount, 0),
+    pendingTickets: db.tickets.filter((t) => t.status === "menunggu").length,
+    pendingDeposits: db.deposits.filter((d) => d.status === "menunggu").length,
+  };
   const lowProviders = db.providers.filter((p) => p.balance < db.settings.operations.lowBalanceThreshold).map((p) => p.id);
   const now = new Date();
   const integrity = integrityReport(db, now);
