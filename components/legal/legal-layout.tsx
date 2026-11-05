@@ -46,13 +46,6 @@ function Block({ block }: { block: LegalBlock }) {
           ))}
         </div>
       );
-    case "placeholder":
-      return (
-        <p className="rounded-xl border border-dashed border-amber-400 bg-amber-50 px-4 py-3 text-amber-900 dark:border-amber-500/60 dark:bg-amber-500/10 dark:text-amber-200" data-testid="legal-placeholder">
-          <strong className="font-semibold">Belum final: </strong>
-          {block.text}
-        </p>
-      );
   }
 }
 

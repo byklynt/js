@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CANCEL_POLICY } from "@/lib/order-rules";
 import { computeExpectedRefund, computeUserCancelRefund } from "@/lib/server/rules";
-import { COMPLAINT_WINDOW_DAYS, formatLegalDate, LEGAL_DOCS, LEGAL_PATHS, LEGAL_VERSION, PRIVACY, REFUND, TERMS, type LegalDoc } from "@/lib/legal-content";
+import { COMPLAINT_WINDOW_DAYS, formatLegalDate, LEGAL_DOCS, LEGAL_PATHS, LEGAL_VERSION, REFUND, TERMS, type LegalDoc } from "@/lib/legal-content";
+import { CONTENT_POLICY_BULLET } from "@/lib/order-rules";
 
 const textOf = (doc: LegalDoc) =>
-  doc.sections.flatMap((s) => s.blocks.flatMap((b) => (b.type === "p" || b.type === "placeholder" ? [b.text] : b.type === "ul" ? b.items : [b.title, ...b.lines]))).join("\n");
+  doc.sections.flatMap((s) => s.blocks.flatMap((b) => (b.type === "p" ? [b.text] : b.type === "ul" ? b.items : [b.title, ...b.lines]))).join("\n");
 
 describe("legal content", () => {
   it("every doc has unique, URL-safe section ids and non-empty blocks", () => {
@@ -45,13 +46,27 @@ describe("legal content", () => {
     expect(t).toContain("= Rp333");
     expect(t).toContain("= Rp450");
   });
-
-  it("internal links point to real legal pages and the deposit/region/retention gaps are visible placeholders", () => {
+  it("internal links point to real legal pages and sections that exist", () => {
     const all = LEGAL_DOCS.map(textOf).join("\n");
-    for (const m of all.matchAll(/\]\((\/[^)]+)\)/g)) expect(Object.values(LEGAL_PATHS)).toContain(m[1]);
-    const placeholders = (doc: LegalDoc) => doc.sections.flatMap((s) => s.blocks).filter((b) => b.type === "placeholder").length;
-    expect(placeholders(REFUND)).toBe(1); // deposit refunds
-    expect(placeholders(PRIVACY)).toBe(2); // server region, retention period
-    expect(placeholders(TERMS)).toBe(0);
+    const ids = new Map<string, string[]>(LEGAL_DOCS.map((d) => [`/${d.slug}`, d.sections.map((x) => x.id)]));
+    for (const m of all.matchAll(/\]\((\/[^)#]+)(?:#([^)]+))?\)/g)) {
+      expect(ids.has(m[1])).toBe(true);
+      if (m[2]) expect(ids.get(m[1])).toContain(m[2]);
+    }
+  });
+
+  it("public copy never names vendors or technology, cites laws, or shows drafting notes / placeholders", () => {
+    const all = LEGAL_DOCS.map((d) => [d.title, d.description, d.intro ?? "", textOf(d)].join("\n")).join("\n") + "\n" + CONTENT_POLICY_BULLET;
+    const banned = [/supabase/i, /postgres/i, /vercel/i, /likeo/i, /oxapay/i, /tripay/i, /midtrans/i, /xendit/i, /\bUU\b/, /undang-undang/i, /\bpasal\b/i, /\bPDP\b/, /belum final/i, /belum ditetapkan/i, /placeholder/i, /akan ditulis di sini/i, /TODO/];
+    for (const re of banned) expect(all, String(re)).not.toMatch(re);
+    expect(LEGAL_DOCS.flatMap((d) => d.sections.flatMap((x) => x.blocks)).some((b) => (b as { type: string }).type === "placeholder")).toBe(false);
+  });
+
+  it("the prohibited-content rule is in the terms and in the short pre-order form", () => {
+    const t = textOf(TERMS);
+    for (const w of ["politik", "kampanye", "partai", "tokoh politik", "propaganda", "SARA", "kekerasan", "pornografi", "perjudian", "penipuan", "tanpa pemberitahuan sebelumnya"]) expect(t).toContain(w);
+    expect(t).toContain("tidak mendapat refund");
+    expect(CONTENT_POLICY_BULLET).toContain("tanpa refund");
+    expect(textOf(REFUND)).toContain("larangan konten");
   });
 });

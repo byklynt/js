@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Ban, Crown, Eye, KeyRound, Minus, Plus, ShieldCheck, Users as UsersIcon } from "lucide-react";
 import type { AdminDeposit, AdminOrder, AdminUser } from "@/lib/admin-data";
 import { loadUserDetailAction } from "@/lib/admin-list-actions";
+import { BAN_REASONS } from "@/lib/account-status";
 import { formatDate } from "@/lib/format";
 import { formatIdr } from "@/lib/balance";
 import { setUserManualApproval,
@@ -66,6 +67,8 @@ export function UsersView({
   const [pending, setPending] = useState<Pending | null>(null);
   const [tempPassword, setTempPassword] = useState<{ username: string; password: string } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [banReason, setBanReason] = useState("");
+  const [banNote, setBanNote] = useState("");
   // The drawer shows the latest orders / deposits / ledger rows of ONE user: loaded from the server when it opens.
   const [detail, setDetail] = useState<{ id: string; orders: AdminOrder[]; deposits: AdminDeposit[]; ledger: LedgerEntry[] } | null>(null);
   useEffect(() => {
@@ -213,16 +216,48 @@ export function UsersView({
         open={pending?.kind === "ban"}
         onClose={() => setPending(null)}
         title={`Blokir ${pending?.user.username ?? ""}?`}
-        description="Pengguna tidak akan bisa masuk atau membuat pesanan sampai diaktifkan kembali."
+        description="Pengguna dikeluarkan dari semua sesi dan tidak bisa masuk atau membuat pesanan sampai diaktifkan kembali. Alasan dan tindakan ini dicatat di log audit."
         confirmLabel="Blokir"
         requireText="BLOKIR"
         requirePassword
         onConfirm={async (password) => {
           if (pending?.kind !== "ban") return;
-          const result = await run(setUserStatus({ userId: pending.user.id, status: "diblokir", password }));
-          if (result.ok) setPending(null);
+          const result = await run(setUserStatus({ userId: pending.user.id, status: "diblokir", password, reason: banReason || undefined, note: banNote.trim() || undefined }));
+          if (result.ok) {
+            setPending(null);
+            setBanReason("");
+            setBanNote("");
+          }
         }}
-      />
+      >
+        <div className="space-y-3">
+          <label className="block text-[11px] font-medium text-ink dark:text-slate-100">
+            Alasan pemblokiran
+            <select
+              value={banReason}
+              onChange={(e) => setBanReason(e.target.value)}
+              className="mt-1 block h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-[12px] text-ink dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            >
+              <option value="">Pilih alasan</option>
+              {BAN_REASONS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-[11px] font-medium text-ink dark:text-slate-100">
+            Catatan (opsional)
+            <textarea
+              value={banNote}
+              onChange={(e) => setBanNote(e.target.value)}
+              maxLength={300}
+              rows={2}
+              className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] text-ink dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            />
+          </label>
+        </div>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={pending?.kind === "unban"}

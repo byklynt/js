@@ -361,6 +361,15 @@ describe.skipIf(!enabled)("server flows on Supabase (mock provider)", () => {
     expect((await m.db.from("refunds").select("id").eq("order_id", Number(second.id)).eq("reason", "dibatalkan")).data!.length).toBeLessThanOrEqual(1);
   }, 150_000);
 
+  it("a blocked account cannot place an order: generic message, nothing is debited", async () => {
+    const blocked = await newUser("blk");
+    await credit(blocked, 10_000, "blk");
+    await m.db.from("profiles").update({ status: "diblokir" }).eq("id", blocked);
+    await expect(m.orders.placeOrder({ userId: blocked, serviceId: SVC, link: "https://zt.test/blocked", quantity: 1000 }, { client: m.client.createProviderClient() })).rejects.toThrow("Akun kamu dibekukan. Hubungi bantuan.");
+    expect(await balance(blocked)).toBe(10_000);
+    expect(((await m.db.from("orders").select("id").eq("user_id", blocked)).data ?? []).length).toBe(0);
+  }, 60_000);
+
   it("ledger equals balance for every temp user", async () => {
     for (const id of [user, admin]) {
       const sum = ((await m.db.from("balance_ledger").select("amount").eq("user_id", id)).data ?? []).reduce((n, r) => n + Number(r.amount), 0);

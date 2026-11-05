@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import { ServiceError } from "@/lib/server/tx";
+import { BLOCKED_MESSAGE } from "@/lib/account-status";
 import type { Database } from "@/lib/supabase/database.types";
 
 type Fns = Database["public"]["Functions"];
@@ -13,7 +14,8 @@ type Fns = Database["public"]["Functions"];
 export async function callFn<N extends keyof Fns>(name: N, args: Fns[N]["Args"]): Promise<Fns[N]["Returns"]> {
   const { data, error } = await supabaseAdmin().rpc(name, args as never);
   if (error) {
-    if (error.code === "P0001") throw new ServiceError(error.message, error.hint ?? "error");
+    // A blocked account always gets the same generic message, whatever text the SQL function raised.
+    if (error.code === "P0001") throw new ServiceError(error.hint === "blocked" ? BLOCKED_MESSAGE : error.message, error.hint ?? "error");
     if (error.code === "23505") throw new ServiceError("Data yang sama sudah ada.", "conflict");
     throw new Error(`${String(name)}: ${error.message}`);
   }

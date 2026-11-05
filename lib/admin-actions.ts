@@ -145,8 +145,9 @@ export async function setUserStatus(input: unknown) {
     await supabaseAdmin().from("profiles").update({ status: d.status }).eq("id", user.id);
     // A blocked user loses every session at once (they are also rejected on their next request).
     if (d.status === "diblokir") await supabaseAdmin().auth.admin.signOut(user.id, "global").catch(() => undefined);
-    await audit(admin, d.status === "diblokir" ? "user.ban" : "user.unban", "user", user.id, { status: user.status }, { status: d.status });
-    return ok(d.status === "diblokir" ? `${user.username} diblokir.` : `${user.username} diaktifkan kembali.`);
+    // The audit entry carries the action, the picked reason and the optional note (who did it is the admin on the entry).
+    await audit(admin, d.status === "diblokir" ? "user.ban" : "user.unban", "user", user.id, { status: user.status }, d.status === "diblokir" ? { status: d.status, reason: d.reason, note: d.note || null } : { status: d.status });
+    return ok(d.status === "diblokir" ? `${user.username} dibekukan.` : `${user.username} diaktifkan kembali.`);
   });
 }
 

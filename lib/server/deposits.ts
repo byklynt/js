@@ -1,4 +1,5 @@
 import "server-only";
+import { BLOCKED_MESSAGE } from "@/lib/account-status";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { callFn } from "./repo/rpc";
 import { logSystem, rupiah } from "./repo/notify";
@@ -77,7 +78,7 @@ export async function createDepositRequest(input: { userId: string; amount: numb
   const db = supabaseAdmin();
   const { data: user } = await db.from("profiles").select("username,status").eq("id", input.userId).maybeSingle();
   if (!user) throw new ServiceError("Pengguna tidak ditemukan.", "no_user");
-  if (user.status !== "aktif") throw new ServiceError("Akunmu sedang diblokir.", "blocked");
+  if (user.status !== "aktif") throw new ServiceError(BLOCKED_MESSAGE, "blocked");
   const { minDeposit, activeMethods } = (await loadSettings()).payments;
   if (!Number.isInteger(input.amount) || input.amount < minDeposit) throw new ServiceError(`Minimal deposit ${rupiah(minDeposit)}.`, "below_min");
   if (input.amount > 100_000_000) throw new ServiceError("Maksimal deposit Rp 100.000.000 per permintaan.", "above_max");

@@ -28,6 +28,8 @@ const PAGES = [
   { path: "/kebijakan-refund", h1: "Kebijakan Refund & Pembatalan", title: /Kebijakan Refund/ },
   { path: "/kebijakan-privasi", h1: "Kebijakan Privasi", title: /Kebijakan Privasi/ },
 ];
+// Public copy must stay generic: no vendor names, no statute citations, no drafting notes.
+const BANNED = ["Supabase", "UU PDP", "Undang-Undang", "Likeo", "Postgres", "Vercel", "Pasal", "Belum final", "Placeholder"];
 const FOOTER = ["/syarat-ketentuan", "/kebijakan-refund", "/kebijakan-privasi"];
 
 describe.skipIf(!enabled)("legal pages", () => {
@@ -61,6 +63,9 @@ describe.skipIf(!enabled)("legal pages", () => {
       expect(new URL(page.url()).pathname).toBe(p.path); // not redirected to /login
       expect(await page.locator("h1").innerText()).toBe(p.h1);
       expect(await page.title()).toMatch(p.title);
+      const bodyText = (await page.locator("body").innerText()).toLowerCase();
+      for (const w of BANNED) expect(bodyText, `"${w}" on ${p.path}`).not.toContain(w.toLowerCase());
+      expect(await page.getByTestId("legal-placeholder").count()).toBe(0);
       expect(await page.locator('meta[name="description"]').getAttribute("content")).toBe(LEGAL_DOCS[index].description);
       expect(await page.getByTestId("legal-updated").innerText()).toContain(`Terakhir diperbarui: ${formatLegalDate()}`);
       expect(await page.getByTestId("legal-updated").innerText()).toContain(LEGAL_VERSION);
@@ -102,7 +107,15 @@ describe.skipIf(!enabled)("legal pages", () => {
     await page.goto("/kebijakan-refund");
     const text = await page.locator("main").innerText();
     for (const s of ["72 jam", "50%", "floor(biaya pesanan x sisa / jumlah pesanan)", "= Rp375", "= Rp333", "= Rp450"]) expect(text).toContain(s);
-    expect(await page.getByTestId("legal-placeholder").count()).toBe(1);
+    await ctx.close();
+  }, 60_000);
+
+  it("the terms carry the prohibited-content rule (politics, SARA, violence, pornography, gambling, fraud)", async () => {
+    const ctx = await browser.newContext({ baseURL: BASE });
+    const page = await ctx.newPage();
+    await page.goto("/syarat-ketentuan");
+    const text = await page.locator('section[aria-labelledby="larangan"]').innerText();
+    for (const w of ["politik", "kampanye", "partai", "tokoh politik", "propaganda", "SARA", "kekerasan", "pornografi", "perjudian", "penipuan", "tidak mendapat refund", "diblokir dan dibekukan secara permanen"]) expect(text).toContain(w);
     await ctx.close();
   }, 60_000);
 

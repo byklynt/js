@@ -265,6 +265,55 @@ describe.skipIf(!enabled)("browser flows: signup, order, ticket, language, admin
     await ctx.close();
   }, 250_000);
 
+  it("admin blocks a user: a reason is required, it goes to the audit log, the session ends and login says the generic message", async () => {
+    const bName = `zt_k_${run}`;
+    const { data: made, error: me } = await sb().auth.admin.createUser({ email: email(bName), password, email_confirm: true, user_metadata: { username: bName } });
+    expect(me).toBeNull();
+    id.k = made.user!.id;
+    const status = async () => (await sb().from("profiles").select("status").eq("id", id.k).single()).data!.status;
+    const user = await loginUser(bName); // signed in BEFORE the block
+    const { ctx, page } = await loginAdmin();
+    await page.goto("/admin/users");
+    await page.getByPlaceholder("Cari di seluruh data...").fill(bName);
+    await page.getByPlaceholder("Cari di seluruh data...").press("Enter");
+    await page.getByRole("button", { name: `Aksi untuk ${bName}` }).click();
+    await page.getByRole("menuitem", { name: "Blokir" }).click();
+    const fillConfirm = async () => {
+      await page.getByLabel("Ketik BLOKIR untuk konfirmasi").fill("BLOKIR");
+      await page.locator('[role="dialog"] input[type="password"], dialog input[type="password"]').last().fill(password);
+    };
+    // 1. without a reason nothing happens
+    await fillConfirm();
+    await page.getByRole("button", { name: "Blokir", exact: true }).click();
+    await page.getByText("Pilih alasan pemblokiran.").first().waitFor({ timeout: 20_000 });
+    expect(await status()).toBe("aktif");
+    // 2. with the content-policy reason it is blocked
+    const options = await page.locator("select option").allInnerTexts();
+    expect(options).toContain("Pelanggaran kebijakan konten");
+    await page.locator("select").selectOption("Pelanggaran kebijakan konten");
+    await fillConfirm(); // the dialog clears its fields after every attempt
+    await page.getByRole("button", { name: "Blokir", exact: true }).click();
+    await expect.poll(status, { timeout: 30_000 }).toBe("diblokir");
+    const log = (await sb().from("audit_logs").select("action,admin_id,before,after").eq("action", "user.ban").eq("target_id", id.k)).data ?? [];
+    expect(log).toHaveLength(1);
+    expect(log[0]).toMatchObject({ admin_id: id.a, before: { status: "aktif" }, after: { status: "diblokir", reason: "Pelanggaran kebijakan konten" } });
+    await ctx.close();
+    // 3. the session that was open is gone: the dashboard sends the user to the login page
+    await user.page.goto("/dashboard");
+    await expect.poll(() => new URL(user.page.url()).pathname, { timeout: 30_000 }).toBe("/login");
+    await user.ctx.close();
+    // 4. login is refused with the generic message
+    const fresh = await browser.newContext({ baseURL: BASE });
+    const lp = await fresh.newPage();
+    await lp.goto("/login");
+    await lp.getByPlaceholder("nama_pengguna").fill(bName);
+    await lp.getByPlaceholder("Minimal 8 karakter").fill(password);
+    await lp.getByRole("button", { name: "Masuk", exact: true }).click();
+    await expect.poll(async () => lp.locator("body").innerText(), { timeout: 30_000 }).toContain("Akun kamu dibekukan. Hubungi bantuan.");
+    expect(new URL(lp.url()).pathname).toBe("/login");
+    await fresh.close();
+  }, 250_000);
+
   it("another user cannot open this user's order or ticket by id, and a non-admin is blocked from /admin and the admin APIs", async () => {
     const { ctx, page } = await loginUser(vName);
     // the ticket page of someone else's ticket behaves like a ticket that does not exist

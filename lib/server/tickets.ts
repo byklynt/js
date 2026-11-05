@@ -8,6 +8,7 @@ import "server-only";
  * ticket unread for the user; internal admin notes (is_internal) and the assignee never reach the user. Attachments live in the
  * private `ticket-attachments` bucket (path user_id/ticket_id/...) and are only ever shown through short-lived signed URLs.
  */
+import { BLOCKED_MESSAGE } from "@/lib/account-status";
 import { randomUUID } from "node:crypto";
 import type { AdminTicket } from "@/lib/admin-data";
 import {
@@ -164,7 +165,7 @@ export async function createUserTicket(userId: string, input: CreateTicketInput)
   const db = supabaseAdmin();
   const { data: user } = await db.from("profiles").select("username,status").eq("id", userId).maybeSingle();
   if (!user) throw new ServiceError("Pengguna tidak ditemukan.", "no_user");
-  if (user.status !== "aktif") throw new ServiceError("Akunmu sedang diblokir.", "blocked");
+  if (user.status !== "aktif") throw new ServiceError(BLOCKED_MESSAGE, "blocked");
   const category = ticketCategories.find((c) => c.label === input.category);
   if (!category) throw new ServiceError("Kategori tidak valid.", "bad_category");
   if (!ticketSubcategories[category.value].includes(input.subcategory)) throw new ServiceError("Subkategori tidak valid.", "bad_subcategory");

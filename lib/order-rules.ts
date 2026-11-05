@@ -143,6 +143,10 @@ export function cancelPolicyBullet(policy: CancelPolicy): string {
   return `Pembatalan oleh pengguna baru bisa diajukan setelah pesanan berumur ${policy.minAgeHours} jam, dan hanya ${policy.refundPercent}% dari bagian yang belum terkirim yang dikembalikan.`;
 }
 
+/** Short form of the prohibited-content rule, shown in the pre-order card (the full text is in the Syarat & Ketentuan). Same for every platform. */
+export const CONTENT_POLICY_BULLET =
+  "Order untuk akun, konten, atau tautan terkait politik (kampanye, partai, tokoh politik, propaganda) dan konten SARA, kekerasan, pornografi, perjudian, atau penipuan tidak diterima. Pelanggaran: pesanan dibatalkan tanpa refund dan akun dapat diblokir permanen.";
+
 /** The explicit distinction, used by /refund-policy: user cancel versus everything the system decides itself. */
 export function cancelPolicySentences(policy: CancelPolicy) {
   return {

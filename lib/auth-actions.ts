@@ -8,6 +8,7 @@ import { hitRateLimit, LOGIN_LIMIT, minutes, resetRateLimit } from "@/lib/rate-l
 import { siteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import { LEGAL_VERSION } from "@/lib/legal-content";
+import { BLOCKED_MESSAGE } from "@/lib/account-status";
 import { resolveLoginEmail } from "@/lib/server/user-auth";
 import { createClient } from "@/lib/supabase/server";
 import { REMEMBER_COOKIE, REMEMBER_MAX_AGE } from "@/lib/supabase/remember";
@@ -81,7 +82,7 @@ export async function login(payload: LoginPayload): Promise<AuthResult> {
   const { data: profile } = await supabaseAdmin().from("profiles").select("status").eq("id", data.user.id).maybeSingle();
   if (!profile || profile.status !== "aktif") {
     await supabase.auth.signOut({ scope: "local" });
-    return { success: false, message: "Akunmu sedang diblokir. Hubungi support." };
+    return { success: false, message: BLOCKED_MESSAGE };
   }
   await resetRateLimit(key);
   (await cookies()).set(REMEMBER_COOKIE, rememberMe ? "1" : "0", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", ...(rememberMe ? { maxAge: REMEMBER_MAX_AGE } : {}) });

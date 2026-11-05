@@ -6,6 +6,7 @@
  * - The numbers (72 jam, 50%, 24 jam) come from the same constants the system uses, so the text cannot drift from the code.
  *   The only exception is the cancel policy, which an admin can edit at runtime in /admin/settings: if it is changed there,
  *   update DEFAULT_CANCEL_POLICY (and this file's version) as well. See docs/legal-review.md.
+ * - Public copy is generic: no vendor or technology names and no citations of laws or regulations (see docs/legal-review.md).
  * - Inline markup in text: [label](/path) makes a link, **text** makes bold.
  */
 import { DEFAULT_CANCEL_POLICY } from "@/lib/order-rules";
@@ -23,9 +24,8 @@ export type LegalBlock =
   | { type: "p"; text: string }
   | { type: "ul"; items: string[] }
   /** A worked calculation. `lines` are shown one per line. */
-  | { type: "example"; title: string; lines: string[] }
-  /** Text that is NOT final yet. Rendered as a visible "belum final" box and listed in docs/legal-review.md. */
-  | { type: "placeholder"; text: string };
+  | { type: "example"; title: string; lines: string[] };
+// Public pages never show drafting notes or placeholders: open questions live in docs/legal-review.md, not here.
 
 export type LegalSection = { id: string; heading: string; blocks: LegalBlock[] };
 export type LegalDoc = { slug: string; title: string; description: string; intro?: string; sections: LegalSection[] };
@@ -114,19 +114,21 @@ export const TERMS: LegalDoc = {
         { type: "p", text: "Kamu dilarang:" },
         { type: "ul", items: [
           "melakukan penipuan, termasuk chargeback atau klaim palsu atas pembayaran dan refund;",
-          "memesan untuk konten yang melanggar hukum, termasuk konten kekerasan, eksploitasi, perjudian ilegal, atau yang melanggar hak pihak lain;",
+          "memesan untuk akun, konten, atau tautan yang mengandung SARA (suku, agama, ras, dan antargolongan), kekerasan, pornografi, perjudian, penipuan, eksploitasi, atau yang melanggar hak pihak lain;",
           "menyalahgunakan bug, celah, atau kesalahan sistem, termasuk untuk mendapatkan saldo atau layanan yang bukan hakmu;",
           "membuat banyak akun untuk mengambil promo, bonus, atau keuntungan lain berkali-kali;",
           "meminta batal atau refund secara berulang dan tidak wajar;",
           "mengganggu atau mencoba mengakses sistem, data pengguna lain, atau panel admin tanpa izin.",
         ] },
+        { type: "p", text: "**Konten politik.** JagoanSosmed tidak menerima order untuk akun, konten, atau tautan apa pun yang berkaitan dengan politik, termasuk kampanye, partai, tokoh politik, propaganda, dan konten sejenisnya." },
+        { type: "p", text: "Pesanan yang melanggar larangan di atas tidak mendapat refund dan dapat dibatalkan. Akun yang melanggar dapat diblokir dan dibekukan secara permanen tanpa pemberitahuan sebelumnya." },
       ],
     },
     {
       id: "penangguhan",
       heading: "Penangguhan dan pembatalan oleh kami",
       blocks: [
-        { type: "p", text: "Kami berhak menahan atau meninjau pesanan secara manual, menangguhkan atau memblokir akun, dan membatalkan pesanan yang melanggar syarat ini atau hukum yang berlaku. Akun yang ditinjau dapat mengalami penundaan pada pesanan dan refund sampai admin selesai memeriksa." },
+        { type: "p", text: "Kami berhak menahan atau meninjau pesanan secara manual, menangguhkan atau memblokir akun, dan membatalkan pesanan yang melanggar syarat ini atau ketentuan yang berlaku. Akun yang ditinjau dapat mengalami penundaan pada pesanan dan refund sampai admin selesai memeriksa." },
       ],
     },
     {
@@ -217,6 +219,7 @@ export const REFUND: LegalDoc = {
           "fitur peninjauan tag, sebutan, komentar, atau pengikut masih aktif;",
           "username atau link diganti, atau konten dihapus, selama pesanan berjalan;",
           "penurunan (drop) setelah pesanan selesai pada layanan yang tidak bergaransi;",
+          "pesanan yang melanggar larangan konten dalam [Syarat & Ketentuan](/syarat-ketentuan#larangan)",
           "pesanan yang sudah selesai dikerjakan sesuai jumlahnya.",
         ] },
         { type: "p", text: "Bila ada masalah pada pesanan yang selesai, ajukan komplain lewat tiket. Admin memeriksa dan memberi alasan bila ditolak." },
@@ -228,13 +231,6 @@ export const REFUND: LegalDoc = {
       blocks: [
         { type: "p", text: "Refund selalu dikembalikan ke saldo JagoanSosmed, bukan ke rekening bank atau e-wallet. Setiap refund tercatat di halaman Mutasi Saldo dan kamu mendapat notifikasi. Saldo tidak bisa ditarik tunai." },
         { type: "p", text: "Refund dan pesanan dari akun yang sedang ditinjau admin dapat tertunda sampai peninjauan selesai." },
-      ],
-    },
-    {
-      id: "refund-deposit",
-      heading: "Refund deposit (isi saldo)",
-      blocks: [
-        { type: "placeholder", text: "Kebijakan pengembalian deposit (misalnya salah transfer, pembayaran ganda, atau deposit yang belum terpakai) belum ditetapkan. Bagian ini akan diisi sebelum pembayaran online diaktifkan." },
       ],
     },
     {
@@ -255,8 +251,8 @@ export const REFUND: LegalDoc = {
 export const PRIVACY: LegalDoc = {
   slug: "kebijakan-privasi",
   title: "Kebijakan Privasi",
-  description: "Kebijakan Privasi JagoanSosmed: data yang dikumpulkan, tujuan, penyimpanan, keamanan, pihak ketiga, cookie, dan hakmu sesuai UU Pelindungan Data Pribadi.",
-  intro: "Kami menjaga data pribadimu sesuai Undang-Undang No. 27 Tahun 2022 tentang Pelindungan Data Pribadi (UU PDP). Halaman ini menjelaskan data apa yang kami simpan, untuk apa, dan apa yang bisa kamu lakukan.",
+  description: "Kebijakan Privasi JagoanSosmed: data yang dikumpulkan, tujuan, penyimpanan, keamanan, pihak ketiga, cookie, dan hakmu atas data pribadimu.",
+  intro: "Kami menjaga data pribadimu. Halaman ini menjelaskan data apa yang kami simpan, untuk apa, dan apa yang bisa kamu lakukan.",
   sections: [
     {
       id: "data-dikumpulkan",
@@ -296,10 +292,9 @@ export const PRIVACY: LegalDoc = {
     },
     {
       id: "penyimpanan",
-      heading: "Penyimpanan dan lokasi data",
+      heading: "Penyimpanan data",
       blocks: [
-        { type: "p", text: "Data disimpan di basis data dan penyimpanan berkas milik penyedia infrastruktur kami, Supabase." },
-        { type: "placeholder", text: "Lokasi wilayah server produksi belum ditetapkan dan akan ditulis di sini setelah project produksi dibuat. Pemindahan data ke luar wilayah Indonesia dilakukan dengan memperhatikan UU PDP." },
+        { type: "p", text: "Data disimpan di server yang diamankan dan hanya bisa diakses oleh pihak yang berwenang." },
       ],
     },
     {
@@ -315,7 +310,7 @@ export const PRIVACY: LegalDoc = {
       blocks: [
         { type: "ul", items: [
           "Penyedia layanan (supplier): hanya menerima link atau target pesanan, jenis layanan, dan jumlah. Penyedia tidak menerima email, password, atau saldomu.",
-          "Penyedia infrastruktur (Supabase): menyimpan dan memproses data atas nama kami.",
+          "Penyedia infrastruktur dan layanan teknis: memproses data atas nama kami, hanya untuk menjalankan layanan.",
           "Payment gateway: menerima data pembayaran yang diperlukan untuk memproses isi saldo, pada saat pembayaran online diaktifkan.",
           "Pihak berwenang: bila diwajibkan oleh hukum.",
         ] },
@@ -334,14 +329,13 @@ export const PRIVACY: LegalDoc = {
       heading: "Masa penyimpanan",
       blocks: [
         { type: "p", text: "Data akun disimpan selama akunmu aktif. Setelah akun dihapus, data pribadi dihapus atau dianonimkan, kecuali catatan transaksi dan keuangan yang wajib kami simpan sesuai ketentuan hukum." },
-        { type: "placeholder", text: "Lama penyimpanan pasti untuk catatan transaksi, tiket, dan log keamanan belum ditetapkan dan akan ditulis di sini." },
       ],
     },
     {
       id: "hak-pengguna",
       heading: "Hakmu",
       blocks: [
-        { type: "p", text: "Sesuai UU PDP, kamu berhak untuk:" },
+        { type: "p", text: "Kamu berhak untuk:" },
         { type: "ul", items: [
           "mengakses dan mendapatkan salinan data pribadimu;",
           "memperbaiki data yang tidak akurat;",
@@ -355,7 +349,7 @@ export const PRIVACY: LegalDoc = {
       id: "insiden",
       heading: "Penanganan kebocoran data",
       blocks: [
-        { type: "p", text: "Bila terjadi kegagalan pelindungan data pribadi, kami menyelidiki dan membatasi dampaknya, lalu memberi tahu pengguna yang terdampak dan lembaga yang berwenang secara tertulis paling lambat 3 x 24 jam sejak insiden diketahui, sesuai UU PDP. Pemberitahuan memuat data yang terungkap, kapan dan bagaimana terjadinya, serta langkah penanganan dan pemulihan." },
+        { type: "p", text: "Bila terjadi kegagalan pelindungan data pribadi, kami menyelidiki dan membatasi dampaknya, lalu memberi tahu pengguna yang terdampak dan lembaga yang berwenang secara tertulis secepat mungkin sejak insiden diketahui. Pemberitahuan memuat data yang terungkap, kapan dan bagaimana terjadinya, serta langkah penanganan dan pemulihan." },
       ],
     },
     {
