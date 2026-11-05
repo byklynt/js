@@ -133,3 +133,11 @@ Supabase cannot revoke a single other session of a user from the server. The pan
 - Admin > Pesanan: indikator "Sinkronisasi terakhir" dan menu "Sinkronkan sekarang" per pesanan.
 - Status tak dikenal dicatat (`sync.unknown_status`) dan pesanan tidak diubah.
 - Sinkronisasi hanya berjalan bila ada penjadwal: `npm run dev:cron` (dev) atau pg_cron / crontab (produksi, lihat bagian 5). Tanpa penjadwal, pesanan live tidak pernah berubah status.
+
+### Simulator provider (hanya dev, mode mock)
+
+- `npm run dev:simulate -- <id pesanan> <partial|canceled|failed|completed|refill> [remains]` memaksa provider MOCK menjawab status itu untuk pesanan tersebut pada sinkronisasi berikutnya (`partial` wajib `remains`). `npm run dev:simulate -- --clear` menghapus semua.
+- Menolak berjalan bila `NEXT_PUBLIC_SUPABASE_URL` tidak cocok dengan `SUPABASE_DEV_PROJECT_REF`, bila `PROVIDER_MODE` bukan `mock`, atau bila pesanan bukan pesanan mock (`MK-...`). Tidak ada UI dan tidak ada route.
+- Cara kerja: CLI menulis `.mock-provider.json` (git-ignored, berlaku 6 jam); hanya adapter mock yang membacanya.
+- Tes uang: `npm run test:db` menjalankan `refund-flows.test.ts` (21 skenario dengan saldo eksak); e2e `refund-sim.test.ts` menjalankan alur lewat browser.
+- Aturan refund otomatis (migrasi 23): jumlah = yang masih terutang dikurangi refund yang sudah dibayar (termasuk refund manual), jadi tidak pernah dua kali. Provider "Failed" diperlakukan seperti "Canceled" (status `dibatalkan`, refund penuh). Sisa pesanan dari provider di luar 0..jumlah pesanan ditolak dan dicatat (`sync.invalid_remains`).

@@ -6,6 +6,7 @@ import { CalendarDays, Check, Eye, Plus, ReceiptText, TriangleAlert, X } from "l
 import { motion } from "framer-motion";
 import { createRefund, reviewRefund } from "@/lib/admin-actions";
 import { formatDateTime, formatIdr } from "@/lib/balance";
+import { refundFormula } from "@/lib/refund-formula";
 import { orderStatusLabels } from "@/lib/orders-data";
 import type { RefundRow } from "@/lib/server/views";
 import { PageHeader } from "@/components/shell/page-header";
@@ -139,6 +140,7 @@ export function AdminRefundsView({ refunds }: { refunds: RefundRow[] }) {
                         Batal oleh pengguna: usia {r.cancel.ageHours} jam, sisa {r.cancel.remains.toLocaleString("id-ID")}/{r.cancel.quantity.toLocaleString("id-ID")}, hitungan {formatIdr(r.cancel.calculated)} ({r.cancel.percent}%)
                       </span>
                     ) : null}
+                    <FormulaLine r={r} />
                     <time dateTime={r.createdAt} className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-ink dark:text-slate-100">
                       <CalendarDays className="h-3.5 w-3.5" aria-hidden />
                       {formatDateTime(r.createdAt)}
@@ -233,6 +235,16 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
       <dt className="text-[#5B6B8C] dark:text-slate-400">{label}</dt>
       <dd className="text-right font-medium text-ink dark:text-white">{value}</dd>
     </div>
+  );
+}
+
+function FormulaLine({ r }: { r: RefundRow }) {
+  const f = refundFormula({ reason: r.reason, amount: r.amount, charge: r.order.charge, quantity: r.order.quantity, remains: r.order.remains, percent: r.cancel?.percent });
+  return (
+    <span className={`basis-full text-[9.5px] font-medium ${f.matches === false ? "text-amber-600 dark:text-amber-300" : "text-[#5B6B8C] dark:text-slate-400"}`} data-testid="refund-formula">
+      {f.text}
+      {f.matches === false ? ` Tidak sama dengan refund yang dibuat (${formatIdr(r.amount)}).` : ""}
+    </span>
   );
 }
 

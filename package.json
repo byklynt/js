@@ -28,6 +28,7 @@
     "dev:cron": "node scripts/dev-cron.mjs",
     "cron:enable": "node scripts/cron-admin.mjs enable",
     "cron:disable": "node scripts/cron-admin.mjs disable",
+    "dev:simulate": "tsx scripts/dev-simulate.ts",
     "provider:status": "tsx scripts/provider-status.ts"
   },
   "dependencies": {

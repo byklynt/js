@@ -4,7 +4,7 @@ import { mapLikeoStatus } from "../providers/likeo";
 
 const SYNC: Record<string, string> = {
   Pending: "menunggu", "In progress": "berjalan", Processing: "diproses", Completed: "selesai",
-  Partial: "sebagian", Canceled: "dibatalkan", Failed: "gagal_kirim",
+  Partial: "sebagian", Canceled: "dibatalkan", Failed: "dibatalkan",
 };
 const ADAPTER: Record<string, string> = {
   Pending: "menunggu", "In progress": "berjalan", Processing: "berjalan", Completed: "selesai",

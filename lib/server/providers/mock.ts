@@ -6,6 +6,7 @@
 import type { AdminDb } from "@/lib/admin-data";
 import { ProviderError } from "../provider-client";
 import { LIKEO_ID } from "./config";
+import { readMockOverride } from "./mock-overrides";
 import { cancelStateFromStatus, mapLikeoStatus, mapRefillStatus } from "./likeo";
 import type { BatchStatusItem, CancelResult, CancelStatusItem, RefillStatusItem, ProviderAdapter, ProviderOrderStatus, ProviderServiceInfo } from "./types";
 
@@ -48,10 +49,13 @@ export function createMockAdapter(db: AdminDb, providerId: string = LIKEO_ID): P
     if (db.providerDown.includes(providerId)) throw new ProviderError("Provider API tidak merespons", { kind: "network", ambiguous: false });
   };
   const statusOf = (id: string): ProviderOrderStatus => {
+    // DEV simulator (npm run dev:simulate): a forced state wins over the demo lifecycle.
+    const forced = readMockOverride(id);
+    if (forced) db.providerOrders[id] = { status: forced.status, startCount: forced.startCount, remains: forced.remains };
     const state = db.providerOrders[id];
     if (!state) throw new ProviderError("ID pesanan tidak ditemukan di Likeo.", { kind: "provider" });
     // Only while it is still in its own demo lifecycle; a status set from outside (tests, admin edits) is left alone.
-    if (id.startsWith("MK-") && (state.status === "Pending" || state.status === "In progress")) {
+    if (!forced && id.startsWith("MK-") && (state.status === "Pending" || state.status === "In progress")) {
       const n = (pollsFor(db).get(id) ?? 0) + 1;
       pollsFor(db).set(id, n);
       if (n === 1) { state.status = "In progress"; state.startCount = 100; }

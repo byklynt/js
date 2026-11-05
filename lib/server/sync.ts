@@ -17,7 +17,7 @@ export type SyncRun = { providerId: string; startedAt: string; finishedAt: strin
 export type SyncSummary = { runs: SyncRun[]; refundsCreated: number; requestsUpdated: number; stoppedEarly: boolean };
 export type SyncOptions = { /** Epoch ms after which the run stops starting new batches (the next tick continues). */ deadlineAt?: number };
 
-type ActiveOrder = { id: number; user_id: string; provider_order_id: string; status: string; start_count: number; remains: number; cancelled_by: string | null; needs_manual_check: boolean; provider_status: string | null };
+type ActiveOrder = { id: number; user_id: string; provider_order_id: string; status: string; start_count: number; remains: number; cancelled_by: string | null; needs_manual_check: boolean; provider_status: string | null; quantity: number; sync_error: string | null };
 
 /**
  * Apply one provider state to one order. Safe to run any number of times: the status update only fires while the order is
@@ -34,6 +34,13 @@ export async function applyState(order: ActiveOrder, state: { status: string; ra
   if (state.remains !== Number(order.remains)) { patch.remains = Math.max(0, state.remains); changed = true; }
   let status = order.status as OrderStatus;
   let transitioned = false;
+  // Impossible numbers (remains below 0 or above the ordered quantity) are rejected as a whole: no status change, no refund, a trace.
+  if (!Number.isFinite(state.remains) || state.remains < 0 || state.remains > Number(order.quantity)) {
+    const msg = `Sisa pesanan dari provider tidak valid: ${state.remains} (jumlah pesanan ${order.quantity}). Pembaruan ditolak.`;
+    await db.from("orders").update({ last_synced_at: now.toISOString(), provider_status: raw, sync_error: msg } as never).eq("id", order.id).in("status", ACTIVE_STATUSES);
+    if (order.sync_error !== msg) await logSystem("sync.invalid_remains", "order", String(order.id), null, { remains: state.remains, quantity: order.quantity, status: raw });
+    return { changed: false, refunded: false };
+  }
   if (!next) {
     // Unknown status text: keep the old status and leave a trace.
     // An unknown status text is never silently ignored: the order keeps its status, the text is stored on the order and logged ONCE (not every tick).
@@ -201,7 +208,7 @@ export type SyncOneResult = { providerOrderId: string; providerStatus: string; m
  */
 export async function syncOrderNow(client: ProviderClient, orderId: number, now = new Date()): Promise<SyncOneResult> {
   const db = supabaseAdmin();
-  const { data: o } = await db.from("orders").select("id,user_id,provider_id,provider_order_id,status,start_count,remains,cancelled_by,needs_manual_check,provider_status").eq("id", orderId).maybeSingle();
+  const { data: o } = await db.from("orders").select("id,user_id,provider_id,provider_order_id,status,start_count,remains,cancelled_by,needs_manual_check,provider_status,quantity,sync_error").eq("id", orderId).maybeSingle();
   if (!o) throw new ServiceError("Pesanan tidak ditemukan.", "no_order");
   if (!o.provider_order_id) throw new ServiceError("Pesanan ini belum punya ID pesanan provider (belum pernah diterima provider).", "no_provider_order");
   let state: Awaited<ReturnType<ProviderClient["getOrderStatus"]>>;
@@ -229,7 +236,7 @@ export async function syncOrders(client: ProviderClient, now = new Date(), opts:
   for (const provider of providers ?? []) {
     if (outOfTime()) { stoppedEarly = true; break; }
     const { data: orders } = await db.from("orders")
-      .select("id,user_id,provider_order_id,status,start_count,remains,cancelled_by,needs_manual_check,provider_status")
+      .select("id,user_id,provider_order_id,status,start_count,remains,cancelled_by,needs_manual_check,provider_status,quantity,sync_error")
       // least recently synced first (never-synced first): an old stuck order cannot starve new ones when the batch limit is reached
       .eq("provider_id", provider.id).neq("provider_order_id", "").in("status", ACTIVE_STATUSES).order("last_synced_at", { ascending: true, nullsFirst: true }).order("id").limit(MAX_ORDERS_PER_TICK);
     const list = (orders ?? []) as ActiveOrder[];

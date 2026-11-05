@@ -31,7 +31,7 @@ export function mapProviderStatus(raw: string): OrderStatus | null {
     case "fail":
     case "failed":
     case "error":
-      return "gagal_kirim"; // the provider reports a failure: same full automatic refund as a failed submit
+      return "dibatalkan"; // the provider gave up on the order: same full automatic refund as a provider-side cancel
     default:
       return null;
   }

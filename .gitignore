@@ -46,3 +46,6 @@ next-env.d.ts
 !.env.example
 .e2e-server.log
 .e2e-dashboard.png
+
+# dev provider simulator state
+/.mock-provider.json

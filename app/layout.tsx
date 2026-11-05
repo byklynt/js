@@ -23,7 +23,11 @@ export const metadata: Metadata = {
   metadataBase: new URL(brand.domain),
   title: { default: `${brand.name} - ${brand.tagline}`, template: `%s` },
   description: siteConfig.description,
-  openGraph: { title: `${brand.name} - ${brand.tagline}`, description: siteConfig.description, siteName: brand.name, type: "website", locale: "id_ID" },
+  openGraph: {
+    title: `${brand.name} - ${brand.tagline}`, description: siteConfig.description, siteName: brand.name, type: "website", locale: "id_ID",
+    images: [{ url: "/brand/og-image.png", width: 1200, height: 630, alt: brand.name }],
+  },
+  twitter: { card: "summary_large_image", title: `${brand.name} - ${brand.tagline}`, description: siteConfig.description, images: ["/brand/og-image.png"] },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
