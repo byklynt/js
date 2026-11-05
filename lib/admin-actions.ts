@@ -28,7 +28,8 @@ import { ProviderError } from "@/lib/server/provider-client";
 import { approveRefund, autoRefundForOrder, createManualRefund, rejectRefund, refundableRemaining } from "@/lib/server/refunds";
 import { refundReasonFor } from "@/lib/server/rules";
 import { syncOrders } from "@/lib/server/sync";
-import { notifyAnnouncement } from "@/lib/server/announcements";
+import { replyAsAdmin } from "@/lib/server/tickets";
+import { notifyAnnouncement } from "@/lib/server/repo/announcements";
 import { ipAllowed } from "@/lib/server/access";
 import { getClientIp } from "@/lib/auth-server";
 import { persistAdminState } from "@/lib/server/store";
@@ -579,32 +580,37 @@ export async function createRefund(input: unknown) {
 
 export async function setTicketStatus(input: unknown) {
   return run(S.ticketStatusSchema, input, async (d, admin) => {
-    const ticket = getDb().tickets.find((t) => t.id === d.ticketId);
+    const db = supabaseAdmin();
+    const { data: ticket } = await db.from("tickets").select("id,status").eq("number", Number(d.ticketId)).maybeSingle();
     if (!ticket) return fail("Tiket tidak ditemukan.");
-    const before = { status: ticket.status };
-    ticket.status = d.status;
-    await audit(admin, "ticket.status", "ticket", ticket.id, before, { status: ticket.status });
-    return ok(`Status tiket #${ticket.id} diubah.`);
+    await db.from("tickets").update({ status: d.status }).eq("id", ticket.id);
+    await audit(admin, "ticket.status", "ticket", d.ticketId, { status: ticket.status }, { status: d.status });
+    return ok(`Status tiket #${d.ticketId} diubah.`);
   });
 }
 
 export async function assignTicket(input: unknown) {
   return run(S.ticketAssignSchema, input, async (d, admin) => {
-    const ticket = getDb().tickets.find((t) => t.id === d.ticketId);
+    const db = supabaseAdmin();
+    const { data: ticket } = await db.from("tickets").select("id,assignee").eq("number", Number(d.ticketId)).maybeSingle();
     if (!ticket) return fail("Tiket tidak ditemukan.");
-    const before = { assignee: ticket.assignee };
-    ticket.assignee = d.assignee;
-    await audit(admin, "ticket.assign", "ticket", ticket.id, before, { assignee: ticket.assignee });
+    // The assignee is an admin username; resolve it to the profile id (empty = unassign).
+    let assignee: string | null = null;
+    if (d.assignee) {
+      const { data: who } = await db.from("profiles").select("id").eq("username", d.assignee).eq("role", "admin").maybeSingle();
+      if (!who) return fail("Admin tidak ditemukan.");
+      assignee = who.id;
+    }
+    await db.from("tickets").update({ assignee }).eq("id", ticket.id);
+    await audit(admin, "ticket.assign", "ticket", d.ticketId, { assignee: ticket.assignee }, { assignee });
     return ok(d.assignee ? `Tiket ditugaskan ke ${d.assignee}.` : "Penugasan tiket dihapus.");
   });
 }
 
 export async function addTicketNote(input: unknown) {
   return run(S.ticketNoteSchema, input, async (d, admin) => {
-    const ticket = getDb().tickets.find((t) => t.id === d.ticketId);
-    if (!ticket) return fail("Tiket tidak ditemukan.");
-    ticket.internalNotes.push({ id: `n${ticket.internalNotes.length + 1}`, by: admin.username, text: d.text, at: new Date().toISOString() });
-    await audit(admin, "ticket.note", "ticket", ticket.id, null, { text: d.text });
+    await replyAsAdmin(admin.sub, d.ticketId, { message: d.text, internal: true });
+    await audit(admin, "ticket.note", "ticket", d.ticketId, null, { text: d.text });
     return ok("Catatan internal disimpan.");
   });
 }
@@ -621,24 +627,22 @@ function refreshUserAnnouncements() {
 
 export async function saveAnnouncement(input: unknown) {
   return run(S.announcementSchema, input, async (d, admin) => {
-    const db = getDb();
-    const now = new Date().toISOString();
-    const fields = { title: d.title, body: d.body, audience: d.audience, placements: d.placements, level: d.level, publishAt: d.publishAt, expiresAt: d.expiresAt || null, active: d.active };
+    const db = supabaseAdmin();
+    const fields = { title: d.title, body: d.body, audience: d.audience, placements: d.placements, level: d.level, publish_at: d.publishAt, expires_at: d.expiresAt || null, active: d.active };
     if (d.id) {
-      const a = db.announcements.find((x) => x.id === d.id);
-      if (!a) return fail("Pengumuman tidak ditemukan.");
-      const before = { ...a };
-      // updatedAt changes on every edit: users who dismissed the old text see the banner again.
-      Object.assign(a, fields, { updatedAt: now });
-      notifyAnnouncement(db, a);
-      await audit(admin, "announcement.update", "announcement", a.id, before, { ...a });
+      const { data: before } = await db.from("announcements").select("*").eq("id", d.id).maybeSingle();
+      if (!before) return fail("Pengumuman tidak ditemukan.");
+      // updated_at changes on every edit: users who dismissed the old text see the banner again.
+      const { data: a, error } = await db.from("announcements").update({ ...fields, updated_at: new Date().toISOString() }).eq("id", d.id).select("*").single();
+      if (error) return fail("Pengumuman tidak bisa disimpan.");
+      await notifyAnnouncement(a);
+      await audit(admin, "announcement.update", "announcement", a.id, before, a);
       refreshUserAnnouncements();
       return ok("Pengumuman diperbarui.");
     }
-    const nextNumber = Math.max(0, ...db.announcements.map((x) => Number(x.id.replace("ann_", "")) || 0)) + 1;
-    const created = { ...fields, id: `ann_${nextNumber}`, createdBy: admin.username, createdAt: now, updatedAt: now };
-    db.announcements.unshift(created);
-    notifyAnnouncement(db, created);
+    const { data: created, error } = await db.from("announcements").insert({ ...fields, created_by: admin.sub }).select("*").single();
+    if (error) return fail("Pengumuman tidak bisa dibuat.");
+    await notifyAnnouncement(created);
     await audit(admin, "announcement.create", "announcement", created.id, null, created);
     refreshUserAnnouncements();
     return ok("Pengumuman dibuat.");
@@ -648,10 +652,9 @@ export async function saveAnnouncement(input: unknown) {
 export async function deleteAnnouncement(input: unknown) {
   return run(S.announcementDeleteSchema, input, async (d, admin) => {
     if (!(await reauth(admin, d.password))) return fail("Password salah.");
-    const db = getDb();
-    const index = db.announcements.findIndex((a) => a.id === d.id);
-    if (index < 0) return fail("Pengumuman tidak ditemukan.");
-    const [removed] = db.announcements.splice(index, 1);
+    const db = supabaseAdmin();
+    const { data: removed } = await db.from("announcements").delete().eq("id", d.id).select("*").maybeSingle();
+    if (!removed) return fail("Pengumuman tidak ditemukan.");
     await audit(admin, "announcement.delete", "announcement", removed.id, removed, null);
     refreshUserAnnouncements();
     return ok("Pengumuman dihapus.");

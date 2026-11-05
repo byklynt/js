@@ -4,7 +4,6 @@ import { connection } from "next/server";
 import { TicketDetail } from "@/components/tickets/ticket-detail";
 import { getCurrentUser } from "@/lib/auth-actions";
 import { currentUserId } from "@/lib/current-user";
-import { getDb } from "@/lib/admin-db";
 import { findOwnTicket, toUserTicket } from "@/lib/server/tickets";
 
 export const metadata: Metadata = { title: "Detail Tiket - JagoanSosmed" };
@@ -22,6 +21,6 @@ async function Loaded({ params }: { params: PageProps<"/dashboard/tickets/[id]">
   const { id } = await params;
   const [me, userId] = await Promise.all([getCurrentUser(), currentUserId()]);
   // Server-side ownership check: someone else's ticket is passed on as "not found" and its content never leaves the server.
-  const ticket = userId ? findOwnTicket(getDb(), userId, id) : null;
+  const ticket = userId ? await findOwnTicket(userId, id) : null;
   return <TicketDetail key={id} ticketId={id} initial={ticket ? toUserTicket(ticket) : null} username={me?.username ?? "kamu"} />;
 }

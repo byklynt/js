@@ -40,6 +40,7 @@ describe.skipIf(!enabled)("server flows on Supabase (mock provider)", () => {
   };
   let user = "";
   let admin = "";
+  const created: string[] = [];
   const SVC = `ZT-${run}`.toUpperCase();
 
   async function newUser(label: string, role?: "admin"): Promise<string> {
@@ -47,6 +48,7 @@ describe.skipIf(!enabled)("server flows on Supabase (mock provider)", () => {
     const { data, error } = await m.db.auth.admin.createUser({ email: `${username}@jagoansosmed-test.invalid`, password: `Tmp-${run}-pass1`, email_confirm: true, user_metadata: { username } });
     if (error || !data.user) throw new Error(error?.message);
     if (role) await m.db.from("profiles").update({ role }).eq("id", data.user.id);
+    created.push(data.user.id);
     return data.user.id;
   }
   const balance = async (id: string) => Number((await m.db.from("profiles").select("balance").eq("id", id).single()).data!.balance);
@@ -81,7 +83,18 @@ describe.skipIf(!enabled)("server flows on Supabase (mock provider)", () => {
     await credit(user, 50_000, "seed");
   }, 90_000);
 
-  afterAll(() => {
+  afterAll(async () => {
+    // Ticket attachments live in Storage, which SQL cleanup cannot reach: remove ONLY the folders of the users this run created.
+    const bucket = m.db.storage.from("ticket-attachments");
+    for (const id of created) {
+      const { data: folders } = await bucket.list(id, { limit: 100 });
+      const paths: string[] = [];
+      for (const f of folders ?? []) {
+        const { data: files } = await bucket.list(`${id}/${f.name}`, { limit: 100 });
+        for (const file of files ?? []) paths.push(`${id}/${f.name}/${file.name}`);
+      }
+      if (paths.length) await bucket.remove(paths);
+    }
     const r = spawnSync("npx", ["supabase", "db", "query", "--remote", "--file", "scripts/db-cleanup-test-data.sql", "--yes"], { encoding: "utf8", shell: process.platform === "win32" });
     if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1500));
   }, 120_000);
@@ -175,6 +188,74 @@ describe.skipIf(!enabled)("server flows on Supabase (mock provider)", () => {
     const wrong = JSON.stringify({ transactionId: `zt-tx2-${run}`, reference: other.id, amount: 99, status: "paid" });
     expect((await m.deposits.handlePaymentWebhook(wrong, createHmac("sha256", secret).update(wrong).digest("hex"), secret)).status).toBe(422);
   }, 90_000);
+
+  it("tickets: create with an attachment (private bucket, signed URL), internal note hidden, other users see nothing", async () => {
+    const tickets = await import("@/lib/server/tickets");
+    const other = await newUser("o");
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+    const created = await tickets.createUserTicket(user, { category: "Pesanan", subcategory: "Lainnya", orderIds: [], message: "Halo, ini pesan uji tiket.", files: [{ name: "bukti.png", size: png.length, type: "image/png", data: png }] });
+    const mine = await tickets.findOwnTicket(user, created.id);
+    expect(mine?.status).toBe("menunggu");
+    const att = mine!.messages[0].attachments![0];
+    expect(att.name).toBe("bukti.png");
+    expect(att.url).toMatch(/\/object\/sign\//); // signed URL, never a public one
+    expect((await fetch(att.url)).status).toBe(200);
+    expect((await fetch(att.url.split("?")[0])).status).not.toBe(200); // the bucket path alone is not readable
+    await tickets.replyAsAdmin(admin, created.id, { message: "Catatan internal rahasia", internal: true });
+    await tickets.replyAsAdmin(admin, created.id, { message: "Balasan untuk pengguna." });
+    const after = await tickets.findOwnTicket(user, created.id);
+    expect(after?.messages.map((x) => x.text)).toEqual(["Halo, ini pesan uji tiket.", "Balasan untuk pengguna."]);
+    expect(after?.unread).toBe(true);
+    expect(after?.status).toBe("dibalas");
+    expect(await tickets.markTicketRead(user, created.id)).toBe(0);
+    expect(await tickets.findOwnTicket(other, created.id)).toBeNull(); // someone else's ticket looks nonexistent
+    await expect(tickets.replyAsUser(other, created.id, { message: "bobol", files: [] })).rejects.toThrow(/tidak ditemukan/);
+    await expect(tickets.createUserTicket(user, { category: "Pesanan", subcategory: "Lainnya", orderIds: [], message: "x", files: [] })).rejects.toThrow(/minimal 10/);
+    const bad = await tickets.createUserTicket(user, { category: "Pesanan", subcategory: "Lainnya", orderIds: [], message: "file buruk", files: [{ name: "a.exe", size: 5, type: "application/x-msdownload", data: Buffer.from("12345") }] }).catch((e: Error) => e.message);
+    expect(bad).toMatch(/format harus/);
+    await tickets.closeOwnTicket(user, created.id);
+    await expect(tickets.replyAsUser(user, created.id, { message: "setelah tutup", files: [] })).rejects.toThrow(/sudah ditutup/);
+  }, 90_000);
+
+  it("notifications: created by the money functions, own rows only, mark read", async () => {
+    const repo = await import("@/lib/server/repo/notifications");
+    const other = await newUser("n");
+    const page = await repo.listNotifications(user);
+    expect(page.items.some((n) => n.type === "deposit")).toBe(true); // credit_deposit notified in the same transaction
+    expect(page.unread).toBeGreaterThan(0);
+    const first = page.items[0];
+    expect(await repo.markRead(other, first.id)).toBe(false); // another user's notification id is "not found"
+    expect(await repo.markRead(user, first.id)).toBe(true);
+    expect(await repo.markAllRead(user)).toBeGreaterThanOrEqual(0);
+    expect(await repo.unreadCount(user)).toBe(0);
+    expect((await repo.listNotifications(other)).items).toHaveLength(0);
+  }, 60_000);
+
+  it("announcements: audience, schedule and expiry are applied on the server", async () => {
+    const repo = await import("@/lib/server/repo/announcements");
+    const ids: string[] = [];
+    const add = async (row: Record<string, unknown>) => { const { data } = await m.db.from("announcements").insert({ title: `ZT ${run}`, body: "isi", ...row } as never).select("id").single(); ids.push(data!.id); return data!.id as string; };
+    const past = new Date(Date.now() - 120_000).toISOString(); // not "now": the DB clock may differ a little from this machine
+    const live = await add({ audience: "semua", placements: ["dashboard"], publish_at: past });
+    const resellerOnly = await add({ audience: "reseller", placements: ["dashboard"], publish_at: past });
+    const future = await add({ audience: "semua", placements: ["dashboard"], publish_at: new Date(Date.now() + 3_600_000).toISOString() });
+    const expired = await add({ audience: "semua", placements: ["dashboard"], publish_at: past, expires_at: new Date(Date.now() - 60_000).toISOString() });
+    const inactive = await add({ audience: "semua", placements: ["dashboard"], publish_at: past, active: false });
+    const forUser = (await repo.getVisibleAnnouncements({ user: { id: user, reseller: false }, placement: "dashboard" })).map((a) => a.id);
+    expect(forUser).toContain(live);
+    for (const id of [resellerOnly, future, expired, inactive]) expect(forUser).not.toContain(id);
+    const forReseller = (await repo.getVisibleAnnouncements({ user: { id: user, reseller: true }, placement: "dashboard" })).map((a) => a.id);
+    expect(forReseller).toContain(resellerOnly);
+    expect((await repo.getVisibleAnnouncements({ user: { id: user, reseller: false }, placement: "pembaruan" })).map((a) => a.id)).not.toContain(live);
+    await m.db.from("announcements").delete().in("id", ids);
+  }, 60_000);
+
+  it("favorites and language live in the database", async () => {
+    await m.db.from("favorites").upsert({ user_id: user, service_id: SVC }, { onConflict: "user_id,service_id" });
+    expect(((await m.db.from("favorites").select("service_id").eq("user_id", user)).data ?? []).map((r) => r.service_id)).toEqual([SVC]);
+    await m.db.from("profiles").update({ language: "en" }).eq("id", user);
+    expect((await m.db.from("profiles").select("language").eq("id", user).single()).data!.language).toBe("en");
+  });
 
   it("ledger equals balance for every temp user", async () => {
     for (const id of [user, admin]) {

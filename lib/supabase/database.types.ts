@@ -1387,6 +1387,7 @@ export type Database = {
           category: string
           created_at: string
           id: string
+          number: number
           order_ids: number[]
           status: string
           subcategory: string | null
@@ -1400,6 +1401,7 @@ export type Database = {
           category?: string
           created_at?: string
           id?: string
+          number?: number
           order_ids?: number[]
           status?: string
           subcategory?: string | null
@@ -1413,6 +1415,7 @@ export type Database = {
           category?: string
           created_at?: string
           id?: string
+          number?: number
           order_ids?: number[]
           status?: string
           subcategory?: string | null

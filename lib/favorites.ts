@@ -3,6 +3,7 @@ import { migrateLegacyStorage } from "@/lib/storage-migrate";
 
 const FAVORITES_KEY = `${brand.storagePrefix}:favorite-services`;
 
+/** Legacy: favorites used to be stored in localStorage. Read only to import them into the database once. */
 export function readFavorites(): string[] {
   try {
     migrateLegacyStorage();
@@ -15,10 +16,11 @@ export function readFavorites(): string[] {
   }
 }
 
-export function writeFavorites(ids: string[]): void {
+/** Removes the old browser-side copy once it has been imported into the database. */
+export function clearLocalFavorites(): void {
   try {
-    window.localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
+    window.localStorage.removeItem(FAVORITES_KEY);
   } catch {
-    // Ignore write failures (private browsing, storage disabled, etc.)
+    // Ignore (private browsing, storage disabled, etc.)
   }
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { Activity, Bell, Headset, Info, Megaphone, ShoppingCart, Undo2, Wallet, type LucideIcon } from "lucide-react";
+import { useRealtimeRefresh } from "@/lib/use-realtime";
 import { getUnreadCountAction, listNotificationsAction, markAllReadAction, markReadAction } from "@/lib/notification-actions";
 import type { NotificationType, NotificationView } from "@/lib/notifications-data";
 import { useLanguage } from "@/lib/i18n/provider";
@@ -86,6 +87,9 @@ export function NotificationBell({ scope }: { scope: "user" | "admin" }) {
       })
       .catch(() => setItems([]));
   }, [scope]);
+
+  // Realtime push (RLS-protected) refreshes the count the moment a notification is inserted; polling below is the fallback.
+  useRealtimeRefresh("notifications", loadCount, scope);
 
   // Count: now, every 30s while the tab is visible, when the tab becomes visible or focused again, and on demand.
   useEffect(() => {

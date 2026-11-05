@@ -4,10 +4,9 @@ import { connection } from "next/server";
 import { getCurrentUser } from "@/lib/auth-actions";
 import { DashboardHome } from "@/components/dashboard/dashboard-home";
 import { currentUserId } from "@/lib/current-user";
-import { getDb } from "@/lib/admin-db";
 import { getMyStats } from "@/lib/user-actions";
 import { getOrderBootstrap } from "@/lib/server/services";
-import { getVisibleAnnouncements, viewerOf } from "@/lib/server/announcements";
+import { getVisibleAnnouncements, viewerOf } from "@/lib/server/repo/announcements";
 
 export const metadata: Metadata = { title: "Dashboard - JagoanSosmed" };
 
@@ -36,10 +35,9 @@ async function DashboardPageContent({
   const preselectServiceId = Array.isArray(serviceParam) ? serviceParam[0] : serviceParam;
 
   // Filtered on the server: only announcements this user is allowed to see are sent to the browser.
-  const db = getDb();
   const userId = await currentUserId();
-  const viewer = userId ? viewerOf(db, userId) : null;
-  const announcements = viewer ? getVisibleAnnouncements(db, { user: viewer, placement: "dashboard" }) : [];
+  const viewer = userId ? await viewerOf(userId) : null;
+  const announcements = viewer ? await getVisibleAnnouncements({ user: viewer, placement: "dashboard" }) : [];
 
   // Only the order page's first needs: whether any service exists and the ?service=ID one. The catalogue itself is never sent.
   const { hasServices, preselect } = await getOrderBootstrap(preselectServiceId);

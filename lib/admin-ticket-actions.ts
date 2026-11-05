@@ -3,10 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth-server";
-import { getDb } from "@/lib/admin-db";
 import { logAdminAction } from "@/lib/admin-audit";
 import { allowedAttachmentTypes, maxAttachmentBytes, maxAttachments } from "@/lib/tickets-data";
-import { persistAdminState } from "@/lib/server/store";
+import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import { replyAsAdmin, type IncomingFile } from "@/lib/server/tickets";
 import { ServiceError } from "@/lib/server/tx";
 
@@ -35,18 +34,17 @@ export async function replyAdminTicketForm(form: FormData): Promise<{ ok: true; 
       if (!allowedAttachmentTypes.includes(f.type)) throw new ServiceError(`${f.name}: format harus PNG, JPG, atau PDF.`, "bad_file_type");
       if (f.size > maxAttachmentBytes) throw new ServiceError(`${f.name}: ukuran maksimal 5 MB.`, "file_too_large");
       const buf = Buffer.from(await f.arrayBuffer());
-      files.push({ name: f.name, size: buf.length, type: f.type, url: `data:${f.type};base64,${buf.toString("base64")}` });
+      files.push({ name: f.name, size: buf.length, type: f.type, data: buf });
     }
-    const db = getDb();
-    const ticket = db.tickets.find((t) => t.id === parsed.data.ticketId);
+    const db = supabaseAdmin();
+    const { data: ticket } = await db.from("tickets").select("status").eq("number", Number(parsed.data.ticketId)).maybeSingle();
     const before = { status: ticket?.status };
-    replyAsAdmin(db, parsed.data.ticketId, { message: parsed.data.message, files });
-    if (ticket && parsed.data.status !== "dibalas") ticket.status = parsed.data.status;
-    logAdminAction({
+    await replyAsAdmin(admin.sub, parsed.data.ticketId, { message: parsed.data.message, files });
+    if (ticket && parsed.data.status !== "dibalas") await db.from("tickets").update({ status: parsed.data.status }).eq("number", Number(parsed.data.ticketId));
+    await logAdminAction({
       adminId: admin.sub, adminName: admin.username, action: "ticket.reply", targetType: "ticket", targetId: parsed.data.ticketId,
-      before, after: { status: ticket?.status, attachments: files.length },
+      before, after: { status: parsed.data.status, attachments: files.length },
     });
-    persistAdminState(db);
     revalidatePath("/admin", "layout");
     return { ok: true, message: `Balasan untuk tiket #${parsed.data.ticketId} terkirim.` };
   } catch (e) {

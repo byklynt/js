@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { getUnreadTicketCountAction } from "@/lib/ticket-actions";
+import { useRealtimeRefresh } from "@/lib/use-realtime";
 
 /**
  * The unread-ticket badge in the sidebar. The number comes from the server (tickets live in the server store);
@@ -18,6 +19,8 @@ export function refreshTicketBadge() {
 export function useUnreadTicketCount(): number {
   const [count, setCount] = useState(0);
   const pathname = usePathname();
+  // A support reply creates a notification (RLS: own rows) -> refresh the badge at once; the minute poll stays as fallback.
+  useRealtimeRefresh("notifications", refreshTicketBadge, "tickets");
 
   useEffect(() => {
     let alive = true;

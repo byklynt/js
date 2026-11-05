@@ -27,6 +27,7 @@ delete from public.admin_alerts where message like '%zt\_%';
 delete from public.provider_sync_runs where started_at > now() - interval '45 minutes';
 delete from auth.users where id in (select id from zt_users);   -- profiles, notifications, tickets cascade
 
+delete from public.announcements where title like 'ZT %';
 delete from public.favorites where service_id like 'ZT-%';
 delete from public.services where id like 'ZT-%';
 delete from public.service_categories where id like 'zt-%';

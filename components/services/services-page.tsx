@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { PackageSearch } from "lucide-react";
-import { readFavorites, writeFavorites } from "@/lib/favorites";
+import { readFavorites, clearLocalFavorites } from "@/lib/favorites";
+import { getFavoritesAction, importFavoritesAction, setFavoriteAction } from "@/lib/favorites-actions";
 import { fetchCategoryList, fetchServices, isAbort, useCategories } from "@/lib/services-client";
 import { MIN_SEARCH_LENGTH, type CategoryRow, type ServicesQuery } from "@/lib/services-types";
 import { useMediaQuery } from "@/lib/use-media-query";
@@ -35,6 +36,8 @@ export function ServicesPage({ initialSearch = "" }: { initialSearch?: string })
   const [, startTransition] = useTransition();
   const [favorites, setFavorites] = useState<Set<string>>(() => new Set());
   const [favoritesLoaded, setFavoritesLoaded] = useState(false);
+  const favoritesRef = useRef(favorites);
+  favoritesRef.current = favorites;
   const [open, setOpen] = useState<string[]>([]);
   const [groups, setGroups] = useState<Record<string, GroupData>>({});
   const [groupLimit, setGroupLimit] = useState(GROUP_STEP);
@@ -43,14 +46,13 @@ export function ServicesPage({ initialSearch = "" }: { initialSearch?: string })
   const [filteredError, setFilteredError] = useState(false);
 
   useEffect(() => {
-    // One-time sync from localStorage once mounted in the browser.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setFavorites(new Set(readFavorites()));
-    setFavoritesLoaded(true);
+    // Favorites live in the database (table favorites). Anything still in localStorage from before is imported once, then removed.
+    let alive = true;
+    const local = readFavorites();
+    const load = local.length ? importFavoritesAction(local).then((ids) => { clearLocalFavorites(); return ids; }) : getFavoritesAction();
+    void load.then((ids) => { if (alive) setFavorites(new Set(ids)); }).catch(() => {}).finally(() => { if (alive) setFavoritesLoaded(true); });
+    return () => { alive = false; };
   }, []);
-  useEffect(() => {
-    if (favoritesLoaded) writeFavorites(Array.from(favorites));
-  }, [favorites, favoritesLoaded]);
 
   // Debounced (300 ms), minimum 2 characters, applied inside a transition so typing is never blocked by the list update.
   useEffect(() => {
@@ -171,13 +173,18 @@ export function ServicesPage({ initialSearch = "" }: { initialSearch?: string })
   const showMore = useCallback((id: string) => loadGroup(id, true), [loadGroup]);
   const retry = useCallback((id: string) => loadGroup(id, false), [loadGroup]);
 
+  // Optimistic: the star flips at once; if the server refuses, it flips back.
   const toggleFavorite = useCallback((id: string) => {
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    const on = !favoritesRef.current.has(id);
+    const apply = (value: boolean) =>
+      setFavorites((prev) => {
+        const next = new Set(prev);
+        if (value) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    apply(on);
+    void setFavoriteAction(id, on).then((r) => { if (!r.ok) apply(!on); }).catch(() => apply(!on));
   }, []);
   const toggleExpandedService = useCallback((id: string) => setExpandedServiceId((prev) => (prev === id ? null : id)), []);
 
