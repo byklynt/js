@@ -8,6 +8,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { existsSync, readFileSync } from "node:fs";
 import { clearMockOverrides, writeMockOverride } from "../lib/server/providers/mock-overrides";
+import { assertDevOnly } from "./lib/prod-guard.mjs";
 
 if (existsSync(".env.local")) {
   for (const line of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
@@ -20,8 +21,7 @@ const fail = (m: string): never => {
   process.exit(1);
 };
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const ref = process.env.SUPABASE_DEV_PROJECT_REF ?? "";
-if (!ref || !url.includes(ref)) fail("Ditolak: NEXT_PUBLIC_SUPABASE_URL tidak cocok dengan SUPABASE_DEV_PROJECT_REF. Simulator hanya untuk project DEV.");
+assertDevOnly(); // exact host match with SUPABASE_DEV_PROJECT_REF
 if (process.env.PROVIDER_MODE?.trim().toLowerCase() !== "mock") fail("Ditolak: simulator hanya berlaku dengan PROVIDER_MODE=mock (di .env.local dan di server yang berjalan).");
 
 const STATUSES: Record<string, string> = { partial: "Partial", canceled: "Canceled", cancelled: "Canceled", failed: "Failed", completed: "Completed", refill: "Completed" };

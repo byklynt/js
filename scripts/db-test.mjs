@@ -6,11 +6,13 @@
 // `db query` prints only the last statement's result, so every assertion is routed into a temp table and the final
 // exception message carries the verdict ("PGTAP-RESULT ok" or the list of failed assertions).
 import { spawnSync } from "node:child_process";
+import { assertLinkedIsDev } from "./lib/prod-guard.mjs";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const local = process.argv.includes("--local");
+if (!local) assertLinkedIsDev(); // the pgTAP files run (in a rolled-back transaction) against the LINKED project: it must be the dev one
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7);
 const dir = "supabase/tests/database";
 const files = readdirSync(dir).filter((f) => f.endsWith(".test.sql")).sort();

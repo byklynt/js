@@ -9,10 +9,12 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildEnableSql, purgeSecretsSql, redact } from "./lib/cron-sql.mjs";
+import { makeWorkdir, resolveTarget } from "./lib/prod-guard.mjs";
 
 const [command, ...rest] = process.argv.slice(2);
 const flags = new Set(rest.filter((a) => a.startsWith("--")));
-const positional = rest.filter((a) => !a.startsWith("--"));
+// positional arguments exclude flags and the value of --project-ref
+const positional = rest.filter((a, i) => !a.startsWith("--") && rest[i - 1] !== "--project-ref");
 
 function loadEnv() {
   const out = {};
@@ -23,7 +25,10 @@ function loadEnv() {
   }
   return out;
 }
-const env = { ...loadEnv(), ...process.env };
+// With --project-ref REF (production): nothing is read from .env.local, CRON_SECRET and the keys come from this terminal session, and the
+// CLI is pointed at that project through a throw-away linked workdir (the dev link of this repo is never touched). Without it: DEV only.
+const target = resolveTarget({ argv: rest, loadDevEnv: () => { for (const [k, v] of Object.entries(loadEnv())) if (process.env[k] === undefined) process.env[k] = v; } });
+const env = process.env;
 
 function run(sql, label) {
   const dir = mkdtempSync(join(tmpdir(), "jago-cron-"));
@@ -31,7 +36,20 @@ function run(sql, label) {
   try {
     writeFileSync(file, sql, { mode: 0o600 });
     try { chmodSync(file, 0o600); } catch { /* not supported on this OS */ }
-    const r = spawnSync("npx", ["supabase", "db", "query", "--remote", "--file", file, "--yes"], { encoding: "utf8", shell: process.platform === "win32" });
+    let work = null;
+    const extra = [];
+    if (target.prod) {
+      work = makeWorkdir();
+      const link = spawnSync("npx", ["supabase", "link", "--project-ref", target.ref, "--workdir", work.dir], { encoding: "utf8", shell: process.platform === "win32", env: process.env });
+      if (link.status !== 0) {
+        work.cleanup();
+        console.error(`${label}: gagal menautkan ke ${target.ref}\n${(link.stderr || link.stdout || "").slice(-600)}`);
+        process.exit(1);
+      }
+      extra.push("--workdir", work.dir);
+    }
+    const r = spawnSync("npx", ["supabase", "db", "query", "--remote", ...extra, "--file", file, "--yes"], { encoding: "utf8", shell: process.platform === "win32", env: process.env });
+    work?.cleanup();
     const out = redact(`${r.stdout ?? ""}${r.stderr ?? ""}`, env.CRON_SECRET);
     if (r.status !== 0) {
       console.error(`${label}: GAGAL\n${out.slice(-1500)}`);
@@ -50,7 +68,7 @@ if (command === "enable") {
   }
   const sql = buildEnableSql({ appUrl: positional[0], secret: env.CRON_SECRET });
   if (!flags.has("--confirm")) {
-    console.log("DRY RUN (tidak ada yang dikirim). Tambahkan --confirm untuk menjalankan ke proyek Supabase yang ter-link.\n");
+    console.log("DRY RUN (tidak ada yang dikirim). Tambahkan --confirm untuk menjalankan (production: ke project yang disebut di --project-ref; tanpa itu: ke project DEV yang ter-link).\n");
     console.log(redact(sql, env.CRON_SECRET));
     process.exit(0);
   }

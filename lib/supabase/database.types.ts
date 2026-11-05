@@ -1972,6 +1972,7 @@ export type Database = {
           order_id: number
         }[]
       }
+      prod_verify: { Args: never; Returns: Json }
       rate_limit_hit: {
         Args: { p_key: string; p_limit: number; p_window_seconds: number }
         Returns: {

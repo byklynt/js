@@ -13,14 +13,50 @@ export const LIKEO_DEFAULT_URL = "https://likeo.net/api/v2";
 /** live = real Likeo calls. mock = deterministic fake data, ONLY when explicitly selected. off = not configured: nothing is faked. */
 export type ProviderMode = "mock" | "live" | "off";
 
+/** "https://abcdefghijklmnopqrst.supabase.co" -> the project ref; null for anything else (local stack, unknown host). */
+export function supabaseTargetRef(url: string | undefined = process.env.NEXT_PUBLIC_SUPABASE_URL): string | null {
+  try {
+    const u = new URL(url ?? "");
+    const m = /^([a-z]{20})\.supabase\.co$/.exec(u.hostname);
+    return u.protocol === "https:" && m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+const clean = (v: string | undefined) => v?.trim().replace(/^["']|["']$/g, "") ?? "";
+
 /**
- * THE single source of truth for the mode: the PROVIDER_MODE environment variable, read on every call (never cached,
- * never stored). "live" means live; anything else (unset, empty, a typo) means mock.
+ * The project that is EXPLICITLY approved to talk to the real provider (and to spend real money): PROVIDER_LIVE_APPROVED_REF. Without it nothing is
+ * approved, whatever PROVIDER_MODE says.
+ */
+export const liveApprovedRef = (): string | null => clean(process.env.PROVIDER_LIVE_APPROVED_REF) || null;
+
+/** True only when the Supabase project this server talks to is exactly the approved one. */
+export const isLiveApproved = (): boolean => {
+  const target = supabaseTargetRef();
+  return target !== null && target === liveApprovedRef();
+};
+
+/** The dev project or a local stack: the places where mock data is welcome. */
+const isDevTarget = (): boolean => {
+  const target = supabaseTargetRef();
+  const dev = clean(process.env.SUPABASE_DEV_PROJECT_REF);
+  return target === null || (dev !== "" && target === dev);
+};
+
+/**
+ * THE single source of truth for the mode (read on every call, never cached, never stored). The real provider is reachable ONLY from a project
+ * that is explicitly approved (PROVIDER_LIVE_APPROVED_REF = the project of NEXT_PUBLIC_SUPABASE_URL) AND PROVIDER_MODE=live.
+ *  - approved project: "live" with PROVIDER_MODE=live, otherwise "off" (an approved project never fakes data);
+ *  - any other project: "mock" (the default, also when PROVIDER_MODE=live is asked for), except a production build against a project that is
+ *    not the dev one, which is "off": nothing is faked and nothing is spent.
  */
 export const providerMode = (): ProviderMode => {
-  const v = process.env.PROVIDER_MODE?.trim().replace(/^["']|["']$/g, "").toLowerCase();
-  // Mock data is never the default: it needs an explicit PROVIDER_MODE=mock (tests, local experiments).
-  return v === "live" ? "live" : v === "mock" ? "mock" : "off";
+  const requested = clean(process.env.PROVIDER_MODE).toLowerCase();
+  if (isLiveApproved()) return requested === "live" ? "live" : "off";
+  if (process.env.NODE_ENV === "production" && !isDevTarget()) return "off";
+  return "mock";
 };
 
 export type ModeInfo = {
@@ -57,13 +93,24 @@ export function resolveModeInfo(): ModeInfo {
   const mode = providerMode();
   const rawValue = process.env.PROVIDER_MODE;
   const raw = rawValue === undefined ? null : rawValue;
-  if (raw === null || raw.trim() === "") {
-    return { mode, raw, source: raw === null ? "PROVIDER_MODE tidak ada di environment: provider belum aktif (tidak ada data contoh)" : "PROVIDER_MODE kosong: provider belum aktif (tidak ada data contoh)", warning: null };
-  }
   const file = envFileDefining("PROVIDER_MODE");
-  const source = file ? `dari ${file}` : "dari environment proses";
-  const clean = raw.trim().replace(/^["']|["']$/g, "").toLowerCase();
-  const warning = clean === "live" || clean === "mock" ? null : `Nilai PROVIDER_MODE "${raw.slice(0, 20)}" tidak dikenal, jadi provider belum aktif. Pakai "live" (atau "mock" untuk uji).`;
+  const origin = raw === null ? "PROVIDER_MODE tidak ada di environment" : raw.trim() === "" ? "PROVIDER_MODE kosong" : file ? `dari ${file}` : "dari environment proses";
+  const requested = clean(raw ?? undefined).toLowerCase();
+  const target = supabaseTargetRef();
+  let warning: string | null = null;
+  let source = origin;
+  if (isLiveApproved()) {
+    source = requested === "live" ? origin : `${origin}; project ini disetujui untuk provider asli`;
+    if (requested !== "live") warning = "Project ini disetujui untuk provider asli (PROVIDER_LIVE_APPROVED_REF), tetapi PROVIDER_MODE bukan live: provider mati dan tidak ada data contoh.";
+  } else if (requested === "live") {
+    warning = `PROVIDER_MODE=live diminta, tetapi project ini (${target ?? "lokal/tidak dikenal"}) belum disetujui: isi PROVIDER_LIVE_APPROVED_REF dengan ref project ini. Provider asli TIDAK dipanggil (mode ${mode}).`;
+    source = `${origin}; ditolak karena project belum disetujui`;
+  } else if (mode === "mock") {
+    source = `${origin}: memakai mock (project ini bukan production yang disetujui)`;
+  } else {
+    source = `${origin}: provider mati (build production di project yang bukan DEV dan belum disetujui)`;
+  }
+  if (requested !== "" && requested !== "live" && requested !== "mock") warning = `Nilai PROVIDER_MODE "${(raw ?? "").slice(0, 20)}" tidak dikenal. Pakai "live" (hanya di project yang disetujui) atau "mock" (uji).`;
   return { mode, raw, source, warning };
 }
 

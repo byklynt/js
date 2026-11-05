@@ -1,5 +1,7 @@
 # Supabase setup
 
+> Untuk production: ikuti `docs/production-setup.md` (skrip `db:push:prod`, `prod:verify`, secret baru, `--project-ref`). Semua skrip tes dan simulator hanya berjalan terhadap project DEV.
+
 JagoanSosmed runs on Supabase (Postgres + Auth + Storage + Realtime). This file is the checklist to get a project ready.
 
 ## 1. Create and link the project

@@ -45,7 +45,7 @@ describe.skipIf(!enabled)("money functions under concurrency (real database)", (
 
   beforeAll(async () => {
     const ref = env.SUPABASE_DEV_PROJECT_REF;
-    if (!ref || !url.includes(ref)) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
+    if (!ref || new URL(url).hostname !== `${ref}.supabase.co`) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
     db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
     const prov = await db.from("providers").insert({ name: "ZT", slug: `zt-${run}`, mode: "mock" }).select("id").single();
     expect(prov.error).toBeNull();
@@ -61,7 +61,7 @@ describe.skipIf(!enabled)("money functions under concurrency (real database)", (
   }, 60_000);
 
   afterAll(() => {
-    const r = spawnSync("npx", ["supabase", "db", "query", "--remote", "--file", "scripts/db-cleanup-test-data.sql", "--yes"], { encoding: "utf8", shell: process.platform === "win32" });
+    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
     if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1500));
   }, 120_000);
 

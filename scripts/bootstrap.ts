@@ -11,6 +11,7 @@
  * Existing rows are kept, so running this again is safe.
  */
 import { createClient } from "@supabase/supabase-js";
+import { resolveTarget } from "./lib/prod-guard.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { defaultSettings } from "../lib/admin-data";
 import { defaultOrderRules, RULE_KEYS } from "../lib/order-rules";
@@ -27,7 +28,9 @@ function loadEnvFile() {
     }
   }
 }
-loadEnvFile();
+// --project-ref REF = PRODUCTION: no .env.local at all (a dev key must never encrypt a production secret); everything from the terminal session.
+const target = resolveTarget({ argv: process.argv.slice(2), loadDevEnv: loadEnvFile });
+if (target.prod) console.log(`Mode PRODUCTION: project ${target.ref} (variabel hanya dari session terminal).`);
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -63,7 +66,8 @@ async function main() {
   console.log(`service_rules: ${rows.length} ditambahkan, ${have.size} sudah ada.`);
 
   // 3. Likeo provider (key encrypted)
-  const mode = process.env.PROVIDER_MODE?.trim().toLowerCase() === "mock" ? "mock" : "live";
+  // Production never gets a mock provider row.
+  const mode = !target.prod && process.env.PROVIDER_MODE?.trim().toLowerCase() === "mock" ? "mock" : "live";
   const apiKey = process.env.LIKEO_API_KEY?.trim();
   let encrypted: string | null = null;
   if (apiKey && apiKey !== "isi_api_key_likeo_di_sini") {

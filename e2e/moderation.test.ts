@@ -60,7 +60,7 @@ describe.skipIf(!enabled)("moderation: cancel without refund, blocked users' bal
 
   beforeAll(async () => {
     const ref = env.SUPABASE_DEV_PROJECT_REF;
-    if (!ref || !url.includes(ref)) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
+    if (!ref || new URL(url).hostname !== `${ref}.supabase.co`) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
     const db = sb();
     const mk = async (n: string) => {
       const { data, error } = await db.auth.admin.createUser({ email: email(n), password, email_confirm: true, user_metadata: { username: n } });
@@ -93,7 +93,7 @@ describe.skipIf(!enabled)("moderation: cancel without refund, blocked users' bal
 
   afterAll(async () => {
     await browser?.close();
-    const r = spawnSync("npx", ["supabase", "db", "query", "--remote", "--file", "scripts/db-cleanup-test-data.sql", "--yes"], { encoding: "utf8", shell: process.platform === "win32" });
+    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
     if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1200));
   }, 120_000);
 

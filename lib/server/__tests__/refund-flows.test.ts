@@ -90,7 +90,7 @@ describe.skipIf(!enabled)("refund and cancellation flows (mock provider)", () =>
 
   beforeAll(async () => {
     const ref = process.env.SUPABASE_DEV_PROJECT_REF;
-    if (!ref || !process.env.NEXT_PUBLIC_SUPABASE_URL!.includes(ref)) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
+    if (!ref || new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).hostname !== `${ref}.supabase.co`) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
     process.env.PROVIDER_MODE = "mock"; // the real Likeo `add` is never called from these tests
     m = {
       db: (await import("@/lib/server/supabase-admin")).supabaseAdmin(),
@@ -114,7 +114,7 @@ describe.skipIf(!enabled)("refund and cancellation flows (mock provider)", () =>
 
   afterAll(async () => {
     console.log("\nSCENARIO TABLE\n" + report.map((r) => `${r.ok ? "PASS" : "FAIL"} | ${r.scenario} | expected: ${r.expected} | actual: ${r.actual}`).join("\n"));
-    const r = spawnSync("npx", ["supabase", "db", "query", "--remote", "--file", "scripts/db-cleanup-test-data.sql", "--yes"], { encoding: "utf8", shell: process.platform === "win32" });
+    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
     if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1500));
   }, 120_000);
 

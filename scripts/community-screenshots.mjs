@@ -12,6 +12,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as OTPAuth from "otpauth";
 import { chromium } from "playwright";
 import { PNG } from "pngjs";
+import { checkDevOnly, readDevRef } from "./lib/prod-guard.mjs";
 
 const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
 const BEFORE = arg("--before");
@@ -26,9 +27,9 @@ for (const line of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
   if (i > 0 && !line.startsWith("#")) env[line.slice(0, i).trim()] = line.slice(i + 1).trim().replace(/^["']|["']$/g, "");
 }
 const url = env.NEXT_PUBLIC_SUPABASE_URL;
-const ref = env.SUPABASE_DEV_PROJECT_REF;
-if (!ref || !url.includes(ref)) {
-  console.error("Ditolak: NEXT_PUBLIC_SUPABASE_URL tidak cocok dengan SUPABASE_DEV_PROJECT_REF.");
+const devCheck = checkDevOnly(env, readDevRef(env));
+if (!devCheck.ok) {
+  console.error(devCheck.error);
   process.exit(1);
 }
 const serviceKey = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
@@ -287,6 +288,6 @@ try {
   exitCode = 1;
 } finally {
   if (original) await sb.from("site_settings").upsert({ id: true, data: original });
-  spawnSync("npx", ["supabase", "db", "query", "--remote", "--file", "scripts/db-cleanup-test-data.sql", "--yes"], { encoding: "utf8", shell: process.platform === "win32" });
+  spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
 }
 process.exit(exitCode);

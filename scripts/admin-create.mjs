@@ -5,6 +5,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { existsSync, readFileSync } from "node:fs";
 import readline from "node:readline";
+import { resolveTarget } from "./lib/prod-guard.mjs";
 
 function loadEnv() {
   const out = {};
@@ -31,9 +32,11 @@ function askHidden(prompt) {
   });
 }
 
-const [username, email] = process.argv.slice(2);
+// "--project-ref REF" = PRODUCTION mode: nothing is read from .env.local, the URL and keys come from this terminal session only.
+const argv = process.argv.slice(2).filter((a, i, all) => !a.startsWith("--project-ref") && all[i - 1] !== "--project-ref");
+const [username, email] = argv;
 if (!username || !email) {
-  console.error("Pemakaian: npm run admin:create -- <username> <email>");
+  console.error("Pemakaian: npm run admin:create -- <username> <email>   (production: tambahkan --project-ref REF, variabel dari session terminal)");
   process.exit(1);
 }
 if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) {
@@ -45,7 +48,9 @@ if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
   process.exit(1);
 }
 
-const env = { ...loadEnv(), ...process.env };
+const target = resolveTarget({ argv: process.argv.slice(2), loadDevEnv: () => { for (const [k, v] of Object.entries(loadEnv())) if (process.env[k] === undefined) process.env[k] = v; } });
+if (target.prod) console.log(`Mode PRODUCTION: project ${target.ref} (variabel hanya dari session terminal).`);
+const env = process.env;
 const url = env.NEXT_PUBLIC_SUPABASE_URL;
 const key = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) {

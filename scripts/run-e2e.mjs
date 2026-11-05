@@ -1,7 +1,9 @@
 // Starts the production server (run `npm run build` first), runs the browser e2e against it, then stops the server.
+import { assertDevOnlyWithFile } from "./lib/prod-guard.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { openSync } from "node:fs";
 
+assertDevOnlyWithFile({ linked: true }); // tests create and delete data: dev project only
 const PORT = "3110";
 const win = process.platform === "win32";
 const log = openSync(".e2e-server.log", "w");
