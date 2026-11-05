@@ -1528,8 +1528,214 @@ export type Database = {
       }
     }
     Functions: {
+      admin_adjust_balance: {
+        Args: {
+          p_admin: string
+          p_amount: number
+          p_reason: string
+          p_ref?: string
+          p_user: string
+        }
+        Returns: number
+      }
+      apply_ledger_entry: {
+        Args: {
+          p_amount: number
+          p_by?: string
+          p_note?: string
+          p_ref_id: string
+          p_ref_type: string
+          p_type: string
+          p_user: string
+        }
+        Returns: {
+          duplicate: boolean
+          ledger_id: string
+          new_balance: number
+        }[]
+      }
+      approve_refund: {
+        Args: {
+          p_admin: string
+          p_override_amount?: number
+          p_override_reason?: string
+          p_refund: string
+        }
+        Returns: {
+          amount: number
+          duplicate: boolean
+          refund_id: string
+          status: string
+        }[]
+      }
+      create_refund_for_order: {
+        Args: {
+          p_amount?: number
+          p_by?: string
+          p_cancel_request?: string
+          p_note?: string
+          p_order: number
+          p_policy_percent?: number
+          p_reason: string
+          p_settle?: boolean
+          p_source?: string
+        }
+        Returns: {
+          amount: number
+          created: boolean
+          refund_id: string
+          status: string
+        }[]
+      }
+      credit_deposit: {
+        Args: {
+          p_amount: number
+          p_by?: string
+          p_deposit_id?: string
+          p_external_id: string
+          p_method: string
+          p_user_id: string
+        }
+        Returns: {
+          bonus: number
+          deposit_id: string
+          duplicate: boolean
+        }[]
+      }
+      fmt_rupiah: { Args: { p_amount: number }; Returns: string }
+      internal_audit: {
+        Args: {
+          p_action: string
+          p_admin: string
+          p_after: Json
+          p_before: Json
+          p_id: string
+          p_type: string
+        }
+        Returns: undefined
+      }
+      internal_fail: {
+        Args: { p_code: string; p_message: string }
+        Returns: undefined
+      }
+      internal_notify: {
+        Args: {
+          p_body: string
+          p_dedupe: string
+          p_href: string
+          p_title: string
+          p_type: string
+          p_user: string
+        }
+        Returns: undefined
+      }
+      internal_require_admin: { Args: { p_admin: string }; Returns: undefined }
+      internal_settle_refund: {
+        Args: { p_by: string; p_refund: string }
+        Returns: {
+          amount: number
+          cancel_request_id: string | null
+          created_at: string
+          id: string
+          note: string | null
+          order_id: number
+          overridden: boolean
+          policy_percent: number | null
+          processed_at: string | null
+          processed_by: string | null
+          reason: string
+          reject_reason: string | null
+          reversed: boolean
+          source: string
+          status: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "refunds"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       is_admin: { Args: never; Returns: boolean }
       is_reseller_or_admin: { Args: never; Returns: boolean }
+      place_order: {
+        Args: {
+          p_accepted_rules_version?: string
+          p_link: string
+          p_quantity: number
+          p_service: string
+          p_user: string
+        }
+        Returns: {
+          balance: number
+          charge: number
+          held: boolean
+          order_id: number
+        }[]
+      }
+      rate_limit_hit: {
+        Args: { p_key: string; p_limit: number; p_window_seconds: number }
+        Returns: {
+          allowed: boolean
+          retry_after: number
+        }[]
+      }
+      rate_limit_reset: { Args: { p_key: string }; Returns: undefined }
+      reject_refund: {
+        Args: { p_admin: string; p_reason: string; p_refund: string }
+        Returns: {
+          amount: number
+          cancel_request_id: string | null
+          created_at: string
+          id: string
+          note: string | null
+          order_id: number
+          overridden: boolean
+          policy_percent: number | null
+          processed_at: string | null
+          processed_by: string | null
+          reason: string
+          reject_reason: string | null
+          reversed: boolean
+          source: string
+          status: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "refunds"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      run_sanity_check: {
+        Args: never
+        Returns: {
+          balance_mismatches: number
+          created_at: string
+          discrepancies: number
+          id: string
+          refund_mismatches: number
+          stuck: number
+        }
+        SetofOptions: {
+          from: "*"
+          to: "sanity_runs"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      verify_balances: {
+        Args: never
+        Returns: {
+          computed: number
+          diff: number
+          stored: number
+          user_id: string
+          username: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

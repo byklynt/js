@@ -24,7 +24,8 @@
     "db:lint": "supabase db lint",
     "db:types": "supabase gen types typescript --linked > lib/supabase/database.types.ts",
     "db:test": "node scripts/db-test.mjs",
-    "db:test:docker": "supabase test db"
+    "db:test:docker": "supabase test db",
+    "test:db": "node scripts/run-db-tests.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
