@@ -5,14 +5,14 @@ import { ToastProvider } from "@/components/shared/toast";
 import { AdminLoginForm } from "./admin-login-form";
 import { AdminPreview } from "./admin-preview";
 
-export function AdminLoginScreen() {
+export function AdminLoginScreen({ startAtCode = false }: { startAtCode?: boolean } = {}) {
   return (
     <ToastProvider>
       <AuthShell
         logoTag="Admin"
         preview={<AdminPreview />}
       >
-        <AdminLoginForm />
+        <AdminLoginForm startAtCode={startAtCode} />
       </AuthShell>
     </ToastProvider>
   );

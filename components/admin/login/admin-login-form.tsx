@@ -13,10 +13,10 @@ const submitClass =
   "relative flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-primary-400 to-primary-600 py-3 text-sm font-semibold text-white shadow-lg shadow-primary-500/30 ring-1 ring-white/40 ring-inset transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-80";
 
 /** Admin sign-in: credentials, then an optional 6-digit 2FA step. No signup, Google, or remember-me. */
-export function AdminLoginForm() {
+export function AdminLoginForm({ startAtCode = false }: { startAtCode?: boolean } = {}) {
   const router = useRouter();
   const toast = useToast();
-  const [step, setStep] = useState<"credentials" | "2fa">("credentials");
+  const [step, setStep] = useState<"credentials" | "2fa">(startAtCode ? "2fa" : "credentials");
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");

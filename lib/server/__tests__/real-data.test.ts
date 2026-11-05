@@ -7,7 +7,6 @@ import { ordersByPlatform, revenueSeries } from "../series";
 import { todayFinance } from "../metrics";
 import { effectiveProviderCost } from "../rules";
 import { createDepositRequest, creditDeposit } from "../deposits";
-import { changeUserEmail, changeUserPassword, registerUser, verifyUserLogin, type Credentials } from "../user-auth";
 import { dayOf } from "../time";
 
 const now = new Date("2026-11-04T10:00:00+07:00");
@@ -70,51 +69,13 @@ describe("profit uses what the provider really charged", () => {
   });
 });
 
-describe("user accounts", () => {
-  const fresh = () => ({ db: createEmptyDb(), creds: {} as Credentials });
-  const input = { username: "budi_uji", email: "budi@contoh.test", password: "Rahasia123!" };
-
-  it("signup creates a user with Rp0 and an empty ledger, and the password is hashed", () => {
-    const { db, creds } = fresh();
-    const u = registerUser(db, creds, input, now);
-    expect(u).toMatchObject({ balance: 0, totalSpent: 0, status: "aktif", rank: "Starter", reseller: false });
-    expect(db.ledger).toEqual([]);
-    expect(creds[u.id].passwordHash).not.toContain("Rahasia123!");
-    expect(verifyUserLogin(db, creds, "budi_uji", "Rahasia123!")?.id).toBe(u.id);
-    expect(verifyUserLogin(db, creds, "BUDI@contoh.test", "Rahasia123!")?.id).toBe(u.id);
-    expect(verifyUserLogin(db, creds, "budi_uji", "salah")).toBeNull();
-    expect(verifyUserLogin(db, creds, "tidak-ada", "Rahasia123!")).toBeNull();
-  });
-  it("rejects bad or duplicate input with Indonesian messages", () => {
-    const { db, creds } = fresh();
-    expect(() => registerUser(db, creds, { ...input, username: "ab" }, now)).toThrow("Username");
-    expect(() => registerUser(db, creds, { ...input, email: "bukan-email" }, now)).toThrow("email");
-    expect(() => registerUser(db, creds, { ...input, password: "pendek" }, now)).toThrow("Password minimal");
-    registerUser(db, creds, input, now);
-    expect(() => registerUser(db, creds, { ...input, email: "lain@contoh.test" }, now)).toThrow("Username sudah dipakai");
-    expect(() => registerUser(db, creds, { ...input, username: "lain_uji" }, now)).toThrow("Email sudah terdaftar");
-  });
-  it("changing the password needs the current one; changing the e-mail needs the password and a free address", () => {
-    const { db, creds } = fresh();
-    const u = registerUser(db, creds, input, now);
-    registerUser(db, creds, { username: "siti_uji", email: "siti@contoh.test", password: "Rahasia123!" }, now);
-    expect(() => changeUserPassword(db, creds, u.id, "salah", "BaruRahasia456!")).toThrow("Password saat ini salah");
-    expect(() => changeUserPassword(db, creds, u.id, "Rahasia123!", "pendek")).toThrow("minimal");
-    changeUserPassword(db, creds, u.id, "Rahasia123!", "BaruRahasia456!");
-    expect(verifyUserLogin(db, creds, "budi_uji", "Rahasia123!")).toBeNull();
-    expect(verifyUserLogin(db, creds, "budi_uji", "BaruRahasia456!")).not.toBeNull();
-    expect(() => changeUserEmail(db, creds, u.id, "salah", "x@contoh.test")).toThrow("Password salah");
-    expect(() => changeUserEmail(db, creds, u.id, "BaruRahasia456!", "siti@contoh.test")).toThrow("sudah terdaftar");
-    changeUserEmail(db, creds, u.id, "BaruRahasia456!", "baru@contoh.test");
-    expect(db.users.find((x) => x.id === u.id)!.email).toBe("baru@contoh.test");
-  });
-});
+// User accounts now live in Supabase Auth: covered by the pgTAP tests (supabase/tests/database) and the Playwright e2e run.
 
 describe("manual deposit requests (no payment gateway yet)", () => {
   const setup = () => {
     const db = createEmptyDb();
-    const creds: Credentials = {};
-    const u = registerUser(db, creds, { username: "dep_uji", email: "dep@contoh.test", password: "Rahasia123!" }, now);
+    const u = { id: "usr_1001", username: "dep_uji", email: "dep@contoh.test", balance: 0, totalSpent: 0, rank: "Starter" as const, status: "aktif" as const, reseller: false, createdAt: now.toISOString(), notes: [], manualApproval: false };
+    db.users.push(u);
     return { db, u };
   };
   it("creates a pending row that does NOT touch the balance until an admin confirms", () => {

@@ -11,8 +11,10 @@ import type { Refund } from "@/lib/refunds-data";
 import { placeOrder } from "@/lib/server/orders";
 import { createProviderClient } from "@/lib/server/providers/client";
 import { createDepositRequest, methodLabel } from "@/lib/server/deposits";
-import { changeUserEmail, changeUserPassword, saveUserPrefs } from "@/lib/server/user-auth";
-import { loadCreds, saveCreds } from "@/lib/server/user-store";
+import { MIN_PASSWORD, EMAIL_RE, verifyPasswordFor } from "@/lib/server/user-auth";
+import { supabaseAdmin } from "@/lib/server/supabase-admin";
+import { createClient as createSupabase } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth-actions";
 import { persistAdminState } from "@/lib/server/store";
 import { notifyAdmins } from "@/lib/server/notifications";
 import { requestCancel, requestRefill } from "@/lib/server/requests";
@@ -230,10 +232,15 @@ const settingsSchema = z.object({ section: z.enum(SETTINGS_SECTIONS), values: z.
 export async function changeMyPassword(input: unknown) {
   const parsed = passwordSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Data tidak valid." } as const;
-  return guard(async (userId) => {
-    const creds = loadCreds();
-    changeUserPassword(getDb(), creds, userId, parsed.data.currentPassword, parsed.data.newPassword);
-    saveCreds(creds);
+  return guard(async () => {
+    const me = await getCurrentUser();
+    if (!me) return { ok: false, error: "Silakan masuk terlebih dahulu." } as const;
+    const { currentPassword, newPassword } = parsed.data;
+    if (!(await verifyPasswordFor(me.email, currentPassword))) return { ok: false, error: "Password saat ini salah." } as const;
+    if (newPassword.length < MIN_PASSWORD) return { ok: false, error: `Password baru minimal ${MIN_PASSWORD} karakter.` } as const;
+    if (newPassword === currentPassword) return { ok: false, error: "Password baru harus berbeda dari yang lama." } as const;
+    const { error } = await (await createSupabase()).auth.updateUser({ password: newPassword });
+    if (error) return { ok: false, error: "Password tidak bisa diubah. Coba lagi." } as const;
     return { ok: true, message: "Password diubah." };
   });
 }
@@ -241,10 +248,15 @@ export async function changeMyPassword(input: unknown) {
 export async function changeMyEmail(input: unknown) {
   const parsed = emailSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Data tidak valid." } as const;
-  return guard(async (userId) => {
-    const creds = loadCreds();
-    changeUserEmail(getDb(), creds, userId, parsed.data.password, parsed.data.newEmail);
-    return { ok: true, message: "Email diubah." };
+  return guard(async () => {
+    const me = await getCurrentUser();
+    if (!me) return { ok: false, error: "Silakan masuk terlebih dahulu." } as const;
+    const next = parsed.data.newEmail.trim();
+    if (!EMAIL_RE.test(next)) return { ok: false, error: "Format email tidak valid." } as const;
+    if (!(await verifyPasswordFor(me.email, parsed.data.password))) return { ok: false, error: "Password salah." } as const;
+    const { error } = await (await createSupabase()).auth.updateUser({ email: next });
+    if (error) return { ok: false, error: error.code === "email_exists" ? "Email sudah terdaftar." : "Email tidak bisa diubah. Coba lagi." } as const;
+    return { ok: true, message: "Kami mengirim link konfirmasi. Email berubah setelah link dibuka." };
   });
 }
 
@@ -252,9 +264,11 @@ export async function saveMySettings(input: unknown) {
   const parsed = settingsSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Data tidak valid." } as const;
   return guard(async (userId) => {
-    const creds = loadCreds();
-    saveUserPrefs(creds, userId, parsed.data.section, parsed.data.values);
-    saveCreds(creds);
+    const db = supabaseAdmin();
+    const { data } = await db.from("profiles").select("prefs").eq("id", userId).single();
+    const prefs = { ...((data?.prefs as Record<string, unknown> | null) ?? {}), [parsed.data.section]: parsed.data.values };
+    const { error } = await db.from("profiles").update({ prefs: prefs as never }).eq("id", userId);
+    if (error) return { ok: false, error: "Tidak bisa menyimpan. Coba lagi." } as const;
     return { ok: true, message: "Disimpan." };
   });
 }
@@ -263,5 +277,6 @@ export async function saveMySettings(input: unknown) {
 export async function getMySettings(section: string): Promise<Record<string, unknown>> {
   const userId = await currentUserId();
   if (!userId || !(SETTINGS_SECTIONS as readonly string[]).includes(section)) return {};
-  return loadCreds()[userId]?.prefs?.[section] ?? {};
+  const { data } = await supabaseAdmin().from("profiles").select("prefs").eq("id", userId).single();
+  return ((data?.prefs as Record<string, Record<string, unknown>> | null) ?? {})[section] ?? {};
 }

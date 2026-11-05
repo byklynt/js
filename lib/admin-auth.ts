@@ -1,30 +1,26 @@
 "use server";
 
-import { cookies, headers } from "next/headers";
+import { headers } from "next/headers";
 import { z } from "zod";
-import { PENDING_2FA_COOKIE, SESSION_COOKIE, sessionCookieOptions, signToken, verifyToken } from "@/lib/session";
-import { checkRateLimit, recordFailure, resetFailures } from "@/lib/rate-limit";
-import { findAdminByIdentifier, findAdminById } from "@/lib/admin-db";
-import { verifyAdminPassword } from "@/lib/admin-password";
 import { logAdminAction } from "@/lib/admin-audit";
-import { getSession } from "@/lib/auth-server";
 import { getDb } from "@/lib/admin-db";
+import { getClientIp, loadIdentity } from "@/lib/auth-server";
+import { hitRateLimit, LOGIN_LIMIT, minutes, resetRateLimit } from "@/lib/rate-limit";
 import { ipAllowed } from "@/lib/server/access";
+import { recordAdminSession, revokeAdminSession } from "@/lib/server/admin-sessions";
+import { BACKUP_CODE_RE, clearBackupCodes, consumeBackupCode } from "@/lib/server/backup-codes";
 import { sendAlert } from "@/lib/server/notify";
-import { getEncKey } from "@/lib/server/crypto-at-rest";
-import { persistAdminState } from "@/lib/server/store";
-import { debug2fa, isDev } from "@/lib/server/debug2fa";
-import { checkCode, userMessage, type CodeResult, type Diag } from "@/lib/server/twofactor";
+import { supabaseAdmin } from "@/lib/server/supabase-admin";
+import { resolveLoginEmail } from "@/lib/server/user-auth";
+import { createClient } from "@/lib/supabase/server";
 
 export type AdminLoginResult =
-  | { status: "ok" }
+  | { status: "ok"; message?: string }
   | { status: "needs_2fa" }
   | { status: "error"; message: string };
 
 const GENERIC_ERROR = "Username atau password salah";
-const NO_DIAG: Diag = { via: "totp", nowStep: 0, window: [0, 0], matchedStep: null, lastUsedStep: null, decrypt: "n/a", fingerprint: null };
-const SESSION_SECONDS = 8 * 60 * 60;
-const PENDING_SECONDS = 5 * 60;
+const WRONG_CODE = "Kode salah atau sudah kedaluwarsa. Coba kode terbaru dari aplikasi autentikator.";
 
 const loginSchema = z.object({
   identifier: z.string().trim().min(1, "Username atau email wajib diisi.").max(120),
@@ -33,146 +29,93 @@ const loginSchema = z.object({
 
 const codeSchema = z.object({ code: z.string().trim().regex(/^(\d{6}|[a-z0-9]{4}-[a-z0-9]{4})$/i, "Masukkan 6 digit kode atau kode cadangan.") });
 
-async function clientIp(): Promise<string> {
+/** The session is fully authenticated: record it, alert, audit. */
+async function finishLogin(admin: { id: string; username: string }, sid: string | undefined, ip: string) {
   const h = await headers();
-  return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "127.0.0.1";
+  if (sid) await recordAdminSession(sid, admin.id, ip, h.get("user-agent") ?? "tidak diketahui");
+  sendAlert(getDb(), "new_admin_login", `Login admin baru: ${admin.username} dari ${ip}.`);
+  await logAdminAction({ adminId: admin.id, adminName: admin.username, action: "auth.login", targetType: "admin", targetId: admin.id, before: null, after: { at: new Date().toISOString() } });
 }
 
-async function startSession(admin: { id: string; username: string; email: string }) {
-  const db = getDb();
-  const h = await headers();
-  const ip = await clientIp();
-  const sid = `ses_${crypto.randomUUID()}`;
-  const nowIso = new Date().toISOString();
-  db.sessions.unshift({ id: sid, adminId: admin.id, ip, userAgent: (h.get("user-agent") ?? "tidak diketahui").slice(0, 160), createdAt: nowIso, lastSeenAt: nowIso, revokedAt: null });
-  persistAdminState(db);
-  sendAlert(db, "new_admin_login", `Login admin baru: ${admin.username} dari ${ip}.`);
-  const token = await signToken({
-    sid,
-    sub: admin.id,
-    username: admin.username,
-    email: admin.email,
-    role: "admin",
-    kind: "session",
-    exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS,
-  });
-  const jar = await cookies();
-  jar.set(SESSION_COOKIE, token, sessionCookieOptions(SESSION_SECONDS));
-  jar.delete(PENDING_2FA_COOKIE);
-  logAdminAction({
-    adminId: admin.id,
-    adminName: admin.username,
-    action: "auth.login",
-    targetType: "admin",
-    targetId: admin.id,
-    before: null,
-    after: { at: new Date().toISOString() },
-  });
-}
-
-/** Step 1: username/email + password. Never reveals which part was wrong. */
+/** Step 1: username/email + password. Never reveals which part was wrong, or whether the account is an admin. */
 export async function adminLogin(input: unknown): Promise<AdminLoginResult> {
   const parsed = loginSchema.safeParse(input);
-  if (!parsed.success) {
-    return { status: "error", message: parsed.error.issues[0]?.message ?? GENERIC_ERROR };
-  }
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? GENERIC_ERROR };
   const { identifier, password } = parsed.data;
-  if (!ipAllowed(getDb().settings.security.ipAllowlist, await clientIp())) {
-    return { status: "error", message: "Akses dari alamat IP ini tidak diizinkan." };
-  }
-  const key = `${await clientIp()}:${identifier.toLowerCase()}`;
+  const ip = await getClientIp();
+  if (!ipAllowed(getDb().settings.security.ipAllowlist, ip)) return { status: "error", message: "Akses dari alamat IP ini tidak diizinkan." };
 
-  const limit = checkRateLimit(key);
-  if (!limit.allowed) {
-    return { status: "error", message: `Terlalu banyak percobaan. Coba lagi dalam ${limit.retryAfterMinutes} menit.` };
-  }
+  const key = `admin-login:${ip}:${identifier.toLowerCase()}`;
+  const limit = await hitRateLimit(key, LOGIN_LIMIT.limit, LOGIN_LIMIT.windowSeconds);
+  if (!limit.allowed) return { status: "error", message: `Terlalu banyak percobaan. Coba lagi dalam ${minutes(limit.retryAfterSeconds)} menit.` };
 
-  const admin = findAdminByIdentifier(identifier);
-  const valid = verifyAdminPassword(admin?.id ?? null, password);
-  if (!admin || !valid) {
-    recordFailure(key);
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.signInWithPassword({ email: await resolveLoginEmail(identifier), password });
+  if (error || !data.user) return { status: "error", message: GENERIC_ERROR };
+
+  const { data: profile } = await supabaseAdmin().from("profiles").select("id,username,role,status").eq("id", data.user.id).maybeSingle();
+  if (!profile || profile.role !== "admin" || profile.status !== "aktif") {
+    await supabase.auth.signOut(); // a normal user must not keep a session from the admin door
     return { status: "error", message: GENERIC_ERROR };
   }
 
-  if (getDb().adminSecurity[admin.id]?.enabled) {
-    const token = await signToken({
-      sub: admin.id,
-      username: admin.username,
-      email: admin.email,
-      role: "admin",
-      kind: "pending2fa",
-      exp: Math.floor(Date.now() / 1000) + PENDING_SECONDS,
-    });
-    (await cookies()).set(PENDING_2FA_COOKIE, token, sessionCookieOptions(PENDING_SECONDS, "/admin"));
+  const { data: claims } = await supabase.auth.getClaims();
+  const sid = (claims?.claims as { session_id?: string } | undefined)?.session_id;
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
+    // Password accepted; the session stays aal1 (requireAdmin refuses it) until the code is verified.
+    if (sid) await recordAdminSession(sid, profile.id, ip, (await headers()).get("user-agent") ?? "tidak diketahui");
     return { status: "needs_2fa" };
   }
-
-  resetFailures(key);
-  await startSession(admin);
+  await resetRateLimit(key);
+  await finishLogin(profile, sid, ip);
   return { status: "ok" };
 }
 
-/** Step 2 (accounts with 2FA): a 6-digit TOTP code from the authenticator app, or a one-time backup code. */
+/**
+ * Step 2: a 6-digit TOTP code (Supabase MFA, upgrades the session to aal2) or a one-time backup code.
+ * Supabase cannot raise a session to aal2 with anything but a factor, so a backup code works as recovery instead:
+ * it signs the admin in at aal1 and REMOVES the TOTP factor, which sends them through /admin/setup-2fa to enrol again.
+ */
 export async function adminVerify2fa(input: unknown): Promise<AdminLoginResult> {
   const parsed = codeSchema.safeParse(input);
-  if (!parsed.success) {
-    return { status: "error", message: parsed.error.issues[0]?.message ?? "Kode tidak valid." };
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Kode tidak valid." };
+  const who = await loadIdentity();
+  if (!who || who.profileRole !== "admin" || who.status !== "aktif") return { status: "error", message: "Sesi verifikasi berakhir. Masuk ulang." };
+
+  const ip = await getClientIp();
+  const key = `admin-2fa:${ip}:${who.id}`;
+  const limit = await hitRateLimit(key, LOGIN_LIMIT.limit, LOGIN_LIMIT.windowSeconds);
+  if (!limit.allowed) return { status: "error", message: `Terlalu banyak percobaan. Coba lagi dalam ${minutes(limit.retryAfterSeconds)} menit.` };
+
+  const supabase = await createClient();
+  const { data: factors } = await supabase.auth.mfa.listFactors();
+  const totp = factors?.totp?.[0];
+
+  if (BACKUP_CODE_RE.test(parsed.data.code)) {
+    if (!(await consumeBackupCode(who.id, parsed.data.code))) return { status: "error", message: WRONG_CODE };
+    for (const f of factors?.all ?? []) await supabaseAdmin().auth.admin.mfa.deleteFactor({ id: f.id, userId: who.id });
+    await clearBackupCodes(who.id);
+    await resetRateLimit(key);
+    await logAdminAction({ adminId: who.id, adminName: who.username, action: "auth.2fa_backup_used", targetType: "admin", targetId: who.id, before: { enabled: true }, after: { enabled: false } });
+    await finishLogin(who, who.sid, ip);
+    return { status: "ok", message: "Kode cadangan dipakai. Verifikasi dua langkah direset: atur ulang sekarang." };
   }
-  const pending = await verifyToken((await cookies()).get(PENDING_2FA_COOKIE)?.value);
-  if (!pending || pending.kind !== "pending2fa" || pending.role !== "admin") {
-    return { status: "error", message: "Sesi verifikasi berakhir. Masuk ulang." };
-  }
-  const key = `${await clientIp()}:2fa:${pending.sub}`;
-  const limit = checkRateLimit(key);
-  if (!limit.allowed) {
-    return { status: "error", message: `Terlalu banyak percobaan. Coba lagi dalam ${limit.retryAfterMinutes} menit.` };
-  }
-  const admin = findAdminById(pending.sub);
-  const db = getDb();
-  // Replay-safe: a TOTP step that was already accepted is rejected; a backup code is consumed.
-  if (!admin) {
-    recordFailure(key);
-    return { status: "error", message: userMessage("wrong_code", NO_DIAG, false) };
-  }
-  let check: CodeResult;
-  try {
-    check = checkCode(db, pending.sub, parsed.data.code, getEncKey());
-  } catch (e) {
-    // getEncKey() throws when ADMIN_2FA_ENC_KEY is missing: say so loudly in development.
-    console.error("[2fa] ", e instanceof Error ? e.message : e);
-    return { status: "error", message: isDev() ? `[dev] ${e instanceof Error ? e.message : "Konfigurasi 2FA tidak valid."}` : userMessage("wrong_code", NO_DIAG, false) };
-  }
-  debug2fa("login", { admin: pending.sub, ok: check.ok, reason: check.ok ? null : check.reason, ...check.diag });
-  if (!check.ok) {
-    if (check.reason === "decrypt_error") console.error(`[2fa] Dekripsi rahasia gagal untuk ${pending.sub}. ADMIN_2FA_ENC_KEY berubah?`);
-    recordFailure(key);
-    return { status: "error", message: userMessage(check.reason, check.diag, isDev()) };
-  }
-  persistAdminState(db);
-  resetFailures(key);
-  await startSession(admin);
+
+  if (!totp) return { status: "error", message: "Verifikasi dua langkah belum diatur untuk akun ini." };
+  const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: totp.id, code: parsed.data.code });
+  if (error) return { status: "error", message: WRONG_CODE };
+  await resetRateLimit(key);
+  await finishLogin(who, who.sid, ip);
   return { status: "ok" };
 }
 
 export async function adminLogout(): Promise<void> {
-  const session = await getSession();
-  if (session?.sid) {
-    const record = getDb().sessions.find((s) => s.id === session.sid);
-    if (record) record.revokedAt = new Date().toISOString();
-    persistAdminState(getDb());
-  }
-  const jar = await cookies();
-  jar.delete(SESSION_COOKIE);
-  jar.delete(PENDING_2FA_COOKIE);
-  if (session?.role === "admin") {
-    logAdminAction({
-      adminId: session.sub,
-      adminName: session.username,
-      action: "auth.logout",
-      targetType: "admin",
-      targetId: session.sub,
-      before: null,
-      after: null,
-    });
+  const who = await loadIdentity();
+  if (who?.sid) await revokeAdminSession(who.sid, who.id);
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  if (who?.profileRole === "admin") {
+    await logAdminAction({ adminId: who.id, adminName: who.username, action: "auth.logout", targetType: "admin", targetId: who.id, before: null, after: null });
   }
 }

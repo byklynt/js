@@ -74,8 +74,8 @@ export function SignupForm() {
     try {
       const result = await register({ username, email, password });
       if (result.success) {
-        setAlert({ type: "success", message: copy.successMessage });
-        router.push("/dashboard");
+        setAlert({ type: "success", message: result.message ?? copy.successMessage });
+        if (!result.message) router.push("/dashboard");
       } else {
         setAlert({ type: "error", message: result.message });
       }

@@ -131,6 +131,11 @@ export function LoginForm() {
           />
           {copy.rememberMeLabel}
         </label>
+        <div className="-mt-1 text-right">
+          <Link href="/forgot-password" className="text-sm font-semibold text-primary-600 hover:text-primary-700 dark:text-primary-300">
+            {copy.forgotPasswordLabel}
+          </Link>
+        </div>
 
         <button
           type="submit"

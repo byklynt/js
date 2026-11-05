@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { TotpSetupScreen } from "@/components/admin/login/totp-setup";
-import { requireAdmin } from "@/lib/auth-server";
-import { getDb } from "@/lib/admin-db";
+import { loadIdentity, requireAdmin } from "@/lib/auth-server";
 
 export const metadata: Metadata = {
   title: "Aktifkan 2FA - Admin JagoanSosmed",
@@ -20,6 +19,7 @@ export default function Page() {
 
 async function Gate() {
   const admin = await requireAdmin("page", { skipGate: true });
-  if (getDb().adminSecurity[admin.sub]?.enabled) redirect("/admin");
+  void admin;
+  if ((await loadIdentity())?.mfaEnrolled) redirect("/admin");
   return <TotpSetupScreen />;
 }

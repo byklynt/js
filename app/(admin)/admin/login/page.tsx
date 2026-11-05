@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { AdminLoginScreen } from "@/components/admin/login/admin-login-screen";
-import { getSession } from "@/lib/auth-server";
+import { getSession, loadIdentity } from "@/lib/auth-server";
 
 export const metadata: Metadata = {
   title: "Masuk Admin - JagoanSosmed",
@@ -20,6 +20,11 @@ export default function AdminLoginPage() {
 // Defence in depth next to proxy.ts: an admin who is already signed in skips the login page.
 async function AlreadySignedIn() {
   const session = await getSession();
-  if (session?.role === "admin") redirect("/admin");
+  if (session?.role === "admin") {
+    const who = await loadIdentity();
+    // Password done but the second step is pending: stay here and show the code field.
+    if (who?.mfaEnrolled && session.aal !== "aal2") return <AdminLoginScreen startAtCode />;
+    redirect("/admin");
+  }
   return <AdminLoginScreen />;
 }
