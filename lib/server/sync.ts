@@ -5,7 +5,7 @@ import { logSystem, notifyAdmins, notifyOrderStatus, notifyUser } from "./repo/n
 import { loadSettings } from "./repo/settings";
 import { MAX_STATUS_BATCH } from "./providers/types";
 import type { ProviderClient } from "./provider-client";
-import { ACTIVE_STATUSES, isActiveStatus, mapProviderStatus } from "./rules";
+import { ACTIVE_STATUSES, completionCountsForEstimate, isActiveStatus, mapProviderStatus } from "./rules";
 import { supabaseAdmin } from "./supabase-admin";
 import { ServiceError } from "./tx";
 
@@ -17,7 +17,7 @@ export type SyncRun = { providerId: string; startedAt: string; finishedAt: strin
 export type SyncSummary = { runs: SyncRun[]; refundsCreated: number; requestsUpdated: number; stoppedEarly: boolean };
 export type SyncOptions = { /** Epoch ms after which the run stops starting new batches (the next tick continues). */ deadlineAt?: number };
 
-type ActiveOrder = { id: number; user_id: string; provider_order_id: string; status: string; start_count: number; remains: number; cancelled_by: string | null; needs_manual_check: boolean; provider_status: string | null; quantity: number; sync_error: string | null };
+type ActiveOrder = { id: number; user_id: string; provider_order_id: string; status: string; start_count: number; remains: number; cancelled_by: string | null; needs_manual_check: boolean; provider_status: string | null; quantity: number; sync_error: string | null; last_synced_at: string | null; provider_accepted_at: string | null; created_at: string; status_manual: boolean };
 
 /**
  * Apply one provider state to one order. Safe to run any number of times: the status update only fires while the order is
@@ -50,7 +50,11 @@ export async function applyState(order: ActiveOrder, state: { status: string; ra
     patch.status = next;
     if (next === "dibatalkan") patch.cancelled_by = "provider"; // provider-side cancel: the 100% automatic rule
     if (next === "selesai" || next === "sebagian" || next === "dibatalkan" || next === "gagal_kirim") patch.completed_at = now.toISOString();
-    if (next === "selesai") patch.remains = 0;
+    if (next === "selesai") {
+      patch.remains = 0;
+      // Set once, with the first transition into "selesai" (the update below only fires while the order is still active).
+      patch.completion_counts = completionCountsForEstimate({ syncError: order.sync_error, statusManual: order.status_manual, lastSyncedAt: order.last_synced_at, providerAcceptedAt: order.provider_accepted_at, createdAt: order.created_at }, now);
+    }
     changed = true;
   }
   // Guarded update: if a parallel run already moved the order out of the active statuses, this one changes nothing.
@@ -209,7 +213,7 @@ export type SyncOneResult = { providerOrderId: string; providerStatus: string; m
  */
 export async function syncOrderNow(client: ProviderClient, orderId: number, now = new Date()): Promise<SyncOneResult> {
   const db = supabaseAdmin();
-  const { data: o } = await db.from("orders").select("id,user_id,provider_id,provider_order_id,status,start_count,remains,cancelled_by,needs_manual_check,provider_status,quantity,sync_error").eq("id", orderId).maybeSingle();
+  const { data: o } = await db.from("orders").select("id,user_id,provider_id,provider_order_id,status,start_count,remains,cancelled_by,needs_manual_check,provider_status,quantity,sync_error,last_synced_at,provider_accepted_at,created_at,status_manual").eq("id", orderId).maybeSingle();
   if (!o) throw new ServiceError("Pesanan tidak ditemukan.", "no_order");
   if (!o.provider_order_id) throw new ServiceError("Pesanan ini belum punya ID pesanan provider (belum pernah diterima provider).", "no_provider_order");
   let state: Awaited<ReturnType<ProviderClient["getOrderStatus"]>>;
@@ -237,7 +241,7 @@ export async function syncOrders(client: ProviderClient, now = new Date(), opts:
   for (const provider of providers ?? []) {
     if (outOfTime()) { stoppedEarly = true; break; }
     const { data: orders } = await db.from("orders")
-      .select("id,user_id,provider_order_id,status,start_count,remains,cancelled_by,needs_manual_check,provider_status,quantity,sync_error")
+      .select("id,user_id,provider_order_id,status,start_count,remains,cancelled_by,needs_manual_check,provider_status,quantity,sync_error,last_synced_at,provider_accepted_at,created_at,status_manual")
       // least recently synced first (never-synced first): an old stuck order cannot starve new ones when the batch limit is reached
       .eq("provider_id", provider.id).neq("provider_order_id", "").in("status", ACTIVE_STATUSES).order("last_synced_at", { ascending: true, nullsFirst: true }).order("id").limit(MAX_ORDERS_PER_TICK);
     const list = (orders ?? []) as ActiveOrder[];

@@ -141,6 +141,10 @@ export type AdminService = {
   providerRate?: number;
   syncedAt?: string;
   imported?: boolean;
+  /** Measured delivery-time numbers for this service (aggregates), if any. */
+  estimate?: import("@/lib/service-estimate").EstimateStats;
+  /** Manual estimate text set by an admin (shown until the measured data reaches the minimum). */
+  estimateOverride?: string | null;
 };
 
 export type DepositStatus = "menunggu" | "berhasil" | "gagal" | "kedaluwarsa";
@@ -225,6 +229,8 @@ export type SiteSettings = {
     /** Disable a provider's services automatically when its balance is below the threshold. */
     autoDisableLowBalance: boolean;
   };
+  /** Measured delivery-time estimates: show from this many completed orders; use the most recent `window` orders per service. */
+  estimates: { minSamples: number; window: number };
 };
 
 export type PriceUpdate = {
@@ -326,6 +332,7 @@ export function defaultSettings(): SiteSettings {
     orderRules: defaultOrderRules(),
     cancelPolicy: { ...DEFAULT_CANCEL_POLICY },
     operations: { stuckHours: 24, lowBalanceThreshold: LOW_PROVIDER_BALANCE, autoDisableLowBalance: false },
+    estimates: { minSamples: 3, window: 20 },
   };
 }
 

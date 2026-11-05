@@ -1,5 +1,6 @@
 "use client";
 
+import { chooseEstimate } from "@/lib/service-estimate";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
@@ -202,6 +203,8 @@ export function OrderForm({
   }
 
   const quantityNumber = Number(quantity.replace(/[^\d]/g, ""));
+  // Delivery estimate for the chosen quantity bucket (service-wide until a quantity is typed or while the bucket has too few samples).
+  const estimate = chooseEstimate(service?.est, quantityNumber > 0 ? quantityNumber : null);
   const subtotal =
     service && quantity && Number.isFinite(quantityNumber)
       ? (service.pricePer1000 * quantityNumber) / 1000
@@ -426,6 +429,14 @@ export function OrderForm({
                 {service
                   ? `Min: ${service.min.toLocaleString("id-ID")} - Maks: ${formatMaxQty(service.max)}`
                   : "Pilih layanan untuk melihat batas jumlah"}
+                {service ? (
+                  <>
+                    <span aria-hidden> &bull; </span>
+                    <span data-estimate data-testid="order-estimate" title={estimate.note ?? undefined}>
+                      {estimate.kind === "none" ? estimate.text : `Estimasi: ${estimate.text}`}
+                    </span>
+                  </>
+                ) : null}
               </p>
             )}
           </div>

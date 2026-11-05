@@ -1,5 +1,6 @@
 "use client";
 
+import { chooseEstimate } from "@/lib/service-estimate";
 import { memo, useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronUp, Clock, Gauge, RefreshCw, Heart, MessageSquare, ShoppingCart, X } from "lucide-react";
@@ -71,6 +72,8 @@ type Props = {
 export const ServiceCard = memo(function ServiceCard({ service, isFavorite, onToggleFavorite, isExpanded, onToggleExpanded, isMobile }: Props) {
   const hasTime = Boolean(service.avgTime);
   const hasSpeed = typeof service.speed === "number" && service.speed > 0;
+  // Measured delivery time (median of the latest completed orders) or "Belum ada estimasi". Numbers come with the row: no extra request.
+  const estimate = chooseEstimate(service.est);
 
   return (
     <li className="service-card list-none overflow-hidden rounded-2xl border border-slate-200/70 bg-white dark:border-slate-800 dark:bg-slate-900">
@@ -128,6 +131,20 @@ export const ServiceCard = memo(function ServiceCard({ service, isFavorite, onTo
                 {service.avgTime}
               </span>
             ) : null}
+            <span
+              data-estimate
+              data-testid="service-estimate"
+              title={estimate.note ?? undefined}
+              className={cn(
+                "flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[9.5px] font-semibold",
+                estimate.kind === "none"
+                  ? "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                  : "bg-primary-50 text-primary-accent dark:bg-primary-950/40 dark:text-primary-300"
+              )}
+            >
+              <Clock className="h-3 w-3" aria-hidden />
+              {estimate.kind === "none" ? estimate.text : `Estimasi: ${estimate.text}`}
+            </span>
             {hasSpeed ? (
               <span className="flex items-center gap-1 rounded-full bg-primary-50 px-2.5 py-1.5 text-[9.5px] font-semibold text-primary-accent dark:bg-primary-950/40 dark:text-primary-300">
                 <Gauge className="h-3 w-3" />

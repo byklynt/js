@@ -201,7 +201,16 @@ export const settingsOperationsSchema = z.object({
   autoAdjustPrice: z.boolean(),
   ordersPerMinute: z.coerce.number().int().min(1).max(600),
   ticketsPerHour: z.coerce.number().int().min(1).max(200),
+  estimateMinSamples: z.coerce.number().int("Harus bilangan bulat.").min(1, "Minimal 1 pesanan.").max(50, "Maksimal 50 pesanan."),
+  estimateWindow: z.coerce.number().int("Harus bilangan bulat.").min(3, "Minimal 3 pesanan.").max(200, "Maksimal 200 pesanan."),
 });
+
+export const serviceEstimateSchema = z.object({
+  serviceId: id,
+  /** Empty clears the manual text. */
+  text: z.string().trim().max(40, "Maksimal 40 karakter.").refine((v) => v === "" || /^[\p{L}\p{N} .,:±~<>/+-]+$/u.test(v), "Gunakan huruf, angka, dan tanda baca sederhana. Contoh: 5 - 15 menit."),
+});
+export const serviceStatsResetSchema = z.object({ serviceId: id });
 
 export const settingsMonitoringSchema = z.object({
   monitoringDsn: z.string().trim().max(300).refine((v) => v === "" || v.startsWith("https://"), "DSN harus memakai https."),

@@ -98,7 +98,7 @@ export function ServiceDetail({
           <h3 className="mt-3 text-[13px] font-normal text-ink dark:text-white">
             {service.id} - {getServiceTitle(service)} - Rp {service.pricePer1000.toLocaleString("id-ID")}
           </h3>
-          <p className="mt-2 text-[9.5px] text-[#5B6B8C] dark:text-slate-400">
+          <p data-estimate className="mt-2 text-[9.5px] text-[#5B6B8C] dark:text-slate-400">
             &bull; ID Produk: {service.id} &nbsp;&bull; Estimasi:{" "}
             <span className="text-primary-accent">{service.estimate}</span> &nbsp;&bull;{" "}
             <span className="text-primary-accent">Layanan</span> Penyedia Terpercaya

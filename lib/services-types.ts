@@ -1,5 +1,7 @@
 /** Shapes shared by the services API (server) and the pages (client). Plain data only. */
 
+import type { EstimateStats } from "@/lib/service-estimate";
+
 /** Everything a service card needs. Long descriptions are fetched on demand (ServiceDetailData). */
 export type ServiceRow = {
   id: string;
@@ -16,6 +18,8 @@ export type ServiceRow = {
   avgTime?: string;
   /** Items per hour; absent when the provider gives none. */
   speed?: number;
+  /** Measured delivery-time numbers (aggregates only). Absent when the service has none and no manual text: show "Belum ada estimasi". */
+  est?: EstimateStats;
   /** Only set when the request carried favoriteIds. */
   favorite?: boolean;
 };

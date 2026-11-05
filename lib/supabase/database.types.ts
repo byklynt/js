@@ -654,7 +654,9 @@ export type Database = {
           cancel_policy_percent: number | null
           cancelled_by: string | null
           charge: number
+          completed_approx: boolean
           completed_at: string | null
+          completion_counts: boolean
           created_at: string
           held: boolean
           id: number
@@ -662,6 +664,7 @@ export type Database = {
           link: string
           link_normalized: string | null
           needs_manual_check: boolean
+          provider_accepted_at: string | null
           provider_cost: number
           provider_id: string
           provider_order_id: string
@@ -672,6 +675,7 @@ export type Database = {
           service_id: string
           start_count: number
           status: string
+          status_manual: boolean
           submit_attempts: number
           sync_error: string | null
           updated_at: string
@@ -684,7 +688,9 @@ export type Database = {
           cancel_policy_percent?: number | null
           cancelled_by?: string | null
           charge: number
+          completed_approx?: boolean
           completed_at?: string | null
+          completion_counts?: boolean
           created_at?: string
           held?: boolean
           id?: number
@@ -692,6 +698,7 @@ export type Database = {
           link: string
           link_normalized?: string | null
           needs_manual_check?: boolean
+          provider_accepted_at?: string | null
           provider_cost?: number
           provider_id: string
           provider_order_id?: string
@@ -702,6 +709,7 @@ export type Database = {
           service_id: string
           start_count?: number
           status?: string
+          status_manual?: boolean
           submit_attempts?: number
           sync_error?: string | null
           updated_at?: string
@@ -714,7 +722,9 @@ export type Database = {
           cancel_policy_percent?: number | null
           cancelled_by?: string | null
           charge?: number
+          completed_approx?: boolean
           completed_at?: string | null
+          completion_counts?: boolean
           created_at?: string
           held?: boolean
           id?: number
@@ -722,6 +732,7 @@ export type Database = {
           link?: string
           link_normalized?: string | null
           needs_manual_check?: boolean
+          provider_accepted_at?: string | null
           provider_cost?: number
           provider_id?: string
           provider_order_id?: string
@@ -732,6 +743,7 @@ export type Database = {
           service_id?: string
           start_count?: number
           status?: string
+          status_manual?: boolean
           submit_attempts?: number
           sync_error?: string | null
           updated_at?: string
@@ -1194,6 +1206,54 @@ export type Database = {
         }
         Relationships: []
       }
+      service_completion_stats: {
+        Row: {
+          buckets: Json
+          last_completed_at: string | null
+          median_seconds: number
+          p25_seconds: number
+          p75_seconds: number
+          sample_count: number
+          service_id: string
+          updated_at: string
+        }
+        Insert: {
+          buckets?: Json
+          last_completed_at?: string | null
+          median_seconds: number
+          p25_seconds: number
+          p75_seconds: number
+          sample_count: number
+          service_id: string
+          updated_at?: string
+        }
+        Update: {
+          buckets?: Json
+          last_completed_at?: string | null
+          median_seconds?: number
+          p25_seconds?: number
+          p75_seconds?: number
+          sample_count?: number
+          service_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_completion_stats_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: true
+            referencedRelation: "catalogue_services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_completion_stats_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: true
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       service_rules: {
         Row: {
           bullets: string[]
@@ -1230,6 +1290,7 @@ export type Database = {
           category_id: string
           created_at: string
           description: Json
+          estimate_override: string | null
           id: string
           imported: boolean
           markup_type: string
@@ -1250,6 +1311,7 @@ export type Database = {
           refill_days: number | null
           sort_order: number
           speed: number | null
+          stats_reset_at: string | null
           synced_at: string | null
           updated_at: string
         }
@@ -1261,6 +1323,7 @@ export type Database = {
           category_id: string
           created_at?: string
           description?: Json
+          estimate_override?: string | null
           id: string
           imported?: boolean
           markup_type?: string
@@ -1281,6 +1344,7 @@ export type Database = {
           refill_days?: number | null
           sort_order?: number
           speed?: number | null
+          stats_reset_at?: string | null
           synced_at?: string | null
           updated_at?: string
         }
@@ -1292,6 +1356,7 @@ export type Database = {
           category_id?: string
           created_at?: string
           description?: Json
+          estimate_override?: string | null
           id?: string
           imported?: boolean
           markup_type?: string
@@ -1312,6 +1377,7 @@ export type Database = {
           refill_days?: number | null
           sort_order?: number
           speed?: number | null
+          stats_reset_at?: string | null
           synced_at?: string | null
           updated_at?: string
         }
@@ -1593,6 +1659,13 @@ export type Database = {
           avg_time: string | null
           category_id: string | null
           category_label: string | null
+          est_buckets: Json | null
+          est_median: number | null
+          est_min: number | null
+          est_n: number | null
+          est_override: string | null
+          est_p25: number | null
+          est_p75: number | null
           id: string | null
           max: number | null
           min: number | null
@@ -1769,6 +1842,13 @@ export type Database = {
         Returns: {
           avg_time: string
           category_id: string
+          est_buckets: Json
+          est_median: number
+          est_min: number
+          est_n: number
+          est_override: string
+          est_p25: number
+          est_p75: number
           id: string
           max: number
           min: number
@@ -1900,6 +1980,11 @@ export type Database = {
         }[]
       }
       rate_limit_reset: { Args: { p_key: string }; Returns: undefined }
+      recompute_service_completion_stats: {
+        Args: { p_service: string }
+        Returns: undefined
+      }
+      refresh_completion_stats: { Args: { p_all?: boolean }; Returns: number }
       reject_refund: {
         Args: { p_admin: string; p_reason: string; p_refund: string }
         Returns: {
@@ -1938,6 +2023,10 @@ export type Database = {
           refund_id: string
           request_id: string
         }[]
+      }
+      reset_service_completion_stats: {
+        Args: { p_admin: string; p_service: string }
+        Returns: undefined
       }
       resubmit_failed_order: {
         Args: { p_admin: string; p_order: number }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Database, Gauge, Gavel, ShieldAlert } from "lucide-react";
+import { Clock, Database, Gauge, Gavel, ShieldAlert } from "lucide-react";
 import type { SiteSettings } from "@/lib/admin-data";
 import { saveMonitoringSettings, saveOperationsSettings } from "@/lib/admin-actions";
 import { formatDateTime } from "@/lib/balance";
@@ -19,11 +19,12 @@ type Props = {
   pricing: SiteSettings["pricing"];
   limits: SiteSettings["limits"];
   ops: SiteSettings["ops"];
+  estimates: SiteSettings["estimates"];
 };
 
 const digits = (v: string) => v.replace(/\D/g, "");
 
-export function OperationsSettingsForm({ operations, risk, pricing, limits, ops }: Props) {
+export function OperationsSettingsForm({ operations, risk, pricing, limits, ops, estimates }: Props) {
   const run = useAdminRunner();
   const [form, setForm] = useState({
     stuckHours: String(operations.stuckHours),
@@ -35,6 +36,8 @@ export function OperationsSettingsForm({ operations, risk, pricing, limits, ops 
     autoAdjustPrice: pricing.autoAdjust,
     ordersPerMinute: String(limits.ordersPerMinute),
     ticketsPerHour: String(limits.ticketsPerHour),
+    estimateMinSamples: String(estimates.minSamples),
+    estimateWindow: String(estimates.window),
   });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -71,6 +74,12 @@ export function OperationsSettingsForm({ operations, risk, pricing, limits, ops 
             <TextField label="Minimal jumlah pesanan untuk dinilai" inputMode="numeric" value={form.riskMinOrders} onChange={set("riskMinOrders")} />
             <TextField label="Batas pesanan per menit (per pengguna)" inputMode="numeric" value={form.ordersPerMinute} onChange={set("ordersPerMinute")} />
             <TextField label="Batas tiket per jam (per pengguna)" inputMode="numeric" value={form.ticketsPerHour} onChange={set("ticketsPerHour")} />
+          </div>
+        </SettingsSection>
+        <SettingsSection icon={Clock} title="Estimasi pengerjaan">
+          <div className="grid max-w-[720px] gap-4 sm:grid-cols-2">
+            <TextField label="Tampilkan estimasi mulai dari (pesanan selesai)" inputMode="numeric" value={form.estimateMinSamples} onChange={set("estimateMinSamples")} hint="Di bawah jumlah ini pengguna melihat Belum ada estimasi." />
+            <TextField label="Hitung dari pesanan terakhir (per layanan)" inputMode="numeric" value={form.estimateWindow} onChange={set("estimateWindow")} hint="Memakai median, jadi satu pesanan lambat tidak mengubah angka." />
           </div>
         </SettingsSection>
         <SettingsSection icon={ShieldAlert} title="Keamanan harga">

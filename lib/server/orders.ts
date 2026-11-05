@@ -68,7 +68,7 @@ export async function submitToProvider(orderId: string | number, deps: OrderDeps
     await updateOrder(order.id, { submit_attempts: attempt });
     try {
       const res = await deps.client.addOrder(order.providerId, { service: service?.provider_service_id ?? order.serviceId, link: order.link, quantity: order.quantity });
-      await updateOrder(order.id, { provider_order_id: res.providerOrderId, submit_attempts: attempt });
+      await updateOrder(order.id, { provider_order_id: res.providerOrderId, provider_accepted_at: new Date().toISOString(), submit_attempts: attempt });
       return true;
     } catch (e) {
       lastError = e instanceof Error ? e.message : "error";

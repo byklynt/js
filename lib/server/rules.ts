@@ -192,3 +192,24 @@ export function effectiveProviderCost(o: { status: OrderStatus; providerCost: nu
   if (o.status === "sebagian" && o.quantity > 0) return Math.floor((o.providerCost * Math.max(0, o.quantity - o.remains)) / o.quantity);
   return o.providerCost;
 }
+
+/** The status sync runs about every 2 minutes (cron). A measured duration is only as precise as that interval. */
+export const SYNC_INTERVAL_MS = 120_000;
+/** If the last successful sync before a completion is older than this many intervals, the completion time is too imprecise to count. */
+export const MAX_SYNC_GAP_INTERVALS = 3;
+
+/**
+ * Does a completion count for the delivery-time estimate? Decided by the sync at the moment an order first becomes "selesai".
+ * Not counted: an earlier sync problem (sync_error), a status an admin set by hand, or a stalled sync (the previous successful
+ * sync, or if none the provider acceptance / creation, is more than 3 intervals before now). Partial, canceled, failed and
+ * violation-cancelled orders never get here: they do not end as "selesai". Refills asked for later are excluded in SQL.
+ */
+export function completionCountsForEstimate(
+  o: { syncError: string | null; statusManual: boolean; lastSyncedAt: string | null; providerAcceptedAt: string | null; createdAt: string },
+  now: Date
+): boolean {
+  if (o.syncError || o.statusManual) return false;
+  const since = new Date(o.lastSyncedAt ?? o.providerAcceptedAt ?? o.createdAt).getTime();
+  if (!Number.isFinite(since)) return false;
+  return now.getTime() - since <= MAX_SYNC_GAP_INTERVALS * SYNC_INTERVAL_MS;
+}

@@ -102,8 +102,10 @@ export type Service = {
   startTime: string;
   refillDays: number | null;
   guarantee: string;
-  /** Human-readable delivery estimate shown in the detail panel. */
+  /** Human-readable delivery estimate shown in the detail panel (service-wide). */
   estimate: string;
+  /** Measured numbers for the order form (it picks the quantity bucket as the user types). */
+  est?: import("@/lib/service-estimate").EstimateStats;
   linkFormat: string;
   description: string[];
 };

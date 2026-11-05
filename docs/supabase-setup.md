@@ -141,3 +141,16 @@ Supabase cannot revoke a single other session of a user from the server. The pan
 - Cara kerja: CLI menulis `.mock-provider.json` (git-ignored, berlaku 6 jam); hanya adapter mock yang membacanya.
 - Tes uang: `npm run test:db` menjalankan `refund-flows.test.ts` (21 skenario dengan saldo eksak); e2e `refund-sim.test.ts` menjalankan alur lewat browser.
 - Aturan refund otomatis (migrasi 23): jumlah = yang masih terutang dikurangi refund yang sudah dibayar (termasuk refund manual), jadi tidak pernah dua kali. Provider "Failed" diperlakukan seperti "Canceled" (status `dibatalkan`, refund penuh). Sisa pesanan dari provider di luar 0..jumlah pesanan ditolak dan dicatat (`sync.invalid_remains`).
+
+## Estimasi pengerjaan (terukur)
+
+Setiap layanan mencatat berapa lama pesanan nyata selesai. Dari 3 pesanan selesai (batas bisa diubah di Admin > Pengaturan > Operasional), estimasi tampil di halaman Layanan dan form order; sebelum itu pengguna melihat "Belum ada estimasi".
+
+- **Durasi** = `completed_at` - `provider_accepted_at` (atau `created_at` bila waktu diterima provider tidak ada). `completed_at` dicatat sekali, saat transisi pertama ke `selesai` di `applyState` (dipakai cron dan "Sinkronkan sekarang"); trigger database menjaganya tidak bergeser.
+- **Ketelitian**: status disinkronkan tiap sekitar 2 menit, jadi durasi akurat dalam kisaran itu. Itu sebabnya angka ditampilkan dengan "±" dan dibulatkan ke menit (ke 5 menit mulai 1 jam).
+- **Tidak dihitung**: pesanan partial, dibatalkan/gagal, dibatalkan karena pelanggaran, pesanan dengan `sync_error` sebelum selesai, status yang diubah manual oleh admin, sinkronisasi macet (sinkron berhasil terakhir lebih dari 3x interval, yaitu 6 menit, sebelum selesai), waktu selesai perkiraan (backfill), dan pesanan yang kemudian diajukan refill.
+- **Statistik** (`service_completion_stats`): median, p25, p75 dari N pesanan terakhir (N = 20, bisa diubah) per layanan dan per ukuran jumlah (kecil <= 1.000, sedang <= 10.000, besar di atasnya). Median dipilih agar satu pesanan lambat tidak memengaruhi angka. Dihitung ulang di SQL saat pesanan selesai, saat refill diajukan, dan oleh cron `stats-refresh` untuk baris yang basi. Hanya agregat yang bisa dibaca pengguna.
+- **Tampilan**: 3-4 sampel "± 7 menit"; 5 sampel atau lebih rentang p25-p75 ("5 - 12 menit"). Dari 5 sampel dan bila ukuran jumlah itu punya minimal 3 sampel, estimasi ukuran jumlah dipakai (form order mengikuti jumlah yang diketik).
+- **Admin**: Admin > Layanan menampilkan jumlah sampel dan estimasi per layanan; estimasi manual (mis. "5 - 15 menit") tampil sampai data terukur mencapai batas minimum; "Reset statistik" melupakan data lama (dicatat di log audit).
+- **Provider**: respons `services` Likeo hanya berisi `service, name, type, rate, min, max, dripfeed, refill, cancel, category`. Tidak ada kolom rata-rata waktu, jadi tidak ada fallback "Perkiraan penyedia". Kolom `services.avg_time` yang lama tetap kosong.
+- **Alat**: `node scripts/estimate-screenshots.mjs --before <url> --after <url>` membandingkan screenshot halaman terkait antara build sebelum dan sesudah fitur.

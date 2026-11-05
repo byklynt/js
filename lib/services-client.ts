@@ -1,5 +1,6 @@
 "use client";
 
+import { chooseEstimate } from "@/lib/service-estimate";
 import { useEffect, useState } from "react";
 import type { Service } from "@/lib/dashboard-data";
 import type { CategoryRow, ServiceDetailData, ServiceRow, ServicesPage, ServicesQuery } from "@/lib/services-types";
@@ -50,7 +51,7 @@ export function rowToService(row: ServiceRow | ServiceDetailData): Service {
   return {
     id: row.id, categoryId: row.categoryId, name: row.name, badges: detail.badges ?? [], pricePer1000: row.price, min: row.min, max: row.max,
     speedPerHour: row.speed ?? 0, startTime: row.avgTime ?? "Bervariasi", refillDays: row.refillDays,
-    guarantee: detail.guarantee ?? (row.refillDays ? "Garansi refill" : "Tanpa garansi"), estimate: detail.estimate ?? "Bervariasi",
+    guarantee: detail.guarantee ?? (row.refillDays ? "Garansi refill" : "Tanpa garansi"), estimate: detail.estimate ?? chooseEstimate(row.est).text, est: row.est,
     linkFormat: detail.linkFormat ?? "https://", description: detail.description ?? [],
   };
 }

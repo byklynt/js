@@ -1,5 +1,6 @@
 import "server-only";
 import { cleanServiceName } from "@/lib/service-format";
+import { chooseEstimate, statsFromColumns } from "@/lib/service-estimate";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import {
   DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MIN_SEARCH_LENGTH,
@@ -20,9 +21,11 @@ const platformRank = (id: string) => {
   return i === -1 ? PLATFORM_ORDER.length - 1 : i;
 };
 
-type PageRow = { id: string; name: string; category_id: string; price: number; min: number; max: number; refill_days: number | null; avg_time: string | null; speed: number | null; total: number };
+type PageRow = { id: string; name: string; category_id: string; price: number; min: number; max: number; refill_days: number | null; avg_time: string | null; speed: number | null; total: number;
+  est_n?: number | null; est_median?: number | null; est_p25?: number | null; est_p75?: number | null; est_buckets?: unknown; est_override?: string | null; est_min?: number | null };
 
 const rowOf = (r: Omit<PageRow, "total">): ServiceRow => ({
+  ...(statsFromColumns(r) ? { est: statsFromColumns(r) } : {}),
   id: r.id, name: cleanServiceName(r.name), categoryId: r.category_id, price: Number(r.price), min: Number(r.min), max: Number(r.max),
   refillDays: r.refill_days === null ? null : Number(r.refill_days),
   ...(r.avg_time ? { avgTime: r.avg_time } : {}), ...(r.speed ? { speed: Number(r.speed) } : {}),
@@ -97,13 +100,15 @@ export async function getServicesByIds(ids: string[]): Promise<ServiceRow[]> {
 export async function getServiceDetail(id: string): Promise<ServiceDetailData | null> {
   const { data } = await supabaseAdmin().from("catalogue_services").select("*").eq("id", id).maybeSingle();
   if (!data) return null;
-  const row = rowOf({ id: data.id!, name: data.name!, category_id: data.category_id!, price: data.price!, min: data.min!, max: data.max!, refill_days: data.refill_days, avg_time: data.avg_time, speed: data.speed });
+  const row = rowOf({ id: data.id!, name: data.name!, category_id: data.category_id!, price: data.price!, min: data.min!, max: data.max!, refill_days: data.refill_days, avg_time: data.avg_time, speed: data.speed,
+    est_n: data.est_n, est_median: data.est_median, est_p25: data.est_p25, est_p75: data.est_p75, est_buckets: data.est_buckets, est_override: data.est_override, est_min: data.est_min });
   return {
     ...row,
     badges: [],
     guarantee: data.refill ? "Garansi refill" : "Tanpa garansi",
     linkFormat: "https://",
-    estimate: data.avg_time || "Bervariasi",
+    // The panel's "Estimasi:" line: the provider's own text if it ever gives one, otherwise the measured estimate (service-wide) or "Belum ada estimasi".
+    estimate: data.avg_time || chooseEstimate(row.est).text,
     description: [data.provider_name && data.provider_name !== data.name ? `Nama asli di provider: ${data.provider_name}` : row.name],
   };
 }

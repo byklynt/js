@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ListSkeleton } from "@/components/ui/skeleton";
 import { ShowMoreButton } from "@/components/ui/list-states";
 import { Button } from "@/components/ui/button";
+import { EstimateDialog, estimateSummary } from "./estimate-dialog";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useToast } from "@/components/shared/toast";
 import { useListState } from "@/lib/use-list-state";
@@ -84,6 +85,7 @@ export function ServicesView({ initial, meta, providers, minMargin = 5 }: { init
     }
   }
   const [form, setForm] = useState<FormTarget | null>(null);
+  const [estimateFor, setEstimateFor] = useState<AdminService | null>(null);
   const [syncOpen, setSyncOpen] = useState(false);
   const [markupOpen, setMarkupOpen] = useState(false);
 
@@ -142,6 +144,20 @@ export function ServicesView({ initial, meta, providers, minMargin = 5 }: { init
       { key: "markup", header: "Markup", cell: (s) => (s.markupType === "persen" ? `${s.markup}%` : formatIdr(s.markup)), className: "whitespace-nowrap", hideBelowLg: true },
       { key: "final", header: "Harga akhir", cell: (s) => <span className="font-semibold">{formatIdr(finalPrice(s))}{s.active && marginPercent(s) < minMargin ? <span title={`Margin ${marginPercent(s)}%`} className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">Margin tipis</span> : null}</span>, className: "whitespace-nowrap" },
       { key: "limit", header: "Min - Maks", cell: (s) => `${s.min.toLocaleString("id-ID")} - ${s.max.toLocaleString("id-ID")}`, className: "whitespace-nowrap", hideBelowLg: true },
+      {
+        key: "estimate",
+        header: "Estimasi",
+        cell: (s) => {
+          const e = estimateSummary(s);
+          return (
+            <button type="button" onClick={() => setEstimateFor(s)} aria-label={`Atur estimasi layanan ${s.id}`} data-testid="admin-estimate" className="whitespace-nowrap rounded text-left text-[10px] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+              <span className="font-semibold text-ink dark:text-white">{e.shown.kind === "none" ? "Belum ada" : e.shown.text}</span>
+              <span className="block text-[9px] text-[#5B6B8C] dark:text-slate-400">{e.samples} sampel{e.override ? " - manual" : ""}</span>
+            </button>
+          );
+        },
+        hideBelowLg: true,
+      },
       { key: "flags", header: "Refill / Batal", cell: (s) => `${s.refill ? "Ya" : "Tidak"} / ${s.cancel ? "Ya" : "Tidak"}`, className: "whitespace-nowrap", hideBelowLg: true },
       { key: "sort", header: "Urutan", cell: (s) => (
           <input
@@ -246,10 +262,15 @@ export function ServicesView({ initial, meta, providers, minMargin = 5 }: { init
                         {providerName(s.providerId)} #{s.providerServiceId} - Harga akhir{" "}
                         <span className="font-semibold text-ink dark:text-white">{formatIdr(finalPrice(s))}</span>
                       </p>
-                      <Button variant="outline" className="h-8" onClick={() => setForm({ service: s, categoryId: s.categoryId })}>
-                        <Pencil className="h-3.5 w-3.5" aria-hidden />
-                        Ubah
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button variant="outline" className="h-8" onClick={() => setForm({ service: s, categoryId: s.categoryId })}>
+                          <Pencil className="h-3.5 w-3.5" aria-hidden />
+                          Ubah
+                        </Button>
+                        <Button variant="outline" className="h-8" onClick={() => setEstimateFor(s)}>
+                          Estimasi: {estimateSummary(s).shown.kind === "none" ? "belum ada" : estimateSummary(s).shown.text}
+                        </Button>
+                      </div>
                     </div>
                   )}
                 />
@@ -275,6 +296,7 @@ export function ServicesView({ initial, meta, providers, minMargin = 5 }: { init
         providers={providers}
         onClose={() => setForm(null)}
       />
+      <EstimateDialog key={estimateFor?.id ?? "estimate-closed"} service={estimateFor} onClose={() => setEstimateFor(null)} />
       <SyncModal open={syncOpen} onClose={() => setSyncOpen(false)} />
       <BulkMarkupModal open={markupOpen} onClose={() => setMarkupOpen(false)} categories={categories} />
       <MarginFixModal open={fixOpen} onClose={() => setFixOpen(false)} />

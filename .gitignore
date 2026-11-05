@@ -49,3 +49,4 @@ next-env.d.ts
 
 # dev provider simulator state
 /.mock-provider.json
+/.shots/

@@ -181,6 +181,27 @@ export async function settleBannedBalance(input: unknown) {
   });
 }
 
+/** Manual estimate text for one service (shown until measured data reaches the minimum). Empty clears it. */
+export async function setServiceEstimate(input: unknown) {
+  return run(S.serviceEstimateSchema, input, async (d, admin) => {
+    const { data: svc } = await supabaseAdmin().from("services").select("id,estimate_override").eq("id", d.serviceId).maybeSingle();
+    if (!svc) return fail("Layanan tidak ditemukan.");
+    const next = d.text === "" ? null : d.text;
+    const { error } = await supabaseAdmin().from("services").update({ estimate_override: next }).eq("id", svc.id);
+    if (error) throw new Error(`services: ${error.message}`);
+    await audit(admin, "service.estimate_override", "service", svc.id, { text: svc.estimate_override }, { text: next });
+    return ok(next ? `Estimasi manual layanan ${svc.id} disimpan.` : `Estimasi manual layanan ${svc.id} dihapus.`);
+  });
+}
+
+/** "Reset statistik": forget the measured delivery times of a service (provider or service changed). The audit row is written by the SQL function. */
+export async function resetServiceStats(input: unknown) {
+  return run(S.serviceStatsResetSchema, input, async (d, admin) => {
+    await callFn("reset_service_completion_stats", { p_service: d.serviceId, p_admin: admin.sub });
+    return ok(`Statistik estimasi layanan ${d.serviceId} direset.`);
+  });
+}
+
 export async function setUserReseller(input: unknown) {
   return run(S.resellerSchema, input, async (d, admin) => {
     const user = await profileOf(d.userId);
@@ -225,7 +246,8 @@ async function changeStatus(admin: SessionPayload, orderId: string, status: (typ
   const order = await getOrder(orderId);
   if (!order) return "Pesanan tidak ditemukan.";
   const before = { status: order.status, refundedAmount: order.refundedAmount };
-  const patch: Record<string, unknown> = { status };
+  // status_manual: an order an admin touched never counts for the delivery-time estimate.
+  const patch: Record<string, unknown> = { status, status_manual: true };
   if (status === "selesai") patch.remains = 0;
   if (status === "selesai" || status === "sebagian" || status === "dibatalkan" || status === "gagal_kirim") patch.completed_at = new Date().toISOString();
   await updateOrder(order.id, patch);
@@ -824,7 +846,11 @@ export async function saveOperationsSettings(input: unknown) {
     db.settings.risk = { ratioPercent: d.riskRatioPercent, minOrders: d.riskMinOrders };
     db.settings.pricing = { ...db.settings.pricing, minMarginPercent: d.minMarginPercent, autoAdjust: d.autoAdjustPrice };
     db.settings.limits = { ordersPerMinute: d.ordersPerMinute, ticketsPerHour: d.ticketsPerHour };
-    await audit(admin, "settings.update", "settings", "operations", before, d);
+    const estimatesBefore = { ...db.settings.estimates };
+    db.settings.estimates = { minSamples: d.estimateMinSamples, window: d.estimateWindow };
+    // A new window changes which orders are in the sample: recompute every service now (the estimate is also refreshed by cron).
+    if (estimatesBefore.window !== d.estimateWindow) await supabaseAdmin().rpc("refresh_completion_stats", { p_all: true });
+    await audit(admin, "settings.update", "settings", "operations", { ...before, estimates: estimatesBefore }, d);
     return ok("Pengaturan operasional disimpan.");
   });
 }
