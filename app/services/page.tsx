@@ -3,8 +3,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { PublicPage } from "@/components/landing/public-page";
 import { ServicesList } from "@/components/landing/services-list";
-import { getDb } from "@/lib/admin-db";
-import { buildUserCatalog } from "@/lib/server/providers/catalog";
+import { getPublicCatalogue } from "@/lib/server/services";
 
 export const metadata: Metadata = {
   title: "Daftar Layanan - JagoanSosmed",
@@ -23,8 +22,6 @@ export default function Page() {
 
 async function Catalog() {
   await connection(); // the catalogue changes whenever an admin applies a provider sync
-  const { categories, services } = buildUserCatalog(getDb());
-  // Public view: names, prices and limits only (no provider details).
-  const items = services.map((s) => ({ id: s.id, name: s.name, categoryId: s.categoryId, price: s.pricePer1000, min: s.min, max: s.max, refill: s.refillDays !== null }));
+  const { categories, items } = await getPublicCatalogue();
   return <ServicesList categories={categories.map((c) => ({ id: c.id, label: c.label }))} items={items} />;
 }

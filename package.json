@@ -26,7 +26,8 @@
     "db:test": "node scripts/db-test.mjs",
     "db:test:docker": "supabase test db",
     "test:db": "node scripts/run-db-tests.mjs",
-    "admin:create": "node scripts/admin-create.mjs"
+    "admin:create": "node scripts/admin-create.mjs",
+    "bootstrap": "tsx scripts/bootstrap.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

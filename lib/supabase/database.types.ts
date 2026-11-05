@@ -543,6 +543,13 @@ export type Database = {
             foreignKeyName: "favorites_service_id_fkey"
             columns: ["service_id"]
             isOneToOne: false
+            referencedRelation: "catalogue_services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "favorites_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
             referencedRelation: "services"
             referencedColumns: ["id"]
           },
@@ -701,6 +708,13 @@ export type Database = {
             columns: ["provider_id"]
             isOneToOne: false
             referencedRelation: "providers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "catalogue_services"
             referencedColumns: ["id"]
           },
           {
@@ -1188,6 +1202,7 @@ export type Database = {
           provider_price: number
           provider_removed: boolean
           provider_service_id: string
+          provider_type: string | null
           rate_provider: number
           refill: boolean
           refill_days: number | null
@@ -1218,6 +1233,7 @@ export type Database = {
           provider_price?: number
           provider_removed?: boolean
           provider_service_id: string
+          provider_type?: string | null
           rate_provider?: number
           refill?: boolean
           refill_days?: number | null
@@ -1248,6 +1264,7 @@ export type Database = {
           provider_price?: number
           provider_removed?: boolean
           provider_service_id?: string
+          provider_type?: string | null
           rate_provider?: number
           refill?: boolean
           refill_days?: number | null
@@ -1526,6 +1543,33 @@ export type Database = {
         }
         Relationships: []
       }
+      catalogue_services: {
+        Row: {
+          avg_time: string | null
+          category_id: string | null
+          category_label: string | null
+          id: string | null
+          max: number | null
+          min: number | null
+          name: string | null
+          platform: string | null
+          price: number | null
+          provider_name: string | null
+          refill: boolean | null
+          refill_days: number | null
+          sort_order: number | null
+          speed: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "services_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "service_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       admin_adjust_balance: {
@@ -1566,6 +1610,64 @@ export type Database = {
           duplicate: boolean
           refund_id: string
           status: string
+        }[]
+      }
+      catalogue_categories: {
+        Args: {
+          p_guarantee?: string
+          p_ids?: string[]
+          p_platform?: string
+          p_price_max?: number
+          p_price_min?: number
+          p_search?: string
+        }
+        Returns: {
+          count: number
+          id: string
+          label: string
+          platform: string
+        }[]
+      }
+      catalogue_filter_ok: {
+        Args: {
+          f_guarantee: string
+          f_ids: string[]
+          f_platform: string
+          f_pmax: number
+          f_pmin: number
+          f_search: string
+          p_id: string
+          p_name: string
+          p_platform: string
+          p_price: number
+          p_refill_days: number
+        }
+        Returns: boolean
+      }
+      catalogue_page: {
+        Args: {
+          p_category?: string
+          p_guarantee?: string
+          p_ids?: string[]
+          p_limit?: number
+          p_offset?: number
+          p_platform?: string
+          p_price_max?: number
+          p_price_min?: number
+          p_search?: string
+          p_sort?: string
+        }
+        Returns: {
+          avg_time: string
+          category_id: string
+          id: string
+          max: number
+          min: number
+          name: string
+          price: number
+          refill_days: number
+          speed: number
+          total: number
         }[]
       }
       create_refund_for_order: {
@@ -1709,6 +1811,18 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      request_cancel: {
+        Args: { p_order: number; p_user: string }
+        Returns: {
+          calculated_refund: number
+          refund_id: string
+          request_id: string
+        }[]
+      }
+      resubmit_failed_order: {
+        Args: { p_admin: string; p_order: number }
+        Returns: number
+      }
       run_sanity_check: {
         Args: never
         Returns: {
@@ -1725,6 +1839,16 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      service_sort_key: { Args: { p_id: string }; Returns: number }
+      user_stats: {
+        Args: { p_user: string }
+        Returns: {
+          balance: number
+          rank: string
+          total_orders: number
+          total_spent: number
+        }[]
       }
       verify_balances: {
         Args: never

@@ -5,7 +5,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { ProviderError } from "../provider-client";
 
-export const LIKEO_ID = "prv_likeo";
+/** Fixed id of the Likeo provider row (providers.id is a uuid); the bootstrap script inserts it. */
+export const LIKEO_ID = "5c1e0a00-0000-4000-8000-00000000e001";
 export const LIKEO_NAME = "Likeo";
 export const LIKEO_DEFAULT_URL = "https://likeo.net/api/v2";
 

@@ -24,3 +24,11 @@ export function decryptSecret(payload: string, key: Buffer = getEncKey()): strin
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(enc), decipher.final()]).toString("utf8");
 }
+
+/** Key for provider API keys stored in providers.api_key_encrypted (PROVIDER_KEY_ENC_KEY, separate from the 2FA key). */
+export function getProviderEncKey(): Buffer {
+  const raw = process.env.PROVIDER_KEY_ENC_KEY;
+  if (!raw) throw new Error("PROVIDER_KEY_ENC_KEY belum diatur. Buat dengan: node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"");
+  const decoded = Buffer.from(raw, "base64");
+  return decoded.length === 32 ? decoded : createHash("sha256").update(raw).digest();
+}

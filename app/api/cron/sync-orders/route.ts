@@ -1,14 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
-import { getDb } from "@/lib/admin-db";
-import { runSanityJob } from "@/lib/server/metrics";
 import { createProviderClient } from "@/lib/server/providers/client";
 import { checkLikeo } from "@/lib/server/providers/balance";
-import { persistAdminState } from "@/lib/server/store";
 import { syncOrders } from "@/lib/server/sync";
+import { supabaseAdmin } from "@/lib/server/supabase-admin";
 
 /**
- * Order status sync. Call every 2 minutes with `Authorization: Bearer $CRON_SECRET`.
- * TODO(hosting): schedule it (Vercel Cron, a Supabase pg_cron + http call, or any external pinger).
+ * Order status sync. Call every 2 minutes with `Authorization: Bearer $CRON_SECRET`
+ * (Vercel Cron or pg_cron + pg_net: see docs/supabase-setup.md).
  * Providers: PROVIDER_MODE=mock|live decides whether Likeo is real (see lib/server/providers/README.md).
  */
 async function handle(request: Request) {
@@ -20,19 +18,21 @@ async function handle(request: Request) {
   const b = Buffer.from(expected);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return Response.json({ ok: false }, { status: 401 });
 
-  const db = getDb();
-  const summary = await syncOrders(db, createProviderClient(db));
+  const summary = await syncOrders(createProviderClient());
   // Keep the real provider balance fresh (cached 60s) so the low-balance alert and the dashboard read real numbers.
   try {
-    await checkLikeo(db);
+    await checkLikeo();
   } catch {
     /* a failing balance call must not break the status sync; the failure shows under Provider */
   }
-  persistAdminState(db);
-  // Daily sanity job: only when the last run is older than 24 hours.
-  const lastSanity = db.sanityRuns[0];
-  const due = !lastSanity || Date.now() - new Date(lastSanity.at).getTime() > 24 * 3_600_000;
-  const report = due ? runSanityJob(db) : null;
+  // Daily sanity job (ledger vs balances, refund mismatches, stuck orders): only when the last run is older than 24 hours.
+  const { data: last } = await supabaseAdmin().from("sanity_runs").select("created_at").order("created_at", { ascending: false }).limit(1);
+  const due = !last?.length || Date.now() - new Date(last[0].created_at).getTime() > 24 * 3_600_000;
+  let mismatches = 0;
+  if (due) {
+    const { data } = await supabaseAdmin().rpc("run_sanity_check");
+    mismatches = data?.balance_mismatches ?? 0;
+  }
   return Response.json({
     ok: true,
     checked: summary.runs.reduce((n, r) => n + r.ordersChecked, 0),
@@ -40,7 +40,7 @@ async function handle(request: Request) {
     errors: summary.runs.reduce((n, r) => n + r.errors, 0),
     refundsCreated: summary.refundsCreated,
     sanityRan: due,
-    balanceMismatches: report?.balanceMismatches.length ?? 0,
+    balanceMismatches: mismatches,
   });
 }
 

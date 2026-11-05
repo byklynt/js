@@ -42,6 +42,6 @@ async function DashboardPageContent({
   const announcements = viewer ? getVisibleAnnouncements(db, { user: viewer, placement: "dashboard" }) : [];
 
   // Only the order page's first needs: whether any service exists and the ?service=ID one. The catalogue itself is never sent.
-  const { hasServices, preselect } = getOrderBootstrap(db, preselectServiceId);
+  const { hasServices, preselect } = await getOrderBootstrap(preselectServiceId);
   return <DashboardHome username={username} preselect={preselect} hasServices={hasServices} announcements={announcements} stats={await getMyStats()} />;
 }

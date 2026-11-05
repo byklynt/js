@@ -6,6 +6,6 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
   const auth = await userDbOr401();
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
-  const detail = getServiceDetail(auth.db, id);
+  const detail = await getServiceDetail(id);
   return detail ? json(detail) : json({ error: "Layanan tidak ditemukan." }, 404);
 }

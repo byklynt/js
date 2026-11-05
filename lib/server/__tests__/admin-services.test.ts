@@ -6,7 +6,7 @@ function db(n: number): AdminDb {
   const d = createEmptyDb();
   d.services = Array.from({ length: n }, (_, i): AdminService => ({
     id: String(100 + i), categoryId: `cat-${i % 5}`, categoryLabel: `Kategori ${i % 5}`, platform: "instagram", name: `Layanan ${i} ${i % 2 ? "Likes" : "Followers"}`,
-    badges: [], providerId: "prv_likeo", providerServiceId: String(i), providerPrice: 1000, markupType: "persen", markup: i % 10 === 0 ? 1 : 40,
+    badges: [], providerId: "5c1e0a00-0000-4000-8000-00000000e001", providerServiceId: String(i), providerPrice: 1000, markupType: "persen", markup: i % 10 === 0 ? 1 : 40,
     min: 10, max: 1000, refill: false, refillDays: null, cancel: false, active: true, sort: n - i, imported: true,
   }));
   return d;

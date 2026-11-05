@@ -11,7 +11,7 @@ export default function Page() {
     <AdminData>
       {async () => {
         // Real provider balance (cached 60 seconds) before the numbers are read.
-        await ensureFreshBalance(getDb());
+        await ensureFreshBalance();
         return <AdminDashboard data={getDashboardData()} />;
       }}
     </AdminData>

@@ -6,5 +6,5 @@ export async function GET(request: Request) {
   const auth = await userDbOr401();
   if ("response" in auth) return auth.response;
   const q = parseServicesQuery(new URL(request.url).searchParams);
-  return json(getServices(auth.db, q));
+  return json(await getServices(q));
 }

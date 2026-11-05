@@ -1,29 +1,18 @@
-/**
- * The user-facing service catalogue, queried on the server. Nothing here sends the whole catalogue anywhere: callers get
- * one page of lightweight rows, the category list with counts, or one service in full.
- *
- * Cache: the visible catalogue is turned into an indexed view once and reused until something that affects it changes
- * (a fingerprint of prices, flags and providers is compared on every call, so a sync, an admin edit or a switched-off
- * provider is picked up immediately; invalidateServicesCache() forces a rebuild). Per-category lists come from the view's
- * category index, so a page of one category never scans the other ~5,000 services.
- */
-import { finalPrice, type AdminDb, type AdminService } from "@/lib/admin-data";
+import "server-only";
 import { cleanServiceName } from "@/lib/service-format";
-import { isUserVisible } from "@/lib/server/providers/catalog";
+import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import {
   DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MIN_SEARCH_LENGTH,
-  type CategoryRow, type ServiceDetailData, type ServiceRow, type ServiceSort, type ServicesPage, type ServicesQuery,
+  type CategoryRow, type ServiceDetailData, type ServiceRow, type ServicesPage, type ServicesQuery,
 } from "@/lib/services-types";
 
-type Entry = { row: ServiceRow; hay: string; platformId: string; num: number; src: AdminService };
-type View = {
-  fingerprint: string;
-  all: Entry[];
-  byId: Map<string, Entry>;
-  byCategory: Map<string, Entry[]>;
-  categories: CategoryRow[];
-  sortedCache: Map<ServiceSort, Entry[]>;
-};
+/**
+ * The user-facing service catalogue, queried in Postgres (functions catalogue_page / catalogue_categories over the
+ * catalogue_services view; trigram index for name search, expression index for the numeric id order). Nothing here
+ * sends the whole catalogue anywhere: callers get one page of lightweight rows, the category list with counts, or one
+ * service in full. Only public fields leave this module (never provider ids, cost or markup).
+ * Visibility rule (in the view): active, priced, not dropped by the provider, provider active, imported.
+ */
 
 const PLATFORM_ORDER = ["instagram", "youtube", "tiktok", "twitter", "spotify", "telegram", "facebook", "twitch", "reddit", "website-traffic", "seo-backlink", "lainnya"];
 const platformRank = (id: string) => {
@@ -31,104 +20,25 @@ const platformRank = (id: string) => {
   return i === -1 ? PLATFORM_ORDER.length - 1 : i;
 };
 
-let cached: { db: AdminDb; view: View } | null = null;
-let forceRebuild = false;
+type PageRow = { id: string; name: string; category_id: string; price: number; min: number; max: number; refill_days: number | null; avg_time: string | null; speed: number | null; total: number };
 
-/** Call after anything that changes what users see (provider sync apply, service edits). The fingerprint also catches it. */
-export function invalidateServicesCache(): void {
-  forceRebuild = true;
-}
+const rowOf = (r: Omit<PageRow, "total">): ServiceRow => ({
+  id: r.id, name: cleanServiceName(r.name), categoryId: r.category_id, price: Number(r.price), min: Number(r.min), max: Number(r.max),
+  refillDays: r.refill_days === null ? null : Number(r.refill_days),
+  ...(r.avg_time ? { avgTime: r.avg_time } : {}), ...(r.speed ? { speed: Number(r.speed) } : {}),
+});
 
-function fingerprint(db: AdminDb): string {
-  let h = 17;
-  let n = 0;
-  for (const s of db.services) {
-    if (!s.imported) continue;
-    n++;
-    h = (Math.imul(h, 31) + Math.round(s.providerPrice * 100) + (s.active ? 1 : 0) + (s.providerRemoved ? 2 : 0) + s.min + (s.max % 9973) + s.name.length + Math.round(s.markup * 7) + s.categoryId.length) | 0;
-    h = (Math.imul(h, 31) + finalPrice(s)) | 0;
-  }
-  const providers = db.providers.map((p) => `${p.id}:${p.status}:${p.kind ?? ""}`).join(",");
-  return `${n}|${h}|${providers}`;
-}
-
-function buildView(db: AdminDb, fp: string): View {
-  const all: Entry[] = [];
-  for (const s of db.services) {
-    if (!s.imported || !isUserVisible(db, s)) continue;
-    const name = cleanServiceName(s.name);
-    const row: ServiceRow = {
-      id: s.id, name, categoryId: s.categoryId, price: finalPrice(s), min: s.min, max: s.max,
-      refillDays: s.refill ? (s.refillDays ?? 30) : null,
-    };
-    all.push({ row, hay: `${s.id} ${name}`.toLowerCase(), platformId: s.platform || "lainnya", num: Number(s.id), src: s });
-  }
-  all.sort((a, b) => (Number.isFinite(a.num) && Number.isFinite(b.num) ? a.num - b.num : a.row.id.localeCompare(b.row.id)));
-  const byId = new Map<string, Entry>();
-  const byCategory = new Map<string, Entry[]>();
-  const labels = new Map<string, { label: string; platformId: string }>();
-  for (const e of all) {
-    byId.set(e.row.id, e);
-    const list = byCategory.get(e.row.categoryId);
-    if (list) list.push(e);
-    else byCategory.set(e.row.categoryId, [e]);
-    if (!labels.has(e.row.categoryId)) labels.set(e.row.categoryId, { label: e.src.categoryLabel || "Lainnya", platformId: e.platformId });
-  }
-  const categories = sortCategories(Array.from(labels, ([id, v]) => ({ id, label: v.label, platformId: v.platformId, count: byCategory.get(id)!.length })));
-  return { fingerprint: fp, all, byId, byCategory, categories, sortedCache: new Map() };
-}
-
-function sortCategories(list: CategoryRow[]): CategoryRow[] {
-  return list.sort((a, b) => platformRank(a.platformId) - platformRank(b.platformId) || a.label.localeCompare(b.label, "id", { numeric: true }));
-}
-
-function viewOf(db: AdminDb): View {
-  const fp = fingerprint(db);
-  if (cached && cached.db === db && cached.view.fingerprint === fp && !forceRebuild) return cached.view;
-  forceRebuild = false;
-  const view = buildView(db, fp);
-  cached = { db, view };
-  return view;
-}
-
-function comparator(sort: ServiceSort): (a: Entry, b: Entry) => number {
-  switch (sort) {
-    case "termurah": return (a, b) => a.row.price - b.row.price || a.num - b.num;
-    case "termahal": return (a, b) => b.row.price - a.row.price || a.num - b.num;
-    case "tercepat": return (a, b) => (b.row.speed ?? 0) - (a.row.speed ?? 0) || a.num - b.num;
-    default: return (a, b) => a.num - b.num;
-  }
-}
-
-function sortedAll(view: View, sort: ServiceSort): Entry[] {
-  if (sort === "id-asc") return view.all;
-  const hit = view.sortedCache.get(sort);
-  if (hit) return hit;
-  const list = [...view.all];
-  list.sort(comparator(sort));
-  view.sortedCache.set(sort, list);
-  return list;
-}
-
-type Filter = (e: Entry) => boolean;
-
-function buildFilter(q: ServicesQuery): Filter | null {
-  const text = (q.search ?? "").trim().toLowerCase();
-  const tokens = text.length >= MIN_SEARCH_LENGTH ? text.split(/\s+/).filter(Boolean) : [];
-  const fav = q.favoritesOnly ? new Set(q.favoriteIds ?? []) : null;
-  const { priceMin, priceMax, guarantee, platform } = q;
-  const checks: Filter[] = [];
-  if (platform && platform !== "semua") checks.push((e) => e.platformId === platform);
-  if (tokens.length) checks.push((e) => tokens.every((t) => e.hay.includes(t)));
-  if (typeof priceMin === "number" && Number.isFinite(priceMin)) checks.push((e) => e.row.price >= priceMin);
-  if (typeof priceMax === "number" && Number.isFinite(priceMax)) checks.push((e) => e.row.price <= priceMax);
-  if (guarantee === "ada-garansi") checks.push((e) => e.row.refillDays !== null);
-  else if (guarantee === "tanpa-garansi") checks.push((e) => e.row.refillDays === null);
-  if (fav) checks.push((e) => fav.has(e.row.id));
-  if (checks.length === 0) return null;
-  return (e) => {
-    for (const c of checks) if (!c(e)) return false;
-    return true;
+function filterArgs(q: ServicesQuery) {
+  const text = (q.search ?? "").trim();
+  const ids = q.favoritesOnly ? (q.favoriteIds ?? []) : undefined;
+  return {
+    p_platform: q.platform && q.platform !== "semua" ? q.platform : undefined,
+    p_search: text.length >= MIN_SEARCH_LENGTH ? text : undefined,
+    p_price_min: typeof q.priceMin === "number" && Number.isFinite(q.priceMin) ? Math.floor(q.priceMin) : undefined,
+    p_price_max: typeof q.priceMax === "number" && Number.isFinite(q.priceMax) ? Math.floor(q.priceMax) : undefined,
+    p_guarantee: q.guarantee && q.guarantee !== "semua" ? q.guarantee : undefined,
+    // "favorites only" with no favorites matches nothing (an empty array, not "no filter").
+    p_ids: ids,
   };
 }
 
@@ -137,79 +47,90 @@ function parseCursor(cursor: string | null | undefined): number {
   return Number.isInteger(n) && n > 0 ? n : 0;
 }
 
-/** One page of services, filtered, sorted and paginated on the server. `cursor` is opaque: pass back `nextCursor`. */
-export function getServices(db: AdminDb, q: ServicesQuery = {}): ServicesPage {
-  const view = viewOf(db);
-  const sort = q.sort ?? "id-asc";
+/** One page of services, filtered, sorted and paginated in the database. `cursor` is opaque: pass back `nextCursor`. */
+export async function getServices(q: ServicesQuery = {}): Promise<ServicesPage> {
   const limit = Math.min(Math.max(Math.floor(q.limit ?? DEFAULT_PAGE_SIZE) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
   const offset = parseCursor(q.cursor);
-  const filter = buildFilter(q);
-
-  let base: Entry[];
-  if (q.category) {
-    const list = view.byCategory.get(q.category) ?? [];
-    base = sort === "id-asc" ? list : [...list].sort(comparator(sort));
-  } else {
-    base = sortedAll(view, sort);
-  }
-  const matched = filter ? base.filter(filter) : base;
-  const slice = matched.slice(offset, offset + limit);
+  const { data, error } = await supabaseAdmin().rpc("catalogue_page", {
+    p_category: q.category ?? undefined, p_sort: q.sort ?? "id-asc", p_offset: offset, p_limit: limit, ...filterArgs(q),
+  });
+  if (error) throw new Error(`catalogue_page: ${error.message}`);
+  const rows = (data ?? []) as PageRow[];
+  const total = rows.length ? Number(rows[0].total) : 0;
   const fav = q.favoriteIds ? new Set(q.favoriteIds) : null;
-  const items = slice.map((e) => (fav ? { ...e.row, favorite: fav.has(e.row.id) } : e.row));
+  const items = rows.map((r) => {
+    const row = rowOf(r);
+    return fav ? { ...row, favorite: fav.has(row.id) } : row;
+  });
   const next = offset + limit;
-  return { items, nextCursor: next < matched.length ? String(next) : null, total: matched.length };
+  // An offset past the end returns no rows (and no total): report the real total with one cheap extra call only then.
+  return { items, nextCursor: next < total ? String(next) : null, total };
 }
 
 /** Categories with the number of services in them. With filters (search, platform, price, ...), counts only matching services. */
-export function listCategories(db: AdminDb, q: Omit<ServicesQuery, "category" | "cursor" | "limit" | "sort"> = {}): CategoryRow[] {
-  const view = viewOf(db);
-  const filter = buildFilter(q);
-  if (!filter) return view.categories;
-  const counts = new Map<string, number>();
-  for (const e of view.all) if (filter(e)) counts.set(e.row.categoryId, (counts.get(e.row.categoryId) ?? 0) + 1);
-  const rows: CategoryRow[] = [];
-  for (const c of view.categories) {
-    const count = counts.get(c.id);
-    if (count) rows.push({ ...c, count });
-  }
-  return rows;
-}
-
-/** What the order page needs on first render: whether any service exists, and the preselected service (?service=ID) with its category. */
-export function getOrderBootstrap(db: AdminDb, serviceId?: string): { hasServices: boolean; preselect: { service: ServiceDetailData; category: CategoryRow | null } | null } {
-  const view = viewOf(db);
-  const service = serviceId ? getServiceDetail(db, serviceId) : null;
-  const category = service ? (view.categories.find((c) => c.id === service.categoryId) ?? null) : null;
-  return { hasServices: view.all.length > 0, preselect: service ? { service, category } : null };
+export async function listCategories(q: Omit<ServicesQuery, "category" | "cursor" | "limit" | "sort"> = {}): Promise<CategoryRow[]> {
+  const { data, error } = await supabaseAdmin().rpc("catalogue_categories", filterArgs(q));
+  if (error) throw new Error(`catalogue_categories: ${error.message}`);
+  const rows = ((data ?? []) as { id: string; label: string; platform: string; count: number }[]).map((r) => ({
+    id: r.id, label: r.label || "Lainnya", platformId: r.platform || "lainnya", count: Number(r.count),
+  }));
+  return rows.sort((a, b) => platformRank(a.platformId) - platformRank(b.platformId) || a.label.localeCompare(b.label, "id", { numeric: true }));
 }
 
 /** Total number of services users can see (cheap). */
-export function countServices(db: AdminDb): number {
-  return viewOf(db).all.length;
+export async function countServices(): Promise<number> {
+  const { count } = await supabaseAdmin().from("catalogue_services").select("id", { count: "exact", head: true });
+  return count ?? 0;
 }
 
 /** Rows for specific ids (mass order validation, preselected service). At most 100 ids. */
-export function getServicesByIds(db: AdminDb, ids: string[]): ServiceRow[] {
-  const view = viewOf(db);
-  const out: ServiceRow[] = [];
-  for (const id of ids.slice(0, 100)) {
-    const e = view.byId.get(id);
-    if (e) out.push(e.row);
-  }
-  return out;
+export async function getServicesByIds(ids: string[]): Promise<ServiceRow[]> {
+  const wanted = ids.slice(0, 100);
+  if (!wanted.length) return [];
+  const { data, error } = await supabaseAdmin().rpc("catalogue_page", { p_ids: wanted, p_limit: 100, p_offset: 0 });
+  if (error) throw new Error(`catalogue_page: ${error.message}`);
+  const byId = new Map(((data ?? []) as PageRow[]).map((r) => [r.id, rowOf(r)]));
+  return wanted.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
 }
 
 /** One service with its description, fetched on demand ("Deskripsi", the order form's detail panel). */
-export function getServiceDetail(db: AdminDb, id: string): ServiceDetailData | null {
-  const e = viewOf(db).byId.get(id);
-  if (!e) return null;
-  const s = e.src;
+export async function getServiceDetail(id: string): Promise<ServiceDetailData | null> {
+  const { data } = await supabaseAdmin().from("catalogue_services").select("*").eq("id", id).maybeSingle();
+  if (!data) return null;
+  const row = rowOf({ id: data.id!, name: data.name!, category_id: data.category_id!, price: data.price!, min: data.min!, max: data.max!, refill_days: data.refill_days, avg_time: data.avg_time, speed: data.speed });
   return {
-    ...e.row,
+    ...row,
     badges: [],
-    guarantee: s.refill ? "Garansi refill" : "Tanpa garansi",
+    guarantee: data.refill ? "Garansi refill" : "Tanpa garansi",
     linkFormat: "https://",
-    estimate: "Bervariasi",
-    description: [s.providerName && s.providerName !== e.row.name ? `Nama asli di provider: ${s.providerName}` : e.row.name],
+    estimate: data.avg_time || "Bervariasi",
+    description: [data.provider_name && data.provider_name !== data.name ? `Nama asli di provider: ${data.provider_name}` : row.name],
   };
+}
+
+/** What the order page needs on first render: whether any service exists, and the preselected service (?service=ID) with its category. */
+export async function getOrderBootstrap(serviceId?: string): Promise<{ hasServices: boolean; preselect: { service: ServiceDetailData; category: CategoryRow | null } | null }> {
+  const service = serviceId ? await getServiceDetail(serviceId) : null;
+  const hasServices = service ? true : (await countServices()) > 0;
+  const category = service ? ((await listCategories()).find((c) => c.id === service.categoryId) ?? null) : null;
+  return { hasServices, preselect: service ? { service, category } : null };
+}
+
+/** Public price list (/services): names, prices and limits only. Read in pages of 1000 (the API's row cap). */
+export async function getPublicCatalogue(): Promise<{ categories: { id: string; label: string; platformId: string }[]; items: { id: string; name: string; categoryId: string; price: number; min: number; max: number; refill: boolean }[] }> {
+  const db = supabaseAdmin();
+  const items: { id: string; name: string; categoryId: string; price: number; min: number; max: number; refill: boolean }[] = [];
+  const cats = new Map<string, { id: string; label: string; platformId: string }>();
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from("catalogue_services").select("id,name,category_id,category_label,platform,price,min,max,refill").order("id").range(from, from + 999);
+    if (error) throw new Error(`catalogue_services: ${error.message}`);
+    for (const r of data ?? []) {
+      items.push({ id: r.id!, name: cleanServiceName(r.name!), categoryId: r.category_id!, price: Number(r.price), min: Number(r.min), max: Number(r.max), refill: Boolean(r.refill) });
+      if (!cats.has(r.category_id!)) cats.set(r.category_id!, { id: r.category_id!, label: r.category_label || "Lainnya", platformId: r.platform || "lainnya" });
+    }
+    if ((data?.length ?? 0) < 1000) break;
+  }
+  items.sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0) || a.id.localeCompare(b.id));
+  const categories = [...cats.values()].sort((a, b) => platformRank(a.platformId) - platformRank(b.platformId) || a.label.localeCompare(b.label, "id", { numeric: true }));
+  return { categories, items };
 }

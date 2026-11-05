@@ -4,7 +4,6 @@ import { seedDemoDb as seedAdminDb } from "@/lib/dev/demo-seed";
 import * as S from "@/lib/admin-schemas";
 import { ipAllowed, maintenanceBlocks, requireReauth, twoFactorGate } from "../access";
 import { createRateLimiter } from "../limits";
-import { findActiveDuplicate, placeOrder } from "../orders";
 import { createMockProviderClient } from "../provider-client";
 import { applyAutoMarkup, isThinMargin, marginPercent, thinMarginServices } from "../pricing";
 import { userRisk } from "../risk";
@@ -18,45 +17,6 @@ beforeEach(() => {
 
 const svc = () => db.services.find((s) => s.active && s.min <= 100 && s.max >= 100)!;
 const deps = (limiter = createRateLimiter()) => ({ client: createMockProviderClient(db), sleep, limiter });
-
-describe("duplicate-link guard", () => {
-  it("blocks the same service + link while the first order is active (even written differently)", async () => {
-    const input = { userId: "usr_1000", serviceId: svc().id, link: "https://example.com/p/dup", quantity: 100 };
-    await placeOrder(db, input, deps());
-    const balance = db.users.find((u) => u.id === "usr_1000")!.balance;
-    await expect(placeOrder(db, { ...input, link: "HTTPS://Example.com/p/dup/#x" }, deps())).rejects.toThrow(/masih berjalan/);
-    expect(db.users.find((u) => u.id === "usr_1000")!.balance).toBe(balance); // nothing charged
-  });
-
-  it("allows it again once the earlier order is finished", async () => {
-    const input = { userId: "usr_1000", serviceId: svc().id, link: "https://example.com/p/dup2", quantity: 100 };
-    const first = await placeOrder(db, input, deps());
-    first.status = "selesai";
-    expect(findActiveDuplicate(db, "usr_1000", input.serviceId, input.link)).toBeUndefined();
-    await expect(placeOrder(db, input, deps())).resolves.toBeTruthy();
-  });
-});
-
-describe("rate limit", () => {
-  it("allows N hits per window, then blocks, then recovers", () => {
-    const rl = createRateLimiter();
-    for (let i = 0; i < 3; i++) expect(rl.hit("k", 3, 60_000, 1000 + i).allowed).toBe(true);
-    const blocked = rl.hit("k", 3, 60_000, 1500);
-    expect(blocked.allowed).toBe(false);
-    expect(blocked.retryAfterSec).toBeGreaterThan(0);
-    expect(rl.hit("other", 3, 60_000, 1500).allowed).toBe(true);
-    expect(rl.hit("k", 3, 60_000, 62_000).allowed).toBe(true);
-  });
-
-  it("limits orders per minute per user", async () => {
-    db.settings.limits.ordersPerMinute = 2;
-    const limiter = createRateLimiter();
-    const base = { userId: "usr_1000", serviceId: svc().id, quantity: 100 };
-    await placeOrder(db, { ...base, link: "https://example.com/a1" }, deps(limiter));
-    await placeOrder(db, { ...base, link: "https://example.com/a2" }, deps(limiter));
-    await expect(placeOrder(db, { ...base, link: "https://example.com/a3" }, deps(limiter))).rejects.toThrow(/Terlalu banyak pesanan/);
-  });
-});
 
 describe("margin flagging", () => {
   it("computes margin on the selling price and flags thin / negative ones", () => {

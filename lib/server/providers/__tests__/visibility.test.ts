@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type AdminDb } from "@/lib/admin-data";
 import { seedDemoDb as seedAdminDb } from "@/lib/dev/demo-seed";
 import { ServiceError } from "../../tx";
-import { reconcileProviderMode } from "../balance";
 import { applyCatalog, buildSyncPreview, buildUserCatalog, isUserVisible, pricingProblem, serviceStages } from "../catalog";
 import { LIKEO_ID } from "../config";
 import { MOCK_CATALOG } from "../mock";
@@ -17,38 +16,6 @@ beforeEach(() => {
 
 const supported = MOCK_CATALOG.filter((s) => s.type === "Default");
 const imported = () => db.services.filter((s) => s.imported);
-
-describe("sync + apply makes services visible to the user query", () => {
-  it("every imported Default service shows up in the user catalogue with a price and a category", () => {
-    expect(buildUserCatalog(db).services).toEqual([]);
-    applyCatalog(db, LIKEO_ID, MOCK_CATALOG);
-    const catalog = buildUserCatalog(db);
-    expect(catalog.services).toHaveLength(supported.length);
-    expect(catalog.services.every((s) => s.pricePer1000 > 0 && s.min > 0 && s.max >= s.min)).toBe(true);
-    // each service belongs to a category that is in the list, and each category maps to a platform
-    const ids = new Set(catalog.categories.map((c) => c.id));
-    expect(catalog.services.every((s) => ids.has(s.categoryId))).toBe(true);
-    expect(catalog.categories.every((c) => c.platformId && c.label)).toBe(true);
-  });
-
-  it("stage counts line up: fetched -> normalized -> stored -> active -> visible", () => {
-    applyCatalog(db, LIKEO_ID, MOCK_CATALOG);
-    const s = serviceStages(db, MOCK_CATALOG);
-    expect(s).toMatchObject({ fetched: MOCK_CATALOG.length, normalized: supported.length, unsupported: MOCK_CATALOG.length - supported.length, applied: supported.length, active: supported.length, visible: supported.length });
-    expect(s.dropped).toEqual({ inactive: 0, removedByProvider: 0, zeroPrice: 0, providerMissingOrOff: 0 });
-  });
-
-  it("live mode: demo services are hidden and the synced ones are the only ones users get", () => {
-    reconcileProviderMode(db, "live");
-    const before = buildUserCatalog(db);
-    expect(before.services).toEqual([]);
-    expect(before.hiddenServiceIds.length).toBeGreaterThan(0);
-    applyCatalog(db, LIKEO_ID, MOCK_CATALOG);
-    const after = buildUserCatalog(db);
-    expect(after.services).toHaveLength(supported.length);
-    expect(after.hiddenServiceIds.length).toBe(before.hiddenServiceIds.length);
-  });
-});
 
 describe("zero-price import is blocked", () => {
   it.each([

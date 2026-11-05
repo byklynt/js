@@ -1,11 +1,25 @@
 import type { AdminDb } from "@/lib/admin-data";
 import { reconcileBalances } from "./ledger";
-import { refundMismatches } from "./refunds";
-import { effectiveProviderCost, isActiveStatus, mapProviderStatus } from "./rules";
-import { stuckOrders } from "./sync";
+import type { AdminOrder } from "@/lib/admin-data";
+import { computeExpectedRefund, effectiveProviderCost, isActiveStatus, isStuck, mapProviderStatus, refundReasonFor } from "./rules";
 import { dayOf } from "./time";
 
 export const STALL_MINUTES = 10;
+
+export const stuckOrders = (db: AdminDb, now = new Date()): AdminOrder[] => db.orders.filter((o) => isStuck(o, now, db.settings.operations.stuckHours));
+
+/** Orders in a refundable final status whose refunded amount differs from the calculated refund. */
+export function refundMismatches(db: AdminDb): { orderId: string; expected: number; actual: number }[] {
+  const out: { orderId: string; expected: number; actual: number }[] = [];
+  for (const o of db.orders) {
+    if (!refundReasonFor(o.status) || o.needsManualCheck) continue;
+    let expected = computeExpectedRefund(o);
+    // An amount an admin set on purpose (password + reason) is not a mismatch.
+    if (db.refunds.some((r) => r.orderId === o.id && r.reason === "user_cancel" && r.status === "selesai" && r.overridden)) expected = o.refundedAmount;
+    if (o.refundedAmount !== expected) out.push({ orderId: o.id, expected, actual: o.refundedAmount });
+  }
+  return out;
+}
 
 const isToday = (iso: string, today: string) => dayOf(iso) === today;
 

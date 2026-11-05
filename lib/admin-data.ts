@@ -335,7 +335,7 @@ export const mockAdminAccounts: AdminAccount[] = [
 
 /** The Likeo provider row. Balance stays empty until the live API call fills it; URL and key come from the environment only. */
 export function likeoProviderRow(): ProviderRecord {
-  return { id: "prv_likeo", name: "Likeo", apiUrl: "https://likeo.net/api/v2", apiKey: "", balance: 0, status: "aktif", lastSync: "", kind: "likeo", currency: "USD", balanceNative: undefined, balanceAt: null, lastTest: null, dataMode: undefined };
+  return { id: "5c1e0a00-0000-4000-8000-00000000e001", name: "Likeo", apiUrl: "https://likeo.net/api/v2", apiKey: "", balance: 0, status: "aktif", lastSync: "", kind: "likeo", currency: "USD", balanceNative: undefined, balanceAt: null, lastTest: null, dataMode: undefined };
 }
 
 /**

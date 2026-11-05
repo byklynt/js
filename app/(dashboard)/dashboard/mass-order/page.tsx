@@ -17,5 +17,5 @@ export default function Page() {
 
 async function MassOrderContent() {
   await connection();
-  return <MassOrderPage hasServices={countServices(getDb()) > 0} />;
+  return <MassOrderPage hasServices={(await countServices()) > 0} />;
 }

@@ -6,5 +6,5 @@ export async function GET(request: Request) {
   const auth = await userDbOr401();
   if ("response" in auth) return auth.response;
   const ids = (new URL(request.url).searchParams.get("ids") ?? "").split(",").map((s) => s.trim()).filter((s) => /^[\w-]{1,40}$/.test(s)).slice(0, 100);
-  return json({ items: getServicesByIds(auth.db, ids) });
+  return json({ items: await getServicesByIds(ids) });
 }

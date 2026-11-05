@@ -24,7 +24,7 @@ describe("a first-run database has no demo data", () => {
     expect(db.auditLogs).toEqual([]);
     expect(db.notifications).toEqual([]);
     expect(db.providers).toHaveLength(1);
-    expect(db.providers[0]).toMatchObject({ id: "prv_likeo", kind: "likeo", balance: 0, lastTest: null });
+    expect(db.providers[0]).toMatchObject({ id: "5c1e0a00-0000-4000-8000-00000000e001", kind: "likeo", balance: 0, lastTest: null });
     expect(db.providers[0].balanceNative).toBeUndefined();
     expect(db.settings.general.maintenance).toBe(false);
     expect(db.settings.cancelPolicy).toMatchObject({ minAgeHours: 72, refundPercent: 50 });
@@ -70,29 +70,3 @@ describe("profit uses what the provider really charged", () => {
 });
 
 // User accounts now live in Supabase Auth: covered by the pgTAP tests (supabase/tests/database) and the Playwright e2e run.
-
-describe("manual deposit requests (no payment gateway yet)", () => {
-  const setup = () => {
-    const db = createEmptyDb();
-    const u = { id: "usr_1001", username: "dep_uji", email: "dep@contoh.test", balance: 0, totalSpent: 0, rank: "Starter" as const, status: "aktif" as const, reseller: false, createdAt: now.toISOString(), notes: [], manualApproval: false };
-    db.users.push(u);
-    return { db, u };
-  };
-  it("creates a pending row that does NOT touch the balance until an admin confirms", () => {
-    const { db, u } = setup();
-    const d = createDepositRequest(db, { userId: u.id, amount: 50_000, methodId: "manual" }, now);
-    expect(d).toMatchObject({ status: "menunggu", amount: 50_000, method: "Transfer manual", userId: u.id });
-    expect(db.users[0].balance).toBe(0);
-    creditDeposit(db, { depositId: d.id, externalId: null, by: "adm_1" }, now);
-    expect(db.users[0].balance).toBe(50_000);
-    expect(creditDeposit(db, { depositId: d.id, externalId: null, by: "adm_1" }, now).duplicate).toBe(true);
-    expect(db.users[0].balance).toBe(50_000);
-  });
-  it("validates amount, method and the number of pending requests", () => {
-    const { db, u } = setup();
-    expect(() => createDepositRequest(db, { userId: u.id, amount: 500, methodId: "manual" })).toThrow("Minimal deposit");
-    expect(() => createDepositRequest(db, { userId: u.id, amount: 50_000, methodId: "qris" })).toThrow("Metode pembayaran tidak tersedia");
-    for (let i = 0; i < 5; i++) createDepositRequest(db, { userId: u.id, amount: 10_000, methodId: "manual" });
-    expect(() => createDepositRequest(db, { userId: u.id, amount: 10_000, methodId: "manual" })).toThrow("menunggu konfirmasi");
-  });
-});

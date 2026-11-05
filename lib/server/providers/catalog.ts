@@ -8,6 +8,7 @@ import type { Category, Service } from "@/lib/dashboard-data";
 import { isThinMargin, marginPercent, afterProviderPriceChange, markupForMargin } from "../pricing";
 import { logSystem } from "../notifications";
 import { ServiceError } from "../tx";
+import { LIKEO_ID } from "./config";
 import type { ProviderServiceInfo } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -73,7 +74,7 @@ export function pricingProblem(db: AdminDb): string | null {
   if (!Number.isFinite(p.roundTo) || p.roundTo < 1) return "Atur kurs dan markup dulu: pembulatan harga tidak valid.";
   return null;
 }
-const LIKEO_ID_FOR_PRICING = "prv_likeo";
+const LIKEO_ID_FOR_PRICING = LIKEO_ID;
 
 // ---------------------------------------------------------------------------
 // Diff

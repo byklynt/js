@@ -1,47 +1,25 @@
+import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { AdminDb, AdminDeposit } from "@/lib/admin-data";
-import { applyLedgerEntry } from "./ledger";
-import { logSystem, notifyDeposit, rupiah } from "./notifications";
-import { sendAlert } from "./notify";
-import { bonusPercentFor } from "./rules";
-import { ServiceError, withTransaction } from "./tx";
+import { callFn } from "./repo/rpc";
+import { logSystem, rupiah } from "./repo/notify";
+import { loadSettings } from "./repo/settings";
+import { ServiceError } from "./tx";
+import { supabaseAdmin } from "./supabase-admin";
 
 export type WebhookPayload = { transactionId: string; reference: string; amount: number; status: "paid" | "failed" | "expired" };
 
 /**
- * Credit a successful deposit (+ bonus by tier) exactly once.
- * Idempotent three ways: external transaction ID is UNIQUE, deposit status, and ledger keys.
+ * Credit a successful deposit (+ bonus by tier) exactly once, inside Postgres (credit_deposit).
+ * Idempotent three ways: external transaction id is UNIQUE, deposit status, and ledger keys.
  * The webhook and the admin "konfirmasi manual" button both call this.
  */
-export function creditDeposit(
-  db: AdminDb,
-  input: { depositId: string; externalId: string | null; amount?: number; by: string },
-  now = new Date()
-): { deposit: AdminDeposit; duplicate: boolean; bonus: number } {
-  return withTransaction(db, () => {
-    const deposit = db.deposits.find((d) => d.id === input.depositId);
-    if (!deposit) throw new ServiceError("Deposit tidak ditemukan.", "no_deposit");
-    if (input.externalId) {
-      const used = db.deposits.find((d) => d.externalId === input.externalId && d.id !== deposit.id);
-      if (used) throw new ServiceError("ID transaksi sudah dipakai deposit lain.", "duplicate_external_id");
-    }
-    if (deposit.status === "berhasil") return { deposit, duplicate: true, bonus: 0 };
-    if (input.amount !== undefined && input.amount !== deposit.amount) throw new ServiceError("Nominal tidak cocok dengan deposit.", "amount_mismatch");
-
-    applyLedgerEntry(db, { userId: deposit.userId, type: "deposit", amount: deposit.amount, refType: "deposit", refId: deposit.id, note: `Deposit ${deposit.method}`, createdBy: input.by, now });
-    const percent = bonusPercentFor(deposit.amount, db.settings.payments.bonusTiers);
-    const bonus = Math.floor((deposit.amount * percent) / 100);
-    if (bonus > 0) {
-      applyLedgerEntry(db, { userId: deposit.userId, type: "bonus", amount: bonus, refType: "deposit_bonus", refId: deposit.id, note: `Bonus deposit ${percent}%`, createdBy: input.by, now });
-    }
-    deposit.status = "berhasil";
-    if (deposit.amount >= db.settings.notifications.largeDepositAmount) {
-      sendAlert(db, "large_deposit", `Deposit besar ${rupiah(deposit.amount)} dari ${deposit.username}.`, now);
-    }
-    if (input.externalId) deposit.externalId = input.externalId;
-    notifyDeposit(db, { id: deposit.id, userId: deposit.userId, amount: deposit.amount, ok: true, bonus }, now);
-    return { deposit, duplicate: false, bonus };
+export async function creditDeposit(input: { depositId: string; externalId: string | null; amount?: number; by: string }): Promise<{ duplicate: boolean; bonus: number }> {
+  const { data: dep } = await supabaseAdmin().from("deposits").select("user_id,amount,method").eq("id", input.depositId).maybeSingle();
+  if (!dep) throw new ServiceError("Deposit tidak ditemukan.", "no_deposit");
+  const [row] = await callFn("credit_deposit", {
+    p_external_id: (input.externalId ?? null) as string, p_user_id: dep.user_id, p_amount: input.amount ?? Number(dep.amount), p_method: dep.method, p_deposit_id: input.depositId, p_by: input.by,
   });
+  return { duplicate: row.duplicate, bonus: Number(row.bonus) };
 }
 
 /**
@@ -59,9 +37,9 @@ export function verifyWebhookSignature(rawBody: string, signature: string | null
 export type WebhookResult = { status: number; body: { ok: boolean; message: string } };
 
 /** Handles one webhook call. Every call is logged; duplicates are acknowledged but ignored. */
-export function handlePaymentWebhook(db: AdminDb, rawBody: string, signature: string | null, secret: string | undefined, now = new Date()): WebhookResult {
+export async function handlePaymentWebhook(rawBody: string, signature: string | null, secret: string | undefined): Promise<WebhookResult> {
   if (!verifyWebhookSignature(rawBody, signature, secret)) {
-    logSystem(db, "webhook.rejected", "deposit", "-", null, { reason: "signature" }, now);
+    await logSystem("webhook.rejected", "deposit", "-", null, { reason: "signature" });
     return { status: 401, body: { ok: false, message: "Signature tidak valid." } };
   }
   let payload: WebhookPayload;
@@ -73,17 +51,21 @@ export function handlePaymentWebhook(db: AdminDb, rawBody: string, signature: st
   if (!payload.transactionId || !payload.reference || !Number.isInteger(payload.amount)) {
     return { status: 400, body: { ok: false, message: "Payload tidak lengkap." } };
   }
+  const db = supabaseAdmin();
+  // Every delivery is stored once per gateway transaction id (UNIQUE): a replay is recognised even before crediting.
+  await db.from("webhook_events").upsert({ external_id: payload.transactionId, payload: payload as never }, { onConflict: "external_id", ignoreDuplicates: true });
   if (payload.status !== "paid") {
-    logSystem(db, "webhook.ignored", "deposit", payload.reference, null, { status: payload.status }, now);
+    await logSystem("webhook.ignored", "deposit", payload.reference, null, { status: payload.status });
     return { status: 200, body: { ok: true, message: "Status diabaikan." } };
   }
   try {
-    const res = creditDeposit(db, { depositId: payload.reference, externalId: payload.transactionId, amount: payload.amount, by: "webhook" }, now);
-    logSystem(db, res.duplicate ? "webhook.duplicate" : "webhook.credited", "deposit", payload.reference, null, { transactionId: payload.transactionId, bonus: res.bonus }, now);
+    const res = await creditDeposit({ depositId: payload.reference, externalId: payload.transactionId, amount: payload.amount, by: "webhook" });
+    await db.from("webhook_events").update({ processed: true }).eq("external_id", payload.transactionId);
+    await logSystem(res.duplicate ? "webhook.duplicate" : "webhook.credited", "deposit", payload.reference, null, { transactionId: payload.transactionId, bonus: res.bonus });
     return { status: 200, body: { ok: true, message: res.duplicate ? "Duplikat diabaikan." : "Saldo ditambahkan." } };
   } catch (e) {
     const message = e instanceof ServiceError ? e.message : "Gagal memproses.";
-    logSystem(db, "webhook.failed", "deposit", payload.reference, null, { message }, now);
+    await logSystem("webhook.failed", "deposit", payload.reference, null, { message });
     return { status: e instanceof ServiceError ? 422 : 500, body: { ok: false, message } };
   }
 }
@@ -91,26 +73,21 @@ export function handlePaymentWebhook(db: AdminDb, rawBody: string, signature: st
 export const MAX_PENDING_DEPOSITS = 5;
 
 /** A user asks to top up. With no payment gateway this is a pending row an admin confirms (creditDeposit) after the money arrived. */
-export function createDepositRequest(
-  db: AdminDb, input: { userId: string; amount: number; methodId: string }, now = new Date()
-): AdminDeposit {
-  const user = db.users.find((u) => u.id === input.userId);
+export async function createDepositRequest(input: { userId: string; amount: number; methodId: string }): Promise<{ id: string; username: string; amount: number }> {
+  const db = supabaseAdmin();
+  const { data: user } = await db.from("profiles").select("username,status").eq("id", input.userId).maybeSingle();
   if (!user) throw new ServiceError("Pengguna tidak ditemukan.", "no_user");
   if (user.status !== "aktif") throw new ServiceError("Akunmu sedang diblokir.", "blocked");
-  const { minDeposit, activeMethods } = db.settings.payments;
+  const { minDeposit, activeMethods } = (await loadSettings()).payments;
   if (!Number.isInteger(input.amount) || input.amount < minDeposit) throw new ServiceError(`Minimal deposit ${rupiah(minDeposit)}.`, "below_min");
   if (input.amount > 100_000_000) throw new ServiceError("Maksimal deposit Rp 100.000.000 per permintaan.", "above_max");
   if (!activeMethods.includes(input.methodId)) throw new ServiceError("Metode pembayaran tidak tersedia.", "bad_method");
-  const pending = db.deposits.filter((d) => d.userId === user.id && d.status === "menunggu").length;
-  if (pending >= MAX_PENDING_DEPOSITS) throw new ServiceError("Masih ada beberapa deposit yang menunggu konfirmasi. Tunggu atau hubungi support.", "too_many_pending");
-  const max = db.deposits.reduce((n, d) => Math.max(n, Number(d.id) || 0), 215_000);
-  const deposit: AdminDeposit = {
-    id: String(max + 1), userId: user.id, username: user.username, method: methodLabel(input.methodId), amount: input.amount,
-    status: "menunggu", createdAt: now.toISOString(), proof: "", externalId: null,
-  };
-  db.deposits.unshift(deposit);
-  logSystem(db, "deposit.request", "deposit", deposit.id, null, { amount: deposit.amount, method: deposit.method }, now);
-  return deposit;
+  const { count } = await db.from("deposits").select("id", { count: "exact", head: true }).eq("user_id", input.userId).eq("status", "menunggu");
+  if ((count ?? 0) >= MAX_PENDING_DEPOSITS) throw new ServiceError("Masih ada beberapa deposit yang menunggu konfirmasi. Tunggu atau hubungi support.", "too_many_pending");
+  const { data, error } = await db.from("deposits").insert({ user_id: input.userId, method: methodLabel(input.methodId), amount: input.amount, status: "menunggu" }).select("id").single();
+  if (error) throw new Error(`deposits: ${error.message}`);
+  await logSystem("deposit.request", "deposit", data.id, null, { amount: input.amount, method: methodLabel(input.methodId) });
+  return { id: data.id, username: user.username, amount: input.amount };
 }
 
 const METHOD_LABELS: Record<string, string> = { manual: "Transfer manual", qris: "QRIS", bank: "Transfer Bank", ewallet: "E-Wallet", va: "Virtual Account" };

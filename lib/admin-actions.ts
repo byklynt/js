@@ -14,22 +14,24 @@ import { todayIso } from "@/lib/server/time";
 import * as S from "@/lib/admin-schemas";
 import { applyLedgerEntry } from "@/lib/server/ledger";
 import { creditDeposit } from "@/lib/server/deposits";
-import { resolveManualCheck, resubmitFailedOrder } from "@/lib/server/orders";
+import { approveHeldOrder, resolveManualCheck, resubmitFailedOrder } from "@/lib/server/orders";
 import { createProviderClient, getAdapter } from "@/lib/server/providers/client";
-import { applyCatalog, buildSyncPreview, logStages, serviceStages } from "@/lib/server/providers/catalog";
 import { checkLikeo } from "@/lib/server/providers/balance";
+import { getOrder, updateOrder } from "@/lib/server/repo/orders";
+import { loadSettings, saveSettings } from "@/lib/server/repo/settings";
+import { loadProvider, updateProvider } from "@/lib/server/repo/providers";
+import { applyCatalogSync, previewCatalogSync } from "@/lib/server/repo/services-repo";
+import { notifyOrderStatus, notifyUser } from "@/lib/server/repo/notify";
+import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import { LIKEO_ID, providerMode } from "@/lib/server/providers/config";
 import { ProviderError } from "@/lib/server/provider-client";
 import { approveRefund, autoRefundForOrder, createManualRefund, rejectRefund, refundableRemaining } from "@/lib/server/refunds";
 import { refundReasonFor } from "@/lib/server/rules";
 import { syncOrders } from "@/lib/server/sync";
-import { approveHeldOrder } from "@/lib/server/orders";
-import { notifyDeposit, notifyOrderStatus, notifyUser } from "@/lib/server/notifications";
 import { notifyAnnouncement } from "@/lib/server/announcements";
 import { ipAllowed } from "@/lib/server/access";
 import { getClientIp } from "@/lib/auth-server";
 import { persistAdminState } from "@/lib/server/store";
-import { invalidateServicesCache } from "@/lib/server/services";
 import { randomBytes } from "node:crypto";
 import { hashPassword } from "@/lib/server/password";
 import { loadCreds, saveCreds } from "@/lib/server/user-store";
@@ -68,7 +70,6 @@ async function run<Schema extends ZodType>(
     if (result.ok) {
       persistAdminState(getDb());
       // Anything an admin changes (sync apply, prices, switches) must show up in the user catalogue right away.
-      invalidateServicesCache();
       revalidatePath("/admin", "layout");
     }
     return result;
@@ -171,19 +172,19 @@ export async function addUserNote(input: unknown) {
 // Orders
 // ---------------------------------------------------------------------------
 
-/** Status change. Final statuses that owe money trigger the same idempotent refund as the sync job. */
+/** Status change. Final statuses that owe money trigger the same idempotent refund (inside Postgres) as the sync job. */
 async function changeStatus(admin: SessionPayload, orderId: string, status: (typeof S.orderStatusEnum)["options"][number]): Promise<string | null> {
-  const db = getDb();
-  const order = db.orders.find((o) => o.id === orderId);
+  const order = await getOrder(orderId);
   if (!order) return "Pesanan tidak ditemukan.";
   const before = { status: order.status, refundedAmount: order.refundedAmount };
-  withTransaction(db, () => {
-    order.status = status;
-    if (status === "selesai") { order.remains = 0; order.completedAt = new Date().toISOString(); }
-    if (refundReasonFor(status)) autoRefundForOrder(db, order.id);
-    notifyOrderStatus(db, order);
-  });
-  await audit(admin, "order.status", "order", order.id, before, { status: order.status, refundedAmount: order.refundedAmount });
+  const patch: Record<string, unknown> = { status };
+  if (status === "selesai") patch.remains = 0;
+  if (status === "selesai" || status === "sebagian" || status === "dibatalkan" || status === "gagal_kirim") patch.completed_at = new Date().toISOString();
+  await updateOrder(order.id, patch);
+  if (refundReasonFor(status)) await autoRefundForOrder(order.id);
+  await notifyOrderStatus({ id: order.id, userId: order.userId, status });
+  const after = (await getOrder(orderId))!;
+  await audit(admin, "order.status", "order", order.id, before, { status: after.status, refundedAmount: after.refundedAmount });
   return null;
 }
 
@@ -196,12 +197,11 @@ export async function updateOrderStatus(input: unknown) {
 
 export async function setOrderCounts(input: unknown) {
   return run(S.orderCountsSchema, input, async (d, admin) => {
-    const order = getDb().orders.find((o) => o.id === d.orderId);
+    const order = await getOrder(d.orderId);
     if (!order) return fail("Pesanan tidak ditemukan.");
     if (d.remains > order.quantity) return fail("Sisa tidak boleh melebihi jumlah pesanan.");
     const before = { startCount: order.startCount, remains: order.remains };
-    order.startCount = d.startCount;
-    order.remains = d.remains;
+    await updateOrder(order.id, { start_count: d.startCount, remains: d.remains });
     await audit(admin, "order.counts", "order", order.id, before, { startCount: d.startCount, remains: d.remains });
     return ok(`Awal dan sisa pesanan #${order.id} diperbarui.`);
   });
@@ -210,29 +210,26 @@ export async function setOrderCounts(input: unknown) {
 export async function cancelOrder(input: unknown) {
   return run(S.orderCancelSchema, input, async (d, admin) => {
     if (!(await reauth(admin, d.password))) return fail("Password salah.");
-    const db = getDb();
-    const order = db.orders.find((o) => o.id === d.orderId);
+    const order = await getOrder(d.orderId);
     if (!order) return fail("Pesanan tidak ditemukan.");
     if (order.status === "dibatalkan" || order.status === "selesai" || order.status === "gagal_kirim") return fail("Pesanan ini tidak bisa dibatalkan.");
     const before = { status: order.status, refundedAmount: order.refundedAmount };
-    withTransaction(db, () => {
-      order.status = "dibatalkan";
-      autoRefundForOrder(db, order.id);
-      notifyOrderStatus(db, order);
-    });
-    await audit(admin, "order.cancel", "order", order.id, before, { status: "dibatalkan", refundedAmount: order.refundedAmount });
-    return ok(`Pesanan #${order.id} dibatalkan dan ${rupiah(order.refundedAmount)} dikembalikan ke saldo.`);
+    await updateOrder(order.id, { status: "dibatalkan", completed_at: new Date().toISOString() });
+    await autoRefundForOrder(order.id);
+    await notifyOrderStatus({ id: order.id, userId: order.userId, status: "dibatalkan" });
+    const after = (await getOrder(order.id))!;
+    await audit(admin, "order.cancel", "order", order.id, before, { status: "dibatalkan", refundedAmount: after.refundedAmount });
+    return ok(`Pesanan #${order.id} dibatalkan dan ${rupiah(after.refundedAmount)} dikembalikan ke saldo.`);
   });
 }
 
 export async function resendOrder(input: unknown) {
   return run(S.orderResendSchema, input, async (d, admin) => {
-    const db = getDb();
-    const order = db.orders.find((o) => o.id === d.orderId);
+    const order = await getOrder(d.orderId);
     if (!order) return fail("Pesanan tidak ditemukan.");
     if (order.status !== "gagal_kirim") return fail("Hanya pesanan gagal kirim yang bisa dikirim ulang.");
     const before = { status: order.status };
-    const result = await resubmitFailedOrder(db, order.id, admin.sub, { client: createProviderClient(db) });
+    const result = await resubmitFailedOrder(order.id, admin.sub, { client: createProviderClient() });
     await audit(admin, "order.resend", "order", order.id, before, { status: result.status, providerOrderId: result.providerOrderId });
     return ok(result.status === "gagal_kirim" ? `Pesanan #${order.id} masih gagal dikirim dan saldo dikembalikan.` : `Pesanan #${order.id} dikirim ulang ke provider.`);
   });
@@ -241,26 +238,24 @@ export async function resendOrder(input: unknown) {
 export async function resendAllFailedOrders(input: unknown) {
   return run(S.resendAllSchema, input, async (d, admin) => {
     if (!(await reauth(admin, d.password))) return fail("Password salah.");
-    const db = getDb();
-    const failed = db.orders.filter((o) => o.status === "gagal_kirim");
+    const { data: failed } = await supabaseAdmin().from("orders").select("id").eq("status", "gagal_kirim").eq("needs_manual_check", false).order("id").limit(200);
     let sent = 0;
-    for (const order of failed) {
+    for (const row of failed ?? []) {
       try {
-        const r = await resubmitFailedOrder(db, order.id, admin.sub, { client: createProviderClient(db) });
+        const r = await resubmitFailedOrder(String(row.id), admin.sub, { client: createProviderClient() });
         if (r.status !== "gagal_kirim") sent++;
       } catch (e) {
         if (!(e instanceof ServiceError)) throw e; // e.g. the user's balance is too low now: skip this one
       }
     }
-    await audit(admin, "order.resend_all", "order", "-", null, { total: failed.length, sent });
-    return ok(`${sent} dari ${failed.length} pesanan berhasil dikirim ulang.`);
+    await audit(admin, "order.resend_all", "order", "-", null, { total: failed?.length ?? 0, sent });
+    return ok(`${sent} dari ${failed?.length ?? 0} pesanan berhasil dikirim ulang.`);
   });
 }
 
 export async function resyncProviders(input: unknown) {
   return run(S.resyncSchema, input, async (_d, admin) => {
-    const db = getDb();
-    const res = await syncOrders(db, createProviderClient(db));
+    const res = await syncOrders(createProviderClient());
     await audit(admin, "sync.manual", "provider", "-", null, { checked: res.runs.reduce((n, r) => n + r.ordersChecked, 0), refunds: res.refundsCreated });
     return ok(`Sinkronisasi selesai. ${res.refundsCreated} refund otomatis dibuat.`);
   });
@@ -270,7 +265,7 @@ export async function bulkUpdateOrderStatus(input: unknown) {
   return run(S.bulkOrderStatusSchema, input, async (d, admin) => {
     const changed: string[] = [];
     for (const id of d.orderIds) {
-      if (!changeStatus(admin, id, d.status)) changed.push(id);
+      if (!(await changeStatus(admin, id, d.status))) changed.push(id);
     }
     await audit(admin, "order.bulk.status", "order", changed.join(","), null, { status: d.status, count: changed.length });
     return ok(`${changed.length} pesanan diubah ke status ${d.status}.`);
@@ -351,16 +346,16 @@ export async function bulkMarkup(input: unknown) {
 /** Read-only diff against the provider catalogue (Likeo). Nothing is changed. */
 export async function previewProviderSync(): Promise<ActionResult> {
   return run(S.providerIdSchema.partial(), {}, async () => {
-    const db = getDb();
     try {
-      const items = await getAdapter(db).getServices();
+      const items = await (await getAdapter()).getServices();
       // An empty answer is an error to show, not an empty list to accept silently.
       if (items.length === 0) return fail("Likeo mengembalikan 0 layanan. Cek API key dan URL lewat Tes koneksi di halaman Provider.");
-      const preview = buildSyncPreview(db, LIKEO_ID, items);
-      logStages("pratinjau sinkron", serviceStages(db, items));
+      const preview = await previewCatalogSync(items);
       return ok(undefined, { preview, mode: providerMode() });
     } catch (e) {
-      return fail(e instanceof ProviderError ? e.message : "Tidak bisa mengambil layanan dari provider.");
+      if (e instanceof ProviderError) return fail(e.message);
+      console.error("[previewProviderSync]", e);
+      return fail("Tidak bisa mengambil layanan dari provider.");
     }
   });
 }
@@ -368,25 +363,22 @@ export async function previewProviderSync(): Promise<ActionResult> {
 export async function applyProviderSync(input: unknown) {
   return run(S.syncApplySchema, input, async (d, admin) => {
     if (!(await reauth(admin, d.password))) return fail("Password salah.");
-    const db = getDb();
     let items;
     try {
-      items = await getAdapter(db).getServices();
+      items = await (await getAdapter()).getServices();
     } catch (e) {
       return fail(e instanceof ProviderError ? e.message : "Tidak bisa mengambil layanan dari provider.");
     }
     // The admin approved a specific preview: if the provider or the rate changed since, ask for a new look.
-    const fresh = buildSyncPreview(db, LIKEO_ID, items);
+    const fresh = await previewCatalogSync(items);
     if (fresh.blocked) return fail(fresh.blocked);
     if (fresh.fingerprint !== d.fingerprint) return fail("Katalog provider atau kurs berubah sejak pratinjau. Cek perubahan lagi.");
-    const before = { services: db.services.filter((s) => s.providerId === LIKEO_ID).length };
-    const started = Date.now();
-    const result = applyCatalog(db, LIKEO_ID, items);
-    if (process.env.NODE_ENV !== "production") console.info(`[layanan] applyCatalog selesai dalam ${Date.now() - started} ms`);
-    logStages("setelah Terapkan", serviceStages(db, items));
-    // Users must see the new services right away: the whole dashboard area is rendered per request, so drop its cached routes too.
+    const { count } = await supabaseAdmin().from("services").select("id", { count: "exact", head: true }).eq("provider_id", LIKEO_ID);
+    const { result } = await applyCatalogSync(items);
+    // Users must see the new services right away.
     revalidatePath("/dashboard", "layout");
-    await audit(admin, "service.sync", "provider", LIKEO_ID, before, { ...result, fingerprint: d.fingerprint, mode: providerMode() });
+    revalidatePath("/services");
+    await audit(admin, "service.sync", "provider", LIKEO_ID, { services: count ?? 0 }, { ...result, fingerprint: d.fingerprint, mode: providerMode() });
     return ok(`${result.created} layanan baru, ${result.raised} harga naik, ${result.lowered} harga turun, ${result.deactivated} dinonaktifkan.`, result);
   });
 }
@@ -420,14 +412,9 @@ export async function importServicesCsv(input: unknown) {
 
 export async function testProviderConnection(input: unknown) {
   return run(S.providerIdSchema, input, async (d, admin) => {
-    const db = getDb();
-    const p = db.providers.find((x) => x.id === d.id);
+    const p = await loadProvider(d.id);
     if (!p) return fail("Provider tidak ditemukan.");
-    if (p.kind !== "likeo") {
-      await audit(admin, "provider.test", "provider", p.id, null, { result: "ok", demo: true });
-      return ok(`Koneksi ke ${p.name} berhasil (contoh, 184 ms).`);
-    }
-    const res = await checkLikeo(db, { force: true });
+    const res = await checkLikeo({ force: true });
     await audit(admin, "provider.test", "provider", p.id, null, { result: res.ok ? "ok" : "gagal", mode: providerMode(), http: res.probe?.httpStatus ?? null, reason: res.probe?.reason ?? null, ms: res.probe?.latencyMs ?? null });
     return res.ok ? ok(res.message) : fail(res.message);
   });
@@ -436,28 +423,28 @@ export async function testProviderConnection(input: unknown) {
 /** "Segarkan": reads the real balance now, ignoring the 60 second cache. Same request and diagnostics as "Tes koneksi". */
 export async function refreshProviderBalanceAction(input: unknown) {
   return run(S.providerIdSchema, input, async (d, admin) => {
-    const db = getDb();
-    const p = db.providers.find((x) => x.id === d.id);
-    if (!p || p.kind !== "likeo") return fail("Provider tidak mendukung penyegaran saldo.");
-    const res = await checkLikeo(db, { force: true });
-    await audit(admin, "provider.balance_refresh", "provider", p.id, null, { ok: res.ok, mode: providerMode(), balance: p.balance });
+    const p = await loadProvider(d.id);
+    if (!p) return fail("Provider tidak mendukung penyegaran saldo.");
+    const res = await checkLikeo({ force: true });
+    await audit(admin, "provider.balance_refresh", "provider", p.id, null, { ok: res.ok, mode: providerMode() });
     return res.ok ? ok(res.message) : fail(res.message);
   });
 }
 
 export async function savePricingSettings(input: unknown) {
   return run(S.pricingSettingsSchema, input, async (d, admin) => {
-    const db = getDb();
-    const before = { ...db.settings.pricing };
-    db.settings.pricing = {
-      ...db.settings.pricing, rateIdr: d.rateIdr, roundTo: d.roundTo,
+    const settings = await loadSettings();
+    const before = { ...settings.pricing };
+    settings.pricing = {
+      ...settings.pricing, rateIdr: d.rateIdr, roundTo: d.roundTo,
       defaultMarkup: { markupType: d.defaultMarkupType, markup: d.defaultMarkup },
-      providerMarkups: { ...db.settings.pricing.providerMarkups, [LIKEO_ID]: { markupType: d.providerMarkupType, markup: d.providerMarkup } },
+      providerMarkups: { ...settings.pricing.providerMarkups, [LIKEO_ID]: { markupType: d.providerMarkupType, markup: d.providerMarkup } },
     };
-    setPriceRounding(d.roundTo);
+    await saveSettings(settings, admin.sub);
     // The balance shown in Rupiah follows the rate.
-    const p = db.providers.find((x) => x.id === LIKEO_ID);
-    if (p?.balanceNative !== undefined && p.currency) p.balance = Math.round(p.balanceNative * d.rateIdr);
+    const p = await loadProvider(LIKEO_ID);
+    if (p?.balanceNative !== undefined && p.currency) await updateProvider(LIKEO_ID, { balance_idr: Math.round(p.balanceNative * d.rateIdr), exchange_rate: d.rateIdr });
+    else await updateProvider(LIKEO_ID, { exchange_rate: d.rateIdr });
     await audit(admin, "settings.update", "settings", "pricing", { rateIdr: before.rateIdr, roundTo: before.roundTo }, d);
     return ok("Kurs dan markup disimpan. Jalankan sinkronisasi untuk memperbarui harga layanan.");
   });
@@ -467,25 +454,24 @@ export async function savePricingSettings(input: unknown) {
 export async function resolveOrderManualCheck(input: unknown) {
   return run(S.manualCheckSchema, input, async (d, admin) => {
     if (!(await reauth(admin, d.password))) return fail("Password salah.");
-    const db = getDb();
-    const order = db.orders.find((o) => o.id === d.orderId);
+    const order = await getOrder(d.orderId);
     if (!order) return fail("Pesanan tidak ditemukan.");
     const before = { status: order.status, refunded: order.refundedAmount };
     if (d.outcome === "sent" && !d.providerOrderId) return fail("Masukkan ID pesanan dari panel provider.");
-    resolveManualCheck(db, order.id, d.outcome === "sent" ? { kind: "sent", providerOrderId: d.providerOrderId! } : { kind: "refund" });
-    await audit(admin, "order.manual_check", "order", order.id, before, { outcome: d.outcome, status: order.status, refunded: order.refundedAmount, providerOrderId: order.providerOrderId });
+    const after = await resolveManualCheck(order.id, d.outcome === "sent" ? { kind: "sent", providerOrderId: d.providerOrderId! } : { kind: "refund" });
+    await audit(admin, "order.manual_check", "order", order.id, before, { outcome: d.outcome, status: after.status, refunded: after.refundedAmount, providerOrderId: after.providerOrderId });
     return ok(d.outcome === "refund" ? `Pesanan #${order.id} direfund penuh.` : `Pesanan #${order.id} ditautkan ke provider dan akan disinkronkan.`);
   });
 }
 
 export async function setProviderStatus(input: unknown) {
   return run(S.providerIdSchema.extend({ active: z.boolean() }), input, async (d, admin) => {
-    const p = getDb().providers.find((x) => x.id === d.id);
+    const p = await loadProvider(d.id);
     if (!p) return fail("Provider tidak ditemukan.");
     const before = { status: p.status };
-    p.status = d.active ? "aktif" : "nonaktif";
+    await updateProvider(p.id, { active: d.active });
     revalidatePath("/dashboard", "layout");
-    await audit(admin, "provider.status", "provider", p.id, before, { status: p.status });
+    await audit(admin, "provider.status", "provider", p.id, before, { status: d.active ? "aktif" : "nonaktif" });
     return ok(`${p.name} ${d.active ? "diaktifkan" : "dinonaktifkan"}.`);
   });
 }
@@ -497,90 +483,92 @@ export async function setProviderStatus(input: unknown) {
 export async function confirmDeposit(input: unknown) {
   return run(S.depositConfirmSchema, input, async (d, admin) => {
     if (!(await reauth(admin, d.password))) return fail("Password salah.");
-    const db = getDb();
-    const deposit = db.deposits.find((x) => x.id === d.id);
+    const { data: deposit } = await supabaseAdmin().from("deposits").select("id,status,amount,external_id,user_id,profiles(username,balance)").eq("id", d.id).maybeSingle();
     if (!deposit) return fail("Deposit tidak ditemukan.");
     if (deposit.status !== "menunggu") return fail("Hanya deposit berstatus Menunggu yang bisa dikonfirmasi.");
-    const user = db.users.find((u) => u.id === deposit.userId);
-    const before = { status: deposit.status, userBalance: user?.balance };
+    const owner = deposit.profiles as unknown as { username: string; balance: number } | null;
+    const before = { status: deposit.status, userBalance: owner ? Number(owner.balance) : undefined };
     // Same function as the payment webhook, so a late webhook for this deposit is ignored as a duplicate.
-    const res = creditDeposit(db, { depositId: deposit.id, externalId: deposit.externalId, by: admin.sub });
-    await audit(admin, "deposit.confirm", "deposit", deposit.id, before, { status: "berhasil", userBalance: user?.balance, bonus: res.bonus });
-    return ok(`Deposit #${deposit.id} dikonfirmasi. Saldo ${deposit.username} bertambah ${rupiah(deposit.amount + res.bonus)}.`);
+    const res = await creditDeposit({ depositId: deposit.id, externalId: deposit.external_id, by: admin.sub });
+    const { data: after } = await supabaseAdmin().from("profiles").select("balance").eq("id", deposit.user_id).single();
+    await audit(admin, "deposit.confirm", "deposit", deposit.id, before, { status: "berhasil", userBalance: Number(after?.balance ?? 0), bonus: res.bonus });
+    return ok(`Deposit #${deposit.id.slice(0, 8)} dikonfirmasi. Saldo ${owner?.username ?? "pengguna"} bertambah ${rupiah(Number(deposit.amount) + res.bonus)}.`);
   });
 }
 
 export async function rejectDeposit(input: unknown) {
   return run(S.depositRejectSchema, input, async (d, admin) => {
-    const deposit = getDb().deposits.find((x) => x.id === d.id);
+    const { data: deposit } = await supabaseAdmin().from("deposits").select("id,status,amount,user_id").eq("id", d.id).maybeSingle();
     if (!deposit) return fail("Deposit tidak ditemukan.");
     if (deposit.status !== "menunggu") return fail("Hanya deposit berstatus Menunggu yang bisa ditolak.");
-    const before = { status: deposit.status };
-    deposit.status = "gagal";
-    notifyDeposit(getDb(), { id: deposit.id, userId: deposit.userId, amount: deposit.amount, ok: false });
-    await audit(admin, "deposit.reject", "deposit", deposit.id, before, { status: "gagal", reason: d.reason });
-    return ok(`Deposit #${deposit.id} ditolak.`);
+    const { data: updated } = await supabaseAdmin().from("deposits").update({ status: "gagal" }).eq("id", deposit.id).eq("status", "menunggu").select("id");
+    if (!updated?.length) return fail("Deposit ini sudah diproses.");
+    await notifyUser(deposit.user_id, {
+      type: "deposit", title: `Deposit ${rupiah(Number(deposit.amount))} gagal`,
+      body: "Deposit tidak dapat diproses. Hubungi support jika kamu sudah membayar.", href: "/dashboard/add-funds", dedupeKey: `deposit:${deposit.id}:gagal`,
+    });
+    await audit(admin, "deposit.reject", "deposit", deposit.id, { status: "menunggu" }, { status: "gagal", reason: d.reason });
+    return ok(`Deposit #${deposit.id.slice(0, 8)} ditolak.`);
   });
 }
 
 export async function reviewRefill(input: unknown) {
   return run(S.reviewSchema, input, async (d, admin) => {
-    const db = getDb();
-    const refill = db.refillRequests.find((r) => r.id === d.id);
+    const db = supabaseAdmin();
+    const { data: refill } = await db.from("refill_requests").select("id,status,user_id,order_id").eq("id", d.id).maybeSingle();
     if (!refill) return fail("Refill tidak ditemukan.");
-    const before = { status: refill.status };
-    refill.status = d.action === "setujui" ? "berjalan" : d.action === "tolak" ? "ditolak" : "selesai";
-    if (d.action === "tolak") refill.rejectReason = "Ditolak oleh admin.";
-    notifyUser(db, refill.userId, {
-      type: "pesanan", title: `Refill pesanan #${refill.orderId} ${d.action === "setujui" ? "diproses" : d.action === "tolak" ? "ditolak" : "selesai"}`,
+    const status = d.action === "setujui" ? "berjalan" : d.action === "tolak" ? "ditolak" : "selesai";
+    await db.from("refill_requests").update({ status, ...(d.action === "tolak" ? { reject_reason: "Ditolak oleh admin." } : {}) }).eq("id", refill.id);
+    await notifyUser(refill.user_id, {
+      type: "pesanan", title: `Refill pesanan #${refill.order_id} ${d.action === "setujui" ? "diproses" : d.action === "tolak" ? "ditolak" : "selesai"}`,
       body: d.action === "tolak" ? "Permintaan refill ditolak. Buka tiket bila ada pertanyaan." : "Lihat statusnya di halaman Refill.",
-      href: "/dashboard/refill", dedupeKey: `refill:${refill.id}:${refill.status}`,
+      href: "/dashboard/refill", dedupeKey: `refill:${refill.id}:${status}`,
     });
-    await audit(admin, `refill.${d.action}`, "refill", refill.id, before, { status: refill.status });
-    return ok(`Refill #${refill.id} ${d.action === "setujui" ? "diproses" : d.action === "tolak" ? "ditolak" : "ditandai selesai"}.`);
+    await audit(admin, `refill.${d.action}`, "refill", refill.id, { status: refill.status }, { status });
+    return ok(`Refill #${refill.id.slice(0, 8)} ${d.action === "setujui" ? "diproses" : d.action === "tolak" ? "ditolak" : "ditandai selesai"}.`);
   });
 }
 
 export async function reviewRefund(input: unknown) {
   return run(S.refundReviewSchema, input, async (d, admin) => {
-    const db = getDb();
-    const refund = db.refunds.find((r) => r.id === d.id);
+    const db = supabaseAdmin();
+    const { data: refund } = await db.from("refunds").select("id,status,amount,reason,user_id,order_id,policy_percent,overridden,profiles(username)").eq("id", d.id).maybeSingle();
     if (!refund) return fail("Refund tidak ditemukan.");
-    const before = { status: refund.status, amount: refund.amount };
+    const username = (refund.profiles as unknown as { username: string } | null)?.username ?? "pengguna";
+    const before = { status: refund.status, amount: Number(refund.amount) };
     if (d.action === "setujui") {
       // Money action: re-enter the admin password.
       if (!d.password || !(await reauth(admin, d.password))) return fail("Password salah.");
-      const order = db.orders.find((o) => o.id === refund.orderId);
-      const res = approveRefund(db, refund.id, admin.sub, new Date(), { overrideAmount: d.overrideAmount, overrideReason: d.overrideReason });
-      if (!res.duplicate && refund.reason === "user_cancel" && order?.providerOrderId && db.services.find((sv) => sv.id === order.serviceId)?.cancel) {
-        // TODO(provider): ask the provider to stop the order. Best effort: the panel-side cancellation and refund already happened.
+      const order = await getOrder(refund.order_id);
+      const res = await approveRefund(refund.id, admin.sub, { overrideAmount: d.overrideAmount, overrideReason: d.overrideReason });
+      if (!res.duplicate && refund.reason === "user_cancel" && order?.providerOrderId) {
+        // Best effort: the panel-side cancellation and refund already happened; ask the provider to stop the order too.
         try {
-          await createProviderClient(db).cancelOrder(order.providerId, order.providerOrderId);
+          await createProviderClient().cancelOrder(order.providerId, order.providerOrderId);
         } catch {
           /* provider unreachable: the order is cancelled here either way */
         }
       }
       await audit(admin, refund.reason === "user_cancel" ? "refund.approve_user_cancel" : "refund.approve", "refund", refund.id, before, {
-        status: refund.status, amount: refund.amount, userId: refund.userId, policyPercent: refund.policyPercent, overridden: Boolean(refund.overridden), overrideReason: d.overrideReason ?? null,
+        status: res.status, amount: Number(res.amount), userId: refund.user_id, policyPercent: refund.policy_percent, overridden: d.overrideAmount !== undefined, overrideReason: d.overrideReason ?? null,
       });
-      return ok(res.duplicate ? "Refund ini sudah diproses sebelumnya." : `Refund ${rupiah(refund.amount)} dikembalikan ke saldo ${refund.username}.`);
+      return ok(res.duplicate ? "Refund ini sudah diproses sebelumnya." : `Refund ${rupiah(Number(res.amount))} dikembalikan ke saldo ${username}.`);
     }
-    rejectRefund(db, refund.id, admin.sub, d.reason);
-    await audit(admin, "refund.reject", "refund", refund.id, before, { status: refund.status, reason: d.reason });
-    return ok(`Refund untuk ${refund.username} ditolak.`);
+    await rejectRefund(refund.id, admin.sub, d.reason);
+    await audit(admin, "refund.reject", "refund", refund.id, before, { status: "ditolak", reason: d.reason });
+    return ok(`Refund untuk ${username} ditolak.`);
   });
 }
 
-/** Manual refund created by an admin. Amount can never exceed charge minus what was already refunded. */
+/** Manual refund created by an admin. Amount can never exceed charge minus what was already refunded (enforced in Postgres). */
 export async function createRefund(input: unknown) {
   return run(S.refundCreateSchema, input, async (d, admin) => {
     if (!(await reauth(admin, d.password))) return fail("Password salah.");
-    const db = getDb();
-    const order = db.orders.find((o) => o.id === d.orderId);
+    const order = await getOrder(d.orderId);
     if (!order) return fail("Pesanan tidak ditemukan.");
     if (d.amount > refundableRemaining(order)) return fail(`Nominal melebihi sisa yang bisa direfund (${rupiah(refundableRemaining(order))}).`);
-    const refund = createManualRefund(db, { orderId: order.id, amount: d.amount, note: d.reason, source: "admin", adminId: admin.sub, settleNow: true });
-    await audit(admin, "refund.create", "refund", refund.id, { refundedAmount: order.refundedAmount - d.amount }, { refundedAmount: order.refundedAmount, amount: d.amount, reason: d.reason });
+    const row = await createManualRefund({ orderId: order.id, amount: d.amount, note: d.reason, source: "admin", adminId: admin.sub, settleNow: true });
+    await audit(admin, "refund.create", "refund", row.refund_id, { refundedAmount: order.refundedAmount }, { refundedAmount: order.refundedAmount + d.amount, amount: d.amount, reason: d.reason });
     return ok(`Refund ${rupiah(d.amount)} untuk pesanan #${order.id} dikirim ke saldo ${order.username}.`);
   });
 }
@@ -835,9 +823,8 @@ export async function setUserManualApproval(input: unknown) {
 
 export async function releaseHeldOrder(input: unknown) {
   return run(S.orderApproveSchema, input, async (d, admin) => {
-    const db = getDb();
-    const before = { held: db.orders.find((o) => o.id === d.orderId)?.held };
-    const order = await approveHeldOrder(db, d.orderId, { client: createProviderClient(db) });
+    const before = { held: (await getOrder(d.orderId))?.held };
+    const order = await approveHeldOrder(d.orderId, { client: createProviderClient() });
     await audit(admin, "order.release", "order", order.id, before, { held: false, status: order.status });
     return ok(order.status === "gagal_kirim" ? `Pesanan #${order.id} gagal dikirim dan saldo dikembalikan.` : `Pesanan #${order.id} disetujui dan dikirim ke provider.`);
   });

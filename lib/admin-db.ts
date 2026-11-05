@@ -3,7 +3,6 @@ import { integrityReport, providerBalances, stuckBreakdown, STALL_MINUTES, syncH
 import { flaggedUsers } from "@/lib/server/risk";
 import { thinMarginServices } from "@/lib/server/pricing";
 import { likeoApiUrl, maskedLikeoKey, providerMode } from "@/lib/server/providers/config";
-import { reconcileProviderMode } from "@/lib/server/providers/balance";
 import { missingRefunds } from "@/lib/server/views";
 import { ordersByPlatform, revenueSeries } from "@/lib/server/series";
 import { dayOf, todayIso } from "@/lib/server/time";
@@ -66,8 +65,6 @@ export function getDb(): AdminDb {
     globalForDb.__sgAdminDbSeed = SEED_VERSION;
   }
   setPriceRounding(globalForDb.__sgAdminDb.settings.pricing.roundTo);
-  // PROVIDER_MODE is read on every call; data from the other mode is dropped, demo providers vanish in live mode.
-  reconcileProviderMode(globalForDb.__sgAdminDb);
   return globalForDb.__sgAdminDb;
 }
 

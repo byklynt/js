@@ -93,7 +93,7 @@ export function seedProviders(): ProviderRecord[] {
     },
     {
       // The real provider. URL and key come from the environment (lib/server/providers/config.ts), never from this record.
-      id: "prv_likeo", name: "Likeo", apiUrl: "https://likeo.net/api/v2", apiKey: "", balance: 1_208_000, status: "aktif",
+      id: "5c1e0a00-0000-4000-8000-00000000e001", name: "Likeo", apiUrl: "https://likeo.net/api/v2", apiKey: "", balance: 1_208_000, status: "aktif",
       lastSync: "2026-11-04T08:00:00+07:00", kind: "likeo", currency: "USD", balanceNative: 75.5, balanceAt: null, lastTest: null, dataMode: "mock",
     },
   ];

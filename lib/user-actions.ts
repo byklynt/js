@@ -3,40 +3,39 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { currentUserId } from "@/lib/current-user";
-import { getDb } from "@/lib/admin-db";
+import { getCurrentUser } from "@/lib/auth-actions";
 import { emptyUserStats, type UserStats } from "@/lib/dashboard-data";
 import type { Order } from "@/lib/orders-data";
 import type { RefillRequest } from "@/lib/refills-data";
 import type { Refund } from "@/lib/refunds-data";
+import type { CancelPolicy, OrderRuleSet, RuleKey } from "@/lib/order-rules";
 import { placeOrder } from "@/lib/server/orders";
 import { createProviderClient } from "@/lib/server/providers/client";
 import { createDepositRequest, methodLabel } from "@/lib/server/deposits";
 import { MIN_PASSWORD, EMAIL_RE, verifyPasswordFor } from "@/lib/server/user-auth";
-import { supabaseAdmin } from "@/lib/server/supabase-admin";
-import { createClient as createSupabase } from "@/lib/supabase/server";
-import { getCurrentUser } from "@/lib/auth-actions";
-import { persistAdminState } from "@/lib/server/store";
-import { notifyAdmins } from "@/lib/server/notifications";
+import { notifyAdmins } from "@/lib/server/repo/notify";
+import { listUserOrders } from "@/lib/server/repo/orders";
+import { loadSettings } from "@/lib/server/repo/settings";
 import { requestCancel, requestRefill } from "@/lib/server/requests";
 import { cancelEligibility, computeUserCancelRefund, refillEligibility, type Eligibility } from "@/lib/server/rules";
-import type { CancelPolicy, OrderRuleSet, RuleKey } from "@/lib/order-rules";
 import { ServiceError } from "@/lib/server/tx";
-import type { LedgerEntry } from "@/lib/server/types";
+import { supabaseAdmin } from "@/lib/server/supabase-admin";
+import { createClient as createSupabase } from "@/lib/supabase/server";
+import type { LedgerEntry, LedgerType } from "@/lib/server/types";
 
 export type UserResult<T = undefined> = { ok: true; message?: string; data?: T } | { ok: false; error: string };
 
+/** Every action below resolves the user from the session; no user id is ever accepted from the client. */
 async function guard<T>(fn: (userId: string) => Promise<UserResult<T>> | UserResult<T>): Promise<UserResult<T>> {
   const userId = await currentUserId();
   if (!userId) return { ok: false, error: "Silakan masuk terlebih dahulu." };
   try {
     const result = await fn(userId);
-    if (result.ok) {
-      persistAdminState(getDb());
-      revalidatePath("/dashboard", "layout");
-    }
+    if (result.ok) revalidatePath("/dashboard", "layout");
     return result;
   } catch (e) {
     if (e instanceof ServiceError) return { ok: false, error: e.message };
+    console.error("[user-actions]", e);
     return { ok: false, error: "Terjadi kesalahan di server. Coba lagi." };
   }
 }
@@ -47,14 +46,14 @@ const orderSchema = z.object({
   quantity: z.coerce.number().int("Jumlah harus bilangan bulat.").positive("Jumlah harus lebih dari 0."),
 });
 
+const orderIdSchema = z.string().trim().regex(/^\d{1,12}$/, "Pesanan tidak valid.");
 
-/** Single order. The accepted rules version is recorded by placeOrder (current version, server side). */
+/** Single order. The accepted rules version is recorded by place_order (current version, server side). */
 export async function submitOrder(input: unknown) {
   const parsed = orderSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Data tidak valid." } as const;
   return guard(async (userId) => {
-    const db = getDb();
-    const order = await placeOrder(db, { userId, ...parsed.data }, { client: createProviderClient(db) });
+    const order = await placeOrder({ userId, ...parsed.data }, { client: createProviderClient() });
     if (order.status === "gagal_kirim") {
       return { ok: false, error: "Pesanan gagal dikirim ke provider. Saldomu sudah dikembalikan." } as const;
     }
@@ -62,17 +61,16 @@ export async function submitOrder(input: unknown) {
   });
 }
 
-/** Mass order: each line is its own order and stores the current rules version of its platform. */
+/** Mass order: each line is its own order (own transaction) and stores the current rules version of its platform. */
 export async function submitMassOrder(input: unknown) {
   const parsed = z.array(orderSchema).min(1).max(100).safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Data tidak valid." } as const;
   return guard(async (userId) => {
-    const db = getDb();
     const ids: string[] = [];
-    // Each line is its own order (own transaction): a later failure never undoes earlier orders.
+    // A later failure never undoes earlier orders.
     for (const [i, line] of parsed.data.entries()) {
       try {
-        const order = await placeOrder(db, { userId, ...line }, { client: createProviderClient(db) });
+        const order = await placeOrder({ userId, ...line }, { client: createProviderClient() });
         ids.push(order.id);
       } catch (e) {
         if (e instanceof ServiceError) return { ok: false, error: `Baris ${i + 1}: ${e.message}` } as const;
@@ -84,21 +82,19 @@ export async function submitMassOrder(input: unknown) {
 }
 
 export async function submitRefill(orderId: unknown) {
-  const id = z.string().trim().min(1).max(40).safeParse(orderId);
+  const id = orderIdSchema.safeParse(orderId);
   if (!id.success) return { ok: false, error: "Pesanan tidak valid." } as const;
   return guard(async (userId) => {
-    const db = getDb();
-    await requestRefill(db, createProviderClient(db), userId, id.data);
+    await requestRefill(createProviderClient(), userId, id.data);
     return { ok: true, message: "Refill diajukan." };
   });
 }
 
 export async function submitCancel(orderId: unknown) {
-  const id = z.string().trim().min(1).max(40).safeParse(orderId);
+  const id = orderIdSchema.safeParse(orderId);
   if (!id.success) return { ok: false, error: "Pesanan tidak valid." } as const;
   return guard(async (userId) => {
-    const db = getDb();
-    requestCancel(db, userId, id.data);
+    await requestCancel(userId, id.data);
     return { ok: true, message: "Permintaan pembatalan dikirim. Admin akan menyetujui atau menolaknya; refund mengikuti kebijakan pembatalan." };
   });
 }
@@ -109,68 +105,94 @@ export type MyOrder = Order & { refunded: number; refill: Eligibility; cancel: E
 export async function getMyOrders(): Promise<MyOrder[]> {
   const userId = await currentUserId();
   if (!userId) return [];
-  const db = getDb();
+  const [orders, settings] = await Promise.all([listUserOrders(userId), loadSettings()]);
+  if (!orders.length) return [];
+  const ids = orders.map((o) => Number(o.id));
+  const db = supabaseAdmin();
+  const [refills, cancels, services] = await Promise.all([
+    db.from("refill_requests").select("order_id,status,created_at").in("order_id", ids),
+    db.from("cancel_requests").select("order_id,status,created_at").in("order_id", ids),
+    db.from("services").select("id,refill,cancel,refill_days").in("id", [...new Set(orders.map((o) => o.serviceId))]),
+  ]);
+  const svc = new Map((services.data ?? []).map((s) => [s.id, { refill: s.refill, cancel: s.cancel, refillDays: s.refill_days }]));
+  const reqs = (rows: { order_id: number; status: string; created_at: string }[] | null) => {
+    const m = new Map<number, { status: "menunggu" | "berjalan" | "selesai" | "ditolak"; createdAt: string }[]>();
+    for (const r of rows ?? []) m.set(r.order_id, [...(m.get(r.order_id) ?? []), { status: r.status as "menunggu", createdAt: r.created_at }]);
+    return m;
+  };
+  const refillBy = reqs(refills.data);
+  const cancelBy = reqs(cancels.data);
   const now = new Date();
-  return db.orders
-    .filter((o) => o.userId === userId)
-    .map((o) => {
-      const service = db.services.find((s) => s.id === o.serviceId);
-      return {
-        id: o.id, serviceId: o.serviceId, platform: o.platform, name: o.name, link: o.link, charge: o.charge, quantity: o.quantity,
-        startCount: o.startCount, remains: o.remains, status: o.status, createdAt: o.createdAt, refillable: Boolean(service?.refill),
-        refunded: o.refundedAmount,
-        refill: refillEligibility(o, service, db.refillRequests.filter((r) => r.orderId === o.id), now),
-        cancel: cancelEligibility(o, service, db.cancelRequests.filter((r) => r.orderId === o.id), now, db.settings.cancelPolicy),
-        cancelRefundPreview: computeUserCancelRefund(o, db.settings.cancelPolicy.refundPercent),
-        cancelPercent: db.settings.cancelPolicy.refundPercent,
-        cancelMinAgeHours: db.settings.cancelPolicy.minAgeHours,
-      };
-    });
+  const policy = settings.cancelPolicy;
+  return orders.map((o) => {
+    const service = svc.get(o.serviceId);
+    return {
+      id: o.id, serviceId: o.serviceId, platform: o.platform, name: o.name, link: o.link, charge: o.charge, quantity: o.quantity,
+      startCount: o.startCount, remains: o.remains, status: o.status, createdAt: o.createdAt, refillable: Boolean(service?.refill),
+      refunded: o.refundedAmount,
+      refill: refillEligibility(o, service, refillBy.get(Number(o.id)) ?? [], now),
+      cancel: cancelEligibility(o, service, cancelBy.get(Number(o.id)) ?? [], now, policy),
+      cancelRefundPreview: computeUserCancelRefund(o, policy.refundPercent),
+      cancelPercent: policy.refundPercent,
+      cancelMinAgeHours: policy.minAgeHours,
+    };
+  });
 }
 
 export async function getMyRefills(): Promise<RefillRequest[]> {
   const userId = await currentUserId();
   if (!userId) return [];
-  const db = getDb();
-  return db.refillRequests
-    .filter((r) => r.userId === userId)
-    .flatMap((r) => {
-      const o = db.orders.find((x) => x.id === r.orderId);
-      return o ? [{ id: r.id, orderId: o.id, platform: o.platform, name: o.name, link: o.link, status: r.status, createdAt: r.createdAt }] : [];
-    });
+  const { data } = await supabaseAdmin().from("refill_requests")
+    .select("id,order_id,status,created_at,orders!inner(link,services(id,name,platform))").eq("user_id", userId).order("created_at", { ascending: false }).limit(200);
+  return ((data ?? []) as unknown as { id: string; order_id: number; status: string; created_at: string; orders: { link: string; services: { id: string; name: string; platform: string } | null } }[]).map((r) => ({
+    id: r.id, orderId: String(r.order_id), platform: r.orders.services?.platform ?? "", name: `${r.orders.services?.id ?? ""} - ${r.orders.services?.name ?? ""}`,
+    link: r.orders.link, status: r.status as RefillRequest["status"], createdAt: r.created_at,
+  }));
 }
 
 /** Settled refunds of the user (automatic and approved ones). */
 export async function getMyRefunds(): Promise<Refund[]> {
   const userId = await currentUserId();
   if (!userId) return [];
-  return getDb()
-    .refunds.filter((r) => r.userId === userId && r.status === "selesai" && !r.reversed)
-    .map((r) => ({
-      id: r.id,
-      orderId: r.orderId,
-      amount: r.amount,
-      // gagal_kirim and manual refunds read as "dibatalkan" in the user's list (full money back).
-      status: r.reason === "sebagian" ? ("sebagian" as const) : ("dibatalkan" as const),
-      createdAt: r.processedAt ?? r.createdAt,
-    }));
+  const { data } = await supabaseAdmin().from("refunds").select("id,order_id,amount,reason,created_at,processed_at")
+    .eq("user_id", userId).eq("status", "selesai").eq("reversed", false).order("processed_at", { ascending: false }).limit(300);
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    orderId: String(r.order_id),
+    amount: Number(r.amount),
+    // gagal_kirim and manual refunds read as "dibatalkan" in the user's list (full money back).
+    status: r.reason === "sebagian" ? ("sebagian" as const) : ("dibatalkan" as const),
+    createdAt: r.processed_at ?? r.created_at,
+  }));
 }
 
 export async function getMyLedger(): Promise<{ balance: number; entries: LedgerEntry[] }> {
   const userId = await currentUserId();
   if (!userId) return { balance: 0, entries: [] };
-  const db = getDb();
-  return { balance: db.users.find((u) => u.id === userId)?.balance ?? 0, entries: db.ledger.filter((l) => l.userId === userId) };
+  const db = supabaseAdmin();
+  const [{ data: p }, { data: rows }] = await Promise.all([
+    db.from("profiles").select("balance").eq("id", userId).maybeSingle(),
+    db.from("balance_ledger").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(500),
+  ]);
+  return {
+    balance: Number(p?.balance ?? 0),
+    entries: (rows ?? []).map((l) => ({
+      id: l.id, userId: l.user_id, type: l.type as LedgerType, amount: Number(l.amount), balanceBefore: Number(l.balance_before), balanceAfter: Number(l.balance_after),
+      refType: l.ref_type, refId: l.ref_id, note: l.note, createdBy: l.created_by, createdAt: l.created_at,
+    })),
+  };
 }
 
 export async function getMyBalance(): Promise<number | null> {
   const userId = await currentUserId();
-  return userId ? (getDb().users.find((u) => u.id === userId)?.balance ?? null) : null;
+  if (!userId) return null;
+  const { data } = await supabaseAdmin().from("profiles").select("balance").eq("id", userId).maybeSingle();
+  return data ? Number(data.balance) : null;
 }
 
 /** Public: the rules users read and the cancel policy. Same settings the admin edits, so numbers never drift. */
 export async function getOrderRulesAction(): Promise<{ rules: Record<RuleKey, OrderRuleSet>; policy: CancelPolicy }> {
-  const { orderRules, cancelPolicy } = getDb().settings;
+  const { orderRules, cancelPolicy } = await loadSettings();
   return { rules: orderRules, policy: cancelPolicy };
 }
 
@@ -182,7 +204,7 @@ export type DepositConfig = { minDeposit: number; methods: { id: string; name: s
 export type MyDeposit = { id: string; method: string; amount: number; status: "berhasil" | "menunggu" | "gagal"; createdAt: string };
 
 export async function getDepositConfig(): Promise<DepositConfig> {
-  const { payments } = getDb().settings;
+  const { payments } = await loadSettings();
   return {
     minDeposit: payments.minDeposit,
     methods: payments.activeMethods.filter((id) => id === "manual").map((id) => ({ id, name: methodLabel(id), detail: "dikonfirmasi admin setelah pembayaran diterima" })),
@@ -194,9 +216,8 @@ export async function getDepositConfig(): Promise<DepositConfig> {
 export async function getMyDeposits(): Promise<MyDeposit[]> {
   const userId = await currentUserId();
   if (!userId) return [];
-  return getDb().deposits
-    .filter((d) => d.userId === userId)
-    .map((d) => ({ id: d.id, method: d.method, amount: d.amount, status: d.status === "berhasil" ? "berhasil" : d.status === "menunggu" ? "menunggu" : "gagal", createdAt: d.createdAt }) as MyDeposit);
+  const { data } = await supabaseAdmin().from("deposits").select("id,method,amount,status,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(200);
+  return (data ?? []).map((d) => ({ id: d.id, method: d.method, amount: Number(d.amount), status: d.status === "berhasil" ? "berhasil" : d.status === "menunggu" ? "menunggu" : "gagal", createdAt: d.created_at }) as MyDeposit);
 }
 
 const depositSchema = z.object({ amount: z.coerce.number().int("Jumlah harus bilangan bulat."), methodId: z.string().trim().min(1).max(30) });
@@ -205,19 +226,19 @@ export async function submitDeposit(input: unknown) {
   const parsed = depositSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Data tidak valid." } as const;
   return guard(async (userId) => {
-    const db = getDb();
-    const deposit = createDepositRequest(db, { userId, ...parsed.data });
-    notifyAdmins(db, { type: "deposit", title: "Deposit menunggu konfirmasi", body: `${deposit.username} meminta deposit Rp ${deposit.amount.toLocaleString("id-ID")}.`, href: "/admin/deposits?status=menunggu", dedupeKey: `deposit-request:${deposit.id}` });
+    const deposit = await createDepositRequest({ userId, ...parsed.data });
+    await notifyAdmins({ type: "deposit", title: "Deposit menunggu konfirmasi", body: `${deposit.username} meminta deposit Rp ${deposit.amount.toLocaleString("id-ID")}.`, href: "/admin/deposits?status=menunggu", dedupeKey: `deposit-request:${deposit.id}` });
     return { ok: true, message: "Permintaan deposit dibuat.", data: { id: deposit.id } };
   });
 }
 
 export async function getMyStats(): Promise<UserStats> {
   const userId = await currentUserId();
-  const db = getDb();
-  const user = userId ? db.users.find((u) => u.id === userId) : undefined;
-  if (!user) return emptyUserStats;
-  return { balance: user.balance, totalOrders: db.orders.filter((o) => o.userId === user.id).length, rank: user.rank, totalSpent: user.totalSpent };
+  if (!userId) return emptyUserStats;
+  const { data } = await supabaseAdmin().rpc("user_stats", { p_user: userId });
+  const s = data?.[0];
+  if (!s) return emptyUserStats;
+  return { balance: Number(s.balance), totalOrders: Number(s.total_orders), rank: s.rank, totalSpent: Number(s.total_spent) };
 }
 
 // ---------------------------------------------------------------------------

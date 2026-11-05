@@ -1,4 +1,3 @@
-import { getDb } from "@/lib/admin-db";
 import { currentUserId } from "@/lib/current-user";
 import { MAX_PAGE_SIZE, type GuaranteeFilter, type ServiceSort, type ServicesQuery } from "@/lib/services-types";
 
@@ -33,10 +32,11 @@ export function parseServicesQuery(params: URLSearchParams): ServicesQuery {
 
 const HEADERS = { "Cache-Control": "private, no-store" };
 
-/** Signed-in users only. Returns the db, or a ready 401 response. */
-export async function userDbOr401(): Promise<{ db: ReturnType<typeof getDb> } | { response: Response }> {
-  if (!(await currentUserId())) return { response: Response.json({ error: "Silakan masuk terlebih dahulu." }, { status: 401, headers: HEADERS }) };
-  return { db: getDb() };
+/** Signed-in users only. Returns the user id, or a ready 401 response. */
+export async function userDbOr401(): Promise<{ userId: string } | { response: Response }> {
+  const userId = await currentUserId();
+  if (!userId) return { response: Response.json({ error: "Silakan masuk terlebih dahulu." }, { status: 401, headers: HEADERS }) };
+  return { userId };
 }
 
 export const json = (body: unknown, status = 200) => Response.json(body, { status, headers: HEADERS });
