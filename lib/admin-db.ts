@@ -7,7 +7,6 @@ import { missingRefunds } from "@/lib/server/views";
 import { ordersByPlatform, revenueSeries } from "@/lib/server/series";
 import { dayOf, todayIso } from "@/lib/server/time";
 import { currentSnapshot } from "@/lib/server/admin-snapshot";
-import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import {
   mockAdminAccounts,
   setPriceRounding,
@@ -59,22 +58,6 @@ export function toPublicProvider(p: ProviderRecord): PublicProvider {
     lastTest: p.lastTest,
     // The Likeo key lives in the environment only; its last 4 characters are all that is ever shown.
     apiKeyMasked: p.kind === "likeo" ? maskedLikeoKey() : maskKey(p.apiKey),
-  };
-}
-
-/** Numbers shown in the shell: today's revenue + items needing attention. Three small queries (not the admin snapshot): the layout runs on every admin page. */
-export async function getShellStats() {
-  const sb = supabaseAdmin();
-  const startOfDay = new Date(`${todayIso()}T00:00:00+07:00`).toISOString();
-  const [revenue, tickets, deposits] = await Promise.all([
-    sb.from("deposits").select("amount").eq("status", "berhasil").gte("updated_at", startOfDay).limit(5000),
-    sb.from("tickets").select("id", { count: "exact", head: true }).eq("status", "menunggu"),
-    sb.from("deposits").select("id", { count: "exact", head: true }).eq("status", "menunggu"),
-  ]);
-  return {
-    todayRevenue: (revenue.data ?? []).reduce((n, d) => n + Number(d.amount), 0),
-    pendingTickets: tickets.count ?? 0,
-    pendingDeposits: deposits.count ?? 0,
   };
 }
 

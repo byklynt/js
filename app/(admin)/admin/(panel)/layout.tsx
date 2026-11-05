@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { LangBoundary } from "@/components/shell/lang-boundary";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { requireAdmin } from "@/lib/auth-server";
-import { getShellStats } from "@/lib/admin-db";
+import { getShellStats } from "@/lib/server/admin/shell-stats";
 
 export default function PanelLayout({ children }: { children: React.ReactNode }) {
   return (

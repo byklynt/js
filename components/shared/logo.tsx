@@ -30,7 +30,7 @@ export function Logo({
   className?: string;
 }) {
   const s = SIZES[size];
-  const [missing, setMissing] = useState(false);
+  const [missing, setMissing] = useState(process.env.NEXT_PUBLIC_HAS_LOGO === "0");
   const ref = useRef<HTMLImageElement>(null);
 
   // An image that failed before React attached onError (server-rendered HTML) is caught by re-checking a few times.

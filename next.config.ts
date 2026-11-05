@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -6,6 +8,9 @@ const nextConfig: NextConfig = {
   // Ticket attachments (3 files, 5 MB each) travel in server-action FormData.
   experimental: { serverActions: { bodySizeLimit: "20mb" } },
   partialPrefetching: true,
+  // The logo file is supplied by the owner (public/brand/logo-mark.png). When it is absent the Logo component shows its "JS"
+  // stand-in right away instead of requesting an image that would 404 on every page.
+  env: { NEXT_PUBLIC_HAS_LOGO: existsSync(join(process.cwd(), "public", "brand", "logo-mark.png")) ? "1" : "0" },
   turbopack: {
     rules: {
       "*.css": {

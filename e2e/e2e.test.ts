@@ -48,6 +48,13 @@ describe.skipIf(!enabled)("browser e2e: auth, roles, MFA, data isolation", () =>
       }
     });
   const code = () => new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(totpSecret), digits: 6, period: 30 }).generate();
+  // Supabase refuses a TOTP code that was already used, so every login waits for the next 30 s step.
+  let lastUsed = "";
+  const freshCode = async () => {
+    for (let i = 0; i < 70 && code() === lastUsed; i++) await new Promise((r) => setTimeout(r, 500));
+    lastUsed = code();
+    return lastUsed;
+  };
   async function fresh(): Promise<[BrowserContext, Page]> {
     const ctx = await browser.newContext({ baseURL: BASE });
     const page = await ctx.newPage();
@@ -72,7 +79,7 @@ describe.skipIf(!enabled)("browser e2e: auth, roles, MFA, data isolation", () =>
     await c.auth.signInWithPassword({ email: `${adminName}@jagoansosmed-test.invalid`, password });
     const enrol = await c.auth.mfa.enroll({ factorType: "totp", issuer: "JagoanSosmed" });
     totpSecret = enrol.data!.totp.secret;
-    const v = await c.auth.mfa.challengeAndVerify({ factorId: enrol.data!.id, code: code() });
+    const v = await c.auth.mfa.challengeAndVerify({ factorId: enrol.data!.id, code: await freshCode() });
     expect(v.error).toBeNull();
     browser = await chromium.launch();
   }, 90_000);
@@ -147,7 +154,7 @@ describe.skipIf(!enabled)("browser e2e: auth, roles, MFA, data isolation", () =>
     await page.getByPlaceholder("000000").fill("000000");
     await page.locator("form button[type=submit]").click();
     await expect.poll(async () => page.locator("body").innerText(), { timeout: 20_000 }).toMatch(/salah|kedaluwarsa/i);
-    await page.getByPlaceholder("000000").fill(code());
+    await page.getByPlaceholder("000000").fill(await freshCode());
     await page.locator("form button[type=submit]").click();
     await page.waitForURL((u) => u.pathname === "/admin", { timeout: 30_000 });
     await page.goto("/admin/users");

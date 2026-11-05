@@ -1608,6 +1608,14 @@ export type Database = {
         }
         Returns: number
       }
+      admin_shell_stats: {
+        Args: { p_since: string }
+        Returns: {
+          deposits_waiting: number
+          revenue: number
+          tickets_waiting: number
+        }[]
+      }
       apply_ledger_entry: {
         Args: {
           p_amount: number
@@ -1785,8 +1793,6 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      is_admin: { Args: never; Returns: boolean }
-      is_reseller_or_admin: { Args: never; Returns: boolean }
       place_order: {
         Args: {
           p_accepted_rules_version?: string
