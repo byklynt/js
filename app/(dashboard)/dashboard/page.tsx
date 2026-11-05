@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { getCurrentUser } from "@/lib/auth-actions";
-import { CatalogBoundary } from "@/components/dashboard/catalog-boundary";
 import { DashboardHome } from "@/components/dashboard/dashboard-home";
 import { currentUserId } from "@/lib/current-user";
 import { getDb } from "@/lib/admin-db";
 import { getMyStats } from "@/lib/user-actions";
+import { getOrderBootstrap } from "@/lib/server/services";
 import { getVisibleAnnouncements, viewerOf } from "@/lib/server/announcements";
 
 export const metadata: Metadata = { title: "Dashboard - JagoanSosmed" };
@@ -16,7 +16,7 @@ export default async function DashboardPage(props: PageProps<"/dashboard">) {
   const username = user?.username ?? "Pengguna";
 
   return (
-    <Suspense fallback={<DashboardHome username={username} />}>
+    <Suspense fallback={<DashboardHome username={username} hasServices />}>
       <DashboardPageContent username={username} searchParams={props.searchParams} />
     </Suspense>
   );
@@ -41,10 +41,7 @@ async function DashboardPageContent({
   const viewer = userId ? viewerOf(db, userId) : null;
   const announcements = viewer ? getVisibleAnnouncements(db, { user: viewer, placement: "dashboard" }) : [];
 
-  return (
-    <>
-      <CatalogBoundary />
-      <DashboardHome username={username} preselectServiceId={preselectServiceId} announcements={announcements} stats={await getMyStats()} />
-    </>
-  );
+  // Only the order page's first needs: whether any service exists and the ?service=ID one. The catalogue itself is never sent.
+  const { hasServices, preselect } = getOrderBootstrap(db, preselectServiceId);
+  return <DashboardHome username={username} preselect={preselect} hasServices={hasServices} announcements={announcements} stats={await getMyStats()} />;
 }

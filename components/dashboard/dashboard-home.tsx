@@ -6,15 +6,13 @@ import {
   statCardsFor,
   emptyUserStats,
   type UserStats,
-  categories,
-  services,
   platforms,
   allPlatformsId,
-  getCategoriesByPlatform,
-  getServicesByCategory,
   type Platform,
   type Service,
 } from "@/lib/dashboard-data";
+import type { CategoryRow, ServiceDetailData } from "@/lib/services-types";
+import { rowToService } from "@/lib/services-client";
 import type { PublicAnnouncement } from "@/lib/announcements-data";
 import { AnnouncementBanners } from "@/components/announcements/announcement-banner";
 import { WelcomeHeader } from "./welcome-header";
@@ -26,32 +24,27 @@ import { ServiceDetail } from "./service-detail";
 
 export function DashboardHome({
   username,
-  preselectServiceId,
+  preselect = null,
+  hasServices,
   announcements = [],
   stats = emptyUserStats,
 }: {
   username: string;
   stats?: UserStats;
-  preselectServiceId?: string;
+  preselect?: { service: ServiceDetailData; category: CategoryRow | null } | null;
+  hasServices: boolean;
   announcements?: PublicAnnouncement[];
 }) {
   const preselected = useMemo(() => {
-    if (!preselectServiceId) return null;
-    const service = services.find((s) => s.id === preselectServiceId) ?? null;
-    if (!service) return null;
-    const category = categories.find((c) => c.id === service.categoryId) ?? null;
-    const platform = category ? platforms.find((p) => p.id === category.platformId) : undefined;
-    return { service, platform };
-  }, [preselectServiceId]);
+    if (!preselect) return null;
+    const platform = preselect.category ? platforms.find((p) => p.id === preselect.category?.platformId) : undefined;
+    return { service: rowToService(preselect.service), category: preselect.category, platform };
+  }, [preselect]);
 
   const initialFilter = preselected?.platform?.id ?? allPlatformsId;
   const [platformFilter, setPlatformFilter] = useState(initialFilter);
-  // Default to the first service of the first category so the detail panel is never empty on load.
-  const [selectedService, setSelectedService] = useState<Service | null>(() => {
-    if (preselected?.service) return preselected.service;
-    const firstCategory = getCategoriesByPlatform(initialFilter)[0];
-    return firstCategory ? (getServicesByCategory(firstCategory.id)[0] ?? null) : null;
-  });
+  // The order form selects the first category/service itself once they have loaded and reports it back.
+  const [selectedService, setSelectedService] = useState<Service | null>(() => preselected?.service ?? null);
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | undefined>(
     preselected?.platform
   );
@@ -61,10 +54,7 @@ export function DashboardHome({
     // category/service for the new platform and reports it back through onServiceChange.
     setPlatformFilter(next);
     setSelectedPlatform(undefined);
-    const firstCategory = getCategoriesByPlatform(next)[0];
-    setSelectedService(
-      firstCategory ? (getServicesByCategory(firstCategory.id)[0] ?? null) : null
-    );
+    setSelectedService(null);
   }
 
   return (
@@ -113,6 +103,8 @@ export function DashboardHome({
             key={platformFilter}
             platformFilter={platformFilter}
             preselectService={platformFilter === initialFilter ? preselected?.service : undefined}
+            preselectCategory={platformFilter === initialFilter ? preselected?.category : undefined}
+            hasServices={hasServices}
             onServiceChange={(service, platform) => {
               setSelectedService(service);
               setSelectedPlatform(platform);

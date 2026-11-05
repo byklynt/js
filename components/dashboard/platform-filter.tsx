@@ -1,8 +1,12 @@
 "use client";
 
-import { Filter } from "lucide-react";
-import { platforms, allPlatformsId } from "@/lib/dashboard-data";
+import { useMemo } from "react";
+import { Filter, LayoutGrid } from "lucide-react";
+import { platforms, allPlatformsId, type Platform, type IconComponent } from "@/lib/dashboard-data";
+import { useCategories } from "@/lib/services-client";
 import { cn } from "@/lib/utils";
+
+const OTHER: Platform = { id: "lainnya", label: "Lainnya", icon: LayoutGrid as unknown as IconComponent };
 
 export function PlatformFilter({
   value,
@@ -11,6 +15,12 @@ export function PlatformFilter({
   value: string;
   onChange: (platformId: string) => void;
 }) {
+  const { categories } = useCategories();
+  // "Lainnya" only shows when the catalogue actually has categories that match no known platform.
+  const list = useMemo<Platform[]>(
+    () => (categories.some((c) => c.platformId === "lainnya") ? [...platforms, OTHER] : platforms),
+    [categories]
+  );
   return (
     <div
       role="tablist"
@@ -33,7 +43,7 @@ export function PlatformFilter({
         Semua
       </button>
 
-      {platforms.map((platform) => {
+      {list.map((platform) => {
         const active = value === platform.id;
         return (
           <button

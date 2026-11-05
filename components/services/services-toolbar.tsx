@@ -1,7 +1,7 @@
 "use client";
 
 import { Search, X } from "lucide-react";
-import { categories } from "@/lib/dashboard-data";
+import type { CategoryRow } from "@/lib/services-types";
 import { CategoryFilter } from "./category-filter";
 import {
   AdvancedFilters,
@@ -39,6 +39,7 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
 }
 
 export function ServicesToolbar({
+  categories,
   selectedCategoryIds,
   onCategoryChange,
   advancedFilters,
@@ -50,6 +51,7 @@ export function ServicesToolbar({
   onSearchChange,
   onClearAll,
 }: {
+  categories: CategoryRow[];
   selectedCategoryIds: string[];
   onCategoryChange: (ids: string[]) => void;
   advancedFilters: AdvancedFilterValues;
@@ -122,7 +124,7 @@ export function ServicesToolbar({
     <div className="border-y border-slate-200/70 py-4 dark:border-slate-800">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <CategoryFilter selectedIds={selectedCategoryIds} onChange={onCategoryChange} />
+          <CategoryFilter categories={categories} selectedIds={selectedCategoryIds} onChange={onCategoryChange} />
           <AdvancedFilters
             values={advancedFilters}
             onApply={onAdvancedApply}

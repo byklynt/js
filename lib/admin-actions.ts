@@ -27,6 +27,7 @@ import { notifyAnnouncement } from "@/lib/server/announcements";
 import { ipAllowed, requireReauth } from "@/lib/server/access";
 import { getClientIp } from "@/lib/auth-server";
 import { persistAdminState } from "@/lib/server/store";
+import { invalidateServicesCache } from "@/lib/server/services";
 import { randomBytes } from "node:crypto";
 import { hashPassword } from "@/lib/server/password";
 import { loadCreds, saveCreds } from "@/lib/server/user-store";
@@ -64,6 +65,8 @@ async function run<Schema extends ZodType>(
     const result = await handler(parsed.data, admin);
     if (result.ok) {
       persistAdminState(getDb());
+      // Anything an admin changes (sync apply, prices, switches) must show up in the user catalogue right away.
+      invalidateServicesCache();
       revalidatePath("/admin", "layout");
     }
     return result;

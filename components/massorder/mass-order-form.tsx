@@ -2,7 +2,9 @@
 
 import { useId, useState } from "react";
 import { CheckCircle2, ListChecks, Loader2 } from "lucide-react";
-import { services } from "@/lib/dashboard-data";
+import type { ServiceRow } from "@/lib/services-types";
+import { fetchServicesByIds } from "@/lib/services-client";
+import { formatMaxQty, isNoLimit } from "@/lib/service-format";
 import { createMassOrder, type MassOrderLine } from "@/lib/dashboard-actions";
 import { ImpliedAcceptanceNote } from "@/components/dashboard/order-rules-card";
 import { formatIdr } from "@/lib/balance";
@@ -17,26 +19,21 @@ const SAMPLE = [
 ].join("\n");
 
 type ParseResult = { lines: MassOrderLine[]; errors: string[]; total: number };
+type RawLine = { n: number; serviceId: string; link: string; quantity: number };
 
-function parseLines(text: string): ParseResult {
-  const lines: MassOrderLine[] = [];
+/** Step 1: the shape of each line (no catalogue needed). */
+function parseRaw(text: string): { raw: RawLine[]; errors: string[] } {
+  const raw: RawLine[] = [];
   const errors: string[] = [];
-  let total = 0;
-
-  text.split("\n").forEach((raw, index) => {
-    if (!raw.trim()) return;
+  text.split("\n").forEach((rawLine, index) => {
+    if (!rawLine.trim()) return;
     const n = index + 1;
-    const parts = raw.split("|").map((p) => p.trim());
+    const parts = rawLine.split("|").map((p) => p.trim());
     if (parts.length !== 3 || parts.some((p) => !p)) {
       errors.push(`Baris ${n}: gunakan format id_layanan | link | jumlah.`);
       return;
     }
     const [serviceId, link, qtyText] = parts;
-    const service = services.find((s) => s.id === serviceId);
-    if (!service) {
-      errors.push(`Baris ${n}: layanan ${serviceId} tidak ditemukan.`);
-      return;
-    }
     if (!isValidLink(link)) {
       errors.push(`Baris ${n}: link tidak valid.`);
       return;
@@ -46,18 +43,33 @@ function parseLines(text: string): ParseResult {
       errors.push(`Baris ${n}: jumlah harus berupa angka bulat.`);
       return;
     }
+    raw.push({ n, serviceId, link, quantity });
+  });
+  return { raw, errors };
+}
+
+/** Step 2: limits and prices, checked against only the services named in the text (fetched from the server by id). */
+function validateLines(raw: RawLine[], byId: Map<string, ServiceRow>): ParseResult {
+  const lines: MassOrderLine[] = [];
+  const errors: string[] = [];
+  let total = 0;
+  for (const { n, serviceId, link, quantity } of raw) {
+    const service = byId.get(serviceId);
+    if (!service) {
+      errors.push(`Baris ${n}: layanan ${serviceId} tidak ditemukan.`);
+      continue;
+    }
     if (quantity < service.min) {
       errors.push(`Baris ${n}: jumlah minimal ${service.min.toLocaleString("id-ID")}.`);
-      return;
+      continue;
     }
     if (quantity > service.max) {
-      errors.push(`Baris ${n}: jumlah maksimal ${service.max.toLocaleString("id-ID")}.`);
-      return;
+      errors.push(isNoLimit(service.max) ? `Baris ${n}: jumlah terlalu besar.` : `Baris ${n}: jumlah maksimal ${formatMaxQty(service.max)}.`);
+      continue;
     }
     lines.push({ serviceId, link, quantity });
-    total += (service.pricePer1000 * quantity) / 1000;
-  });
-
+    total += (service.price * quantity) / 1000;
+  }
   return { lines, errors, total: Math.round(total) };
 }
 
@@ -80,12 +92,23 @@ export function MassOrderForm() {
       setErrors(["Isi minimal satu baris pesanan."]);
       return;
     }
-    const parsed = parseLines(text);
-    setErrors(parsed.errors);
-    if (parsed.errors.length > 0 || parsed.lines.length === 0) return;
+    const shape = parseRaw(text);
+    if (shape.errors.length > 0) {
+      setErrors(shape.errors);
+      return;
+    }
 
     setSubmitting(true);
     try {
+      const ids = [...new Set(shape.raw.map((l) => l.serviceId))];
+      if (ids.length > 100) {
+        setErrors(["Maksimal 100 layanan berbeda per kiriman."]);
+        return;
+      }
+      const rows = await fetchServicesByIds(ids);
+      const parsed = validateLines(shape.raw, new Map(rows.map((r) => [r.id, r])));
+      setErrors(parsed.errors);
+      if (parsed.errors.length > 0 || parsed.lines.length === 0) return;
       const result = await createMassOrder(parsed.lines);
       if (result.success) {
         setSummary({ count: parsed.lines.length, total: parsed.total, orderIds: result.orderIds });

@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { Check, ChevronDown, Funnel } from "lucide-react";
+
+/** Options mounted at once; a long list is reached through the search box. */
+const RENDER_LIMIT = 60;
 import { useClickOutside } from "@/lib/use-click-outside";
 import { cn } from "@/lib/utils";
 
@@ -13,13 +16,20 @@ export function FilterPill<T extends string>({
   value,
   onChange,
   ariaLabel,
+  searchable,
 }: {
   options: FilterOption<T>[];
   value: T;
   onChange: (next: T) => void;
   ariaLabel: string;
+  /** Adds a search box (for long lists). */
+  searchable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const matching = needle ? options.filter((o) => o.label.toLowerCase().includes(needle)) : options;
+  const shown = matching.slice(0, RENDER_LIMIT);
   const ref = useClickOutside<HTMLDivElement>(() => setOpen(false));
   const current = options.find((o) => o.id === value);
 
@@ -42,9 +52,24 @@ export function FilterPill<T extends string>({
         <ul
           role="listbox"
           aria-label={ariaLabel}
-          className="absolute left-0 z-30 mt-2 w-52 rounded-xl border border-slate-200/70 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+          className={cn(
+            "absolute left-0 z-30 mt-2 w-52 rounded-xl border border-slate-200/70 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900",
+            options.length > RENDER_LIMIT && "max-h-80 w-72 overflow-auto"
+          )}
         >
-          {options.map((o) => (
+          {searchable ? (
+            <li role="presentation" className="sticky top-0 z-10 bg-white p-1 dark:bg-slate-900">
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Cari..."
+                aria-label={`Cari ${ariaLabel}`}
+                className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[10.5px] text-ink outline-none focus:border-primary-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              />
+            </li>
+          ) : null}
+          {shown.map((o) => (
             <li key={o.id} role="option" aria-selected={o.id === value}>
               <button
                 type="button"
@@ -64,6 +89,11 @@ export function FilterPill<T extends string>({
               </button>
             </li>
           ))}
+          {matching.length > shown.length ? (
+            <li role="presentation" className="px-2.5 py-2 text-center text-[10px] text-slate-400">
+              +{(matching.length - shown.length).toLocaleString("id-ID")} lainnya. Ketik untuk mencari.
+            </li>
+          ) : null}
         </ul>
       ) : null}
     </div>

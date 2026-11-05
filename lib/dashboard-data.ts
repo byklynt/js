@@ -84,10 +84,7 @@ export type Category = {
   icon?: IconComponent;
 };
 
-/** The user catalogue. Filled at request time from the services imported from the provider (see CatalogHydrator). */
-export const categories: Category[] = [];
-
-export function getCategoryIcon(category: Category): IconComponent {
+export function getCategoryIcon(category: { platformId: string; icon?: IconComponent }): IconComponent {
   if (category.icon) return category.icon;
   const platform = platforms.find((p) => p.id === category.platformId);
   return platform?.icon ?? (LayoutGrid as unknown as IconComponent);
@@ -110,18 +107,6 @@ export type Service = {
   linkFormat: string;
   description: string[];
 };
-
-/** Filled at request time from the services imported from the provider (see CatalogHydrator). Empty until a sync is applied. */
-export const services: Service[] = [];
-
-export function getCategoriesByPlatform(platformId: string): Category[] {
-  if (platformId === allPlatformsId) return categories;
-  return categories.filter((c) => c.platformId === platformId);
-}
-
-export function getServicesByCategory(categoryId: string): Service[] {
-  return services.filter((s) => s.categoryId === categoryId);
-}
 
 export const rupiahFormatter = new Intl.NumberFormat("id-ID", {
   style: "currency",

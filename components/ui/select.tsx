@@ -17,6 +17,11 @@ export function CustomSelect<T>({
   disabled,
   emptyMessage = "Tidak ada pilihan tersedia",
   triggerClassName,
+  searchable,
+  getSearchText,
+  onSearch,
+  loading,
+  maxRendered = 60,
 }: {
   label: string;
   options: T[];
@@ -29,8 +34,29 @@ export function CustomSelect<T>({
   disabled?: boolean;
   emptyMessage?: string;
   triggerClassName?: string;
+  /** Shows a search box. Without onSearch the loaded options are filtered locally (needs getSearchText). */
+  searchable?: boolean;
+  getSearchText?: (item: T) => string;
+  /** Server-side search: called (debounced 300 ms) with the typed text; the parent passes the matching options. */
+  onSearch?: (query: string) => void;
+  loading?: boolean;
+  /** Never mount more than this many options (long lists stay light). */
+  maxRendered?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    if (!onSearch || !open) return;
+    const t = setTimeout(() => onSearch(query.trim()), 300);
+    return () => clearTimeout(t);
+    // onSearch identity is the parent's concern; the typed text decides.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, open]);
+  const needle = query.trim().toLowerCase();
+  const filteredOptions =
+    searchable && !onSearch && needle && getSearchText ? options.filter((o) => getSearchText(o).toLowerCase().includes(needle)) : options;
+  const shownOptions = filteredOptions.slice(0, maxRendered);
+  const hiddenCount = filteredOptions.length - shownOptions.length;
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonId = useId();
   const listId = useId();
@@ -106,12 +132,29 @@ export function CustomSelect<T>({
             transition={{ duration: 0.15, ease: "easeOut" }}
             className="absolute z-30 mt-2 max-h-64 w-full overflow-auto rounded-xl border border-primary-100 bg-white p-1.5 shadow-xl shadow-primary-100/70 dark:border-slate-700 dark:bg-slate-900 dark:shadow-none"
           >
-            {options.length === 0 ? (
+            {searchable ? (
+              <li role="presentation" className="sticky top-0 z-10 bg-white p-1 dark:bg-slate-900">
+                <input
+                  type="text"
+                  value={query}
+                  autoFocus
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Cari..."
+                  aria-label={`Cari ${label}`}
+                  className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[10.5px] text-ink outline-none focus:border-primary-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </li>
+            ) : null}
+            {loading && options.length === 0 ? (
+              <li role="status" className="px-3 py-4 text-center text-[10.5px] text-slate-400">
+                Memuat...
+              </li>
+            ) : filteredOptions.length === 0 ? (
               <li className="px-3 py-4 text-center text-[10.5px] text-slate-400">
                 {emptyMessage}
               </li>
             ) : (
-              options.map((item) => {
+              shownOptions.map((item) => {
                 const key = getKey(item);
                 const selected = value ? getKey(value) === key : false;
                 return (
@@ -135,6 +178,11 @@ export function CustomSelect<T>({
                 );
               })
             )}
+            {hiddenCount > 0 ? (
+              <li role="presentation" className="px-3 py-2 text-center text-[10px] text-slate-400">
+                +{hiddenCount.toLocaleString("id-ID")} lainnya. Ketik untuk mencari.
+              </li>
+            ) : null}
           </motion.ul>
         ) : null}
       </AnimatePresence>

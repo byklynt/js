@@ -4,6 +4,7 @@ import { Activity, Shapes, ShieldCheck, PackageSearch } from "lucide-react";
 import type { Platform, Service } from "@/lib/dashboard-data";
 import { getServiceTitle, platforms } from "@/lib/dashboard-data";
 import { ruleKeyFor } from "@/lib/order-rules";
+import { formatQtyRange, isNoLimit } from "@/lib/service-format";
 import { useOrderRules } from "@/lib/order-rules-client";
 import { OrderRulesCard } from "./order-rules-card";
 
@@ -21,7 +22,7 @@ function buildDescription(service: Service, platform: Platform | undefined) {
       : { emoji: "🛡️", text: `Garansi: ${service.guarantee}` }
   );
   items.push({ emoji: "🔴", text: "Auto cancel aktif" });
-  items.push({ emoji: "📊", text: `Maks: ${formatCompact(service.max)}` });
+  items.push({ emoji: "📊", text: `Maks: ${isNoLimit(service.max) ? "Tanpa batas" : formatCompact(service.max)}` });
   items.push({ emoji: "🔗", text: `Link: ${service.linkFormat}` });
   if (service.refillDays) {
     items.push({
@@ -116,7 +117,7 @@ export function ServiceDetail({
             <Shapes className="h-5 w-5 stroke-[1.75] text-red-500" />
             <p className="mt-1 text-[11px] font-medium text-ink dark:text-slate-100">Min - Maks</p>
             <p className="text-[9.5px] text-[#5B6B8C] dark:text-slate-400">
-              {service.min.toLocaleString("id-ID")} - {service.max.toLocaleString("id-ID")}
+              {formatQtyRange(service.min, service.max)}
             </p>
           </div>
           <div className="flex flex-col items-center gap-1 px-2 py-4 text-center">

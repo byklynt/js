@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, LayoutGrid, Pencil, Plus, RefreshCw, SlidersHorizontal, Upload } from "lucide-react";
 import { finalPrice, type AdminService, type PublicProvider } from "@/lib/admin-data";
 import { importServicesCsv, updateService } from "@/lib/admin-actions";
@@ -10,11 +10,12 @@ import { DataToolbar } from "@/components/ui/data-toolbar";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListSkeleton } from "@/components/ui/skeleton";
-import { Pagination } from "@/components/ui/pagination";
+import { ShowMoreButton } from "@/components/ui/list-states";
 import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useToast } from "@/components/shared/toast";
 import { useListState } from "@/lib/use-list-state";
+import type { AdminServicesMeta, AdminServicesPage } from "@/lib/server/admin-services";
 import { useAdminRunner } from "../use-admin-runner";
 import { ServiceFormModal } from "./service-form-modal";
 import { useSearchParams } from "next/navigation";
@@ -24,38 +25,73 @@ import { MarginFixModal } from "./margin-fix-modal";
 
 type FormTarget = { service: AdminService | null; categoryId: string };
 
-export function ServicesView({ services, providers, minMargin = 5 }: { services: AdminService[]; providers: PublicProvider[]; minMargin?: number }) {
+/** Rows loaded at most per list; beyond that the admin narrows by category or search. */
+const MAX_ROWS = 100;
+
+export function ServicesView({ initial, meta, providers, minMargin = 5 }: { initial: AdminServicesPage; meta: AdminServicesMeta; providers: PublicProvider[]; minMargin?: number }) {
   const run = useAdminRunner();
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const marginParam = ["thin", "low"].includes(useSearchParams().get("margin") ?? "");
   const list = useListState<string>(marginParam ? "margin" : "semua", { pageSize: 15 });
   const [fixOpen, setFixOpen] = useState(false);
-  const thinCount = useMemo(() => services.filter((s) => s.active && marginPercent(s) < minMargin).length, [services, minMargin]);
+  const thinCount = meta.thinCount;
+  const categories = meta.categories;
+
+  // One page at a time from the server. The server decides the filter, the search and the order.
+  const [data, setData] = useState<AdminServicesPage>(initial);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const firstLoad = useRef(true);
+  const key = `${list.filter}|${list.debounced}`;
+  const defaultKey = `${marginParam ? "margin" : "semua"}|`;
+  useEffect(() => {
+    // The server already rendered the first page for the default view; refetch after any change (or after an admin edit refreshed meta).
+    if (firstLoad.current && key === defaultKey) {
+      firstLoad.current = false;
+      return;
+    }
+    firstLoad.current = false;
+    const ctrl = new AbortController();
+    setLoading(true);
+    const qs = new URLSearchParams({ filter: list.filter, search: list.debounced });
+    fetch(`/api/admin/services?${qs}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? (r.json() as Promise<AdminServicesPage>) : Promise.reject(new Error("fail"))))
+      .then((page) => {
+        setData(page);
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (!(e instanceof DOMException && e.name === "AbortError")) setLoading(false);
+      });
+    return () => ctrl.abort();
+    // key encodes filter + search; meta changes when router.refresh() brings new server data.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, meta]);
+
+  async function loadMore() {
+    if (!data.nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const qs = new URLSearchParams({ filter: list.filter, search: list.debounced, cursor: data.nextCursor });
+      const r = await fetch(`/api/admin/services?${qs}`);
+      if (r.ok) {
+        const page = (await r.json()) as AdminServicesPage;
+        setData((d) => ({ ...page, items: [...d.items, ...page.items] }));
+      }
+    } finally {
+      setLoadingMore(false);
+    }
+  }
   const [form, setForm] = useState<FormTarget | null>(null);
   const [syncOpen, setSyncOpen] = useState(false);
   const [markupOpen, setMarkupOpen] = useState(false);
 
-  const categories = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const s of services) map.set(s.categoryId, s.categoryLabel);
-    return Array.from(map, ([id, label]) => ({ id, label }));
-  }, [services]);
-
-  const filtered = useMemo(
-    () =>
-      services
-        .filter((s) => list.filter === "semua" || (list.filter === "margin" ? s.active && marginPercent(s) < minMargin : s.categoryId === list.filter))
-        .filter((s) => !list.debounced || s.id.includes(list.debounced) || s.name.toLowerCase().includes(list.debounced))
-        .sort((a, b) => a.sort - b.sort),
-    [services, list.filter, list.debounced, minMargin]
-  );
-  const shown = filtered.slice(0, list.visible);
   const groups = useMemo(() => {
     const map = new Map<string, AdminService[]>();
-    for (const s of shown) map.set(s.categoryId, [...(map.get(s.categoryId) ?? []), s]);
+    for (const s of data.items) map.set(s.categoryId, [...(map.get(s.categoryId) ?? []), s]);
     return Array.from(map, ([categoryId, items]) => ({ categoryId, label: items[0].categoryLabel, items }));
-  }, [shown]);
+  }, [data.items]);
 
   const providerName = (id: string) => providers.find((p) => p.id === id)?.name ?? id;
 
@@ -70,13 +106,14 @@ export function ServicesView({ services, providers, minMargin = 5 }: { services:
     );
   }
 
-  function exportCsv() {
-    const header = "id,nama,provider,id_provider,harga_provider,markup_jenis,markup,harga_akhir,min,maks,refill,batal,aktif,urutan";
-    const rows = services.map((s) =>
-      [s.id, `"${s.name.replace(/"/g, '""')}"`, providerName(s.providerId), s.providerServiceId, s.providerPrice, s.markupType, s.markup, finalPrice(s), s.min, s.max, s.refill, s.cancel, s.active, s.sort].join(",")
-    );
-    const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+  async function exportCsv() {
+    // The whole list is built on the server (admins only); the page never holds it.
+    const res = await fetch("/api/admin/services/export");
+    if (!res.ok) {
+      toast("Ekspor gagal.", "error");
+      return;
+    }
+    const url = URL.createObjectURL(await res.blob());
     const a = document.createElement("a");
     a.href = url;
     a.download = "layanan-jagoansosmed.csv";
@@ -129,7 +166,7 @@ export function ServicesView({ services, providers, minMargin = 5 }: { services:
     <div>
       <PageHeader title="Layanan" subtitle="Atur layanan, harga, dan markup." />
 
-      {services.length === 0 ? (
+      {meta.total === 0 ? (
         <div role="status" className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-200 bg-primary-50/60 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/60">
           <p className="text-[10.5px] font-medium text-ink dark:text-white">Belum ada layanan. Sinkronkan dari provider.</p>
           <Button onClick={() => setSyncOpen(true)}>
@@ -145,6 +182,7 @@ export function ServicesView({ services, providers, minMargin = 5 }: { services:
           value: list.filter,
           onChange: list.setFilter,
           ariaLabel: "Filter kategori layanan",
+          searchable: true,
         }}
         query={list.query}
         onQueryChange={list.setQuery}
@@ -177,9 +215,9 @@ export function ServicesView({ services, providers, minMargin = 5 }: { services:
       </div>
 
       <section aria-label="Daftar layanan" className="mt-5 space-y-6">
-        {list.loading ? (
+        {loading && data.items.length === 0 ? (
           <ListSkeleton label="Memuat layanan" />
-        ) : filtered.length === 0 ? (
+        ) : data.items.length === 0 ? (
           <EmptyState icon={LayoutGrid} title="Layanan tidak ditemukan" />
         ) : (
           <>
@@ -217,7 +255,14 @@ export function ServicesView({ services, providers, minMargin = 5 }: { services:
                 />
               </div>
             ))}
-            <Pagination total={filtered.length} visible={list.visible} onMore={list.showMore} />
+            {data.nextCursor && data.items.length < MAX_ROWS ? (
+              <ShowMoreButton onClick={() => void loadMore()} />
+            ) : null}
+            {data.nextCursor && data.items.length >= MAX_ROWS ? (
+              <p className="text-center text-[10px] text-slate-400">
+                {(data.total - data.items.length).toLocaleString("id-ID")} layanan lagi. Pilih kategori atau gunakan pencarian untuk mempersempit.
+              </p>
+            ) : null}
           </>
         )}
       </section>

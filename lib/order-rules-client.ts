@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { categories, platforms, type Service } from "@/lib/dashboard-data";
 import { getOrderRulesAction } from "@/lib/user-actions";
 import { DEFAULT_CANCEL_POLICY, defaultOrderRules, type CancelPolicy, type OrderRuleSet, type RuleKey } from "@/lib/order-rules";
 
@@ -34,13 +33,3 @@ export function useOrderRules(): Loaded {
   }, []);
   return state;
 }
-
-/** The platform id of a catalogue service ("Layanan Baru" has no platform: infer it from the name). */
-export function platformIdOfService(service: Service | null | undefined): string | undefined {
-  if (!service) return undefined;
-  const category = categories.find((c) => c.id === service.categoryId);
-  if (category?.platformId) return category.platformId;
-  const lower = service.name.toLowerCase();
-  return platforms.find((p) => lower.includes(p.label.toLowerCase().replace("/x", "")))?.id;
-}
-

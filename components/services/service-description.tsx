@@ -1,8 +1,6 @@
-import type { Service } from "@/lib/dashboard-data";
-
 const descriptionEmoji = ["⚡", "🚀⭐", "🔴", "📊", "🔗", "🔄"];
 
-export function ServiceDescription({ service }: { service: Service }) {
+export function ServiceDescription({ lines }: { lines: string[] }) {
   return (
     <div>
       <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-tight text-ink dark:text-slate-100">
@@ -10,7 +8,7 @@ export function ServiceDescription({ service }: { service: Service }) {
         Deskripsi
       </p>
       <ul className="mt-3 space-y-2">
-        {service.description.map((line, i) => (
+        {lines.map((line, i) => (
           <li
             key={line}
             className="flex items-start gap-2 text-[10.5px] leading-relaxed text-slate-500 dark:text-slate-400"

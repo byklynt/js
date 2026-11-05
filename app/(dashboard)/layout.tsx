@@ -2,7 +2,6 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { MaintenanceGate } from "@/components/dashboard/maintenance-gate";
 import { getCurrentUser } from "@/lib/auth-actions";
-import { CatalogBoundary } from "@/components/dashboard/catalog-boundary";
 import { LangBoundary } from "@/components/shell/lang-boundary";
 import { UserShell } from "@/components/dashboard/user-shell";
 
@@ -22,7 +21,6 @@ async function UserGate({ children }: { children: React.ReactNode }) {
   return (
     <LangBoundary>
       <UserShell username={user.username} email={user.email}>
-        <CatalogBoundary />
         <Suspense fallback={null}>
           <MaintenanceGate>{children}</MaintenanceGate>
         </Suspense>

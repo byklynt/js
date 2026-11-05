@@ -1,11 +1,11 @@
-export function ServiceSkeleton() {
+export function ServiceSkeleton({ groups = 3, cards = 2 }: { groups?: number; cards?: number }) {
   return (
     <div className="space-y-6" aria-hidden>
-      {Array.from({ length: 3 }).map((_, groupIndex) => (
+      {Array.from({ length: groups }).map((_, groupIndex) => (
         <div key={groupIndex} className="space-y-3">
-          <div className="h-10 w-full animate-shimmer rounded-xl" />
+          {groups > 1 ? <div className="h-10 w-full animate-shimmer rounded-xl" /> : null}
           <div className="space-y-3">
-            {Array.from({ length: 2 }).map((_, cardIndex) => (
+            {Array.from({ length: cards }).map((_, cardIndex) => (
               <div
                 key={cardIndex}
                 className="rounded-2xl border border-slate-200/70 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"

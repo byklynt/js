@@ -17,6 +17,7 @@ export function DataToolbar<T extends string>({
     value: T;
     onChange: (next: T) => void;
     ariaLabel: string;
+    searchable?: boolean;
   };
   query: string;
   onQueryChange: (next: string) => void;
@@ -33,6 +34,7 @@ export function DataToolbar<T extends string>({
           value={filter.value}
           onChange={filter.onChange}
           ariaLabel={filter.ariaLabel}
+          searchable={filter.searchable}
         />
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
           {actions}

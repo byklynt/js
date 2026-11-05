@@ -14,7 +14,9 @@
     "provider:check": "node scripts/provider-check.mjs",
     "services:check": "node scripts/services-check.mjs",
     "brand:assets": "node scripts/brand-assets.mjs",
-    "seed:demo": "tsx scripts/seed-demo.ts"
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "perf:seed": "tsx scripts/perf-seed.ts",
+    "perf:services": "node scripts/perf-services.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

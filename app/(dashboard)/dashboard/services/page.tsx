@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { CatalogBoundary } from "@/components/dashboard/catalog-boundary";
 import { ServicesPage } from "@/components/services/services-page";
 
 export const metadata: Metadata = { title: "Layanan - JagoanSosmed" };
@@ -22,9 +21,6 @@ async function ServicesPageContent({
   const search = params.search;
   const initialSearch = (Array.isArray(search) ? search[0] : search) ?? "";
   return (
-    <>
-      <CatalogBoundary />
-      <ServicesPage initialSearch={initialSearch} />
-    </>
+    <ServicesPage initialSearch={initialSearch} />
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
   Loader2,
@@ -9,18 +9,16 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import {
-  categories,
   platforms,
-  services,
-  getCategoriesByPlatform,
-  getServicesByCategory,
   formatRupiah,
   getServiceFullName,
   allPlatformsId,
-  type Category,
   type Service,
   type Platform,
 } from "@/lib/dashboard-data";
+import type { CategoryRow, ServiceRow } from "@/lib/services-types";
+import { fetchServices, isAbort, rowToService, useCategories } from "@/lib/services-client";
+import { formatMaxQty, formatQtyRange } from "@/lib/service-format";
 import { createOrder } from "@/lib/dashboard-actions";
 import { ImpliedAcceptanceNote } from "./order-rules-card";
 import { isValidLink } from "@/lib/validation";
@@ -30,7 +28,7 @@ import { FormAlert, type AlertState } from "@/components/shared/form-alert";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/provider";
 
-function platformForCategory(category: Category | null): Platform | undefined {
+function platformForCategory(category: CategoryRow | null): Platform | undefined {
   if (!category) return undefined;
   return platforms.find((p) => p.id === category.platformId);
 }
@@ -52,7 +50,7 @@ function ServiceLabel({ service }: { service: Service }) {
   );
 }
 
-function CategoryLabel({ category }: { category: Category }) {
+function CategoryLabel({ category }: { category: CategoryRow }) {
   const platform = platformForCategory(category);
   return (
     <span className="flex items-center gap-2">
@@ -76,34 +74,40 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "massal", label: "Order Massal" },
 ];
 
+const OPTIONS_LIMIT = 100;
+
 export function OrderForm({
   platformFilter,
   preselectService,
+  preselectCategory,
+  hasServices,
   onServiceChange,
 }: {
   platformFilter: string;
   preselectService?: Service;
+  preselectCategory?: CategoryRow | null;
+  /** Computed on the server: whether any service exists at all (avoids flashing an empty state while categories load). */
+  hasServices: boolean;
   onServiceChange: (service: Service | null, platform: Platform | undefined) => void;
 }) {
   const { t: tx } = useLanguage();
   const [tab, setTab] = useState<Tab>("baru");
-  const [category, setCategory] = useState<Category | null>(() => {
-    if (preselectService) {
-      return categories.find((c) => c.id === preselectService.categoryId) ?? null;
-    }
-    return getCategoriesByPlatform(platformFilter)[0] ?? null;
-  });
-  const [service, setService] = useState<Service | null>(() => {
-    if (preselectService) return preselectService;
-    const firstCategory = getCategoriesByPlatform(platformFilter)[0];
-    return firstCategory ? getServicesByCategory(firstCategory.id)[0] ?? null : null;
-  });
+  const catalog = useCategories();
+  const [category, setCategory] = useState<CategoryRow | null>(preselectCategory ?? null);
+  const [service, setService] = useState<Service | null>(preselectService ?? null);
+  // Until the user picks something, the first category and its first service are selected (once they have loaded).
+  const autoPick = useRef(!preselectService);
+  const [serviceOptions, setServiceOptions] = useState<Service[]>([]);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [optionsSearch, setOptionsSearch] = useState("");
   const [link, setLink] = useState("");
   const [quantity, setQuantity] = useState("");
   const [errors, setErrors] = useState<{ link?: string; quantity?: string }>({});
   const [submitting, setSubmitting] = useState(false);
   const [alert, setAlert] = useState<AlertState>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ServiceRow[]>([]);
+  const [searching, setSearching] = useState(false);
 
   const linkId = useId();
   const quantityId = useId();
@@ -111,17 +115,45 @@ export function OrderForm({
   const quantityErrorId = useId();
 
   const categoryOptions = useMemo(
-    () => getCategoriesByPlatform(platformFilter),
-    [platformFilter]
-  );
-  const serviceOptions = useMemo(
-    () => (category ? getServicesByCategory(category.id) : []),
-    [category]
+    () => (platformFilter === allPlatformsId ? catalog.categories : catalog.categories.filter((c) => c.platformId === platformFilter)),
+    [platformFilter, catalog.categories]
   );
 
+  // First category of the platform, once the category list has arrived.
   useEffect(() => {
-    onServiceChange(service, platformForCategory(category));
-    // Notify the parent of the default pre-selected service once on mount.
+    if (!autoPick.current || category || categoryOptions.length === 0) return;
+    setCategory(categoryOptions[0]);
+  }, [categoryOptions, category]);
+
+  // Services of the selected category only, fetched on demand (and again, server side, when the dropdown search changes).
+  const categoryId = category?.id;
+  useEffect(() => {
+    if (!categoryId) return;
+    const ctrl = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOptionsLoading(true);
+    fetchServices({ category: categoryId, search: optionsSearch || undefined, sort: "id-asc", limit: OPTIONS_LIMIT }, ctrl.signal)
+      .then((page) => {
+        const list = page.items.map(rowToService);
+        setServiceOptions(list);
+        setOptionsLoading(false);
+        if (autoPick.current && list[0]) {
+          autoPick.current = false;
+          setService(list[0]);
+          onServiceChange(list[0], platformForCategory(category));
+        }
+      })
+      .catch((e) => {
+        if (!isAbort(e)) setOptionsLoading(false);
+      });
+    return () => ctrl.abort();
+    // onServiceChange and category (read only for its platform) are intentionally not dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryId, optionsSearch]);
+
+  useEffect(() => {
+    if (service) onServiceChange(service, platformForCategory(category));
+    // Notify the parent of the pre-selected service once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -138,8 +170,11 @@ export function OrderForm({
     }
   }
 
-  function handleCategoryChange(next: Category) {
+  function handleCategoryChange(next: CategoryRow) {
+    autoPick.current = false;
     setCategory(next);
+    setServiceOptions([]);
+    setOptionsSearch("");
     setService(null);
     onServiceChange(null, platformForCategory(next));
   }
@@ -151,9 +186,13 @@ export function OrderForm({
     onServiceChange(next, platformForCategory(category));
   }
 
-  function selectServiceFromSearch(next: Service) {
-    const cat = categories.find((c) => c.id === next.categoryId) ?? null;
+  function selectServiceFromSearch(row: ServiceRow) {
+    const next = rowToService(row);
+    const cat = catalog.categories.find((c) => c.id === next.categoryId) ?? null;
+    autoPick.current = false;
     setCategory(cat);
+    setServiceOptions([]);
+    setOptionsSearch("");
     setService(next);
     setQuantity("");
     setErrors({});
@@ -180,7 +219,7 @@ export function OrderForm({
     } else if (!quantity || !Number.isFinite(quantityNumber) || quantityNumber <= 0) {
       next.quantity = "Jumlah wajib diisi.";
     } else if (quantityNumber < service.min || quantityNumber > service.max) {
-      next.quantity = `Jumlah harus antara ${service.min.toLocaleString("id-ID")} - ${service.max.toLocaleString("id-ID")}.`;
+      next.quantity = `Jumlah harus antara ${formatQtyRange(service.min, service.max)}.`;
     }
 
     setErrors(next);
@@ -213,21 +252,35 @@ export function OrderForm({
     }
   }
 
-  const searchResults = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return [];
-    const pool =
-      platformFilter === allPlatformsId
-        ? services
-        : services.filter((s) => {
-            const cat = categories.find((c) => c.id === s.categoryId);
-            return cat?.platformId === platformFilter;
-          });
-    return pool.filter((s) => s.name.toLowerCase().includes(query)).slice(0, 20);
-  }, [searchQuery, platformFilter]);
+  // "Cari" tab: server-side search, debounced 300 ms, stale requests cancelled, at least 2 characters.
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (tab !== "cari" || query.length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      fetchServices({ search: query, platform: platformFilter, sort: "id-asc", limit: 20 }, ctrl.signal)
+        .then((page) => {
+          setSearchResults(page.items);
+          setSearching(false);
+        })
+        .catch((e) => {
+          if (!isAbort(e)) setSearching(false);
+        });
+    }, 300);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [searchQuery, platformFilter, tab]);
 
   // No service at all (for example live mode before the first provider sync): say so instead of an empty dropdown.
-  if (services.length === 0) {
+  if (!hasServices && catalog.loaded && catalog.total === 0) {
     return (
       <div className="rounded-[20px] border border-slate-200/80 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center gap-2.5">
@@ -288,6 +341,9 @@ export function OrderForm({
             value={category}
             onChange={handleCategoryChange}
             getKey={(c) => c.id}
+            searchable
+            getSearchText={(c) => c.label}
+            loading={!catalog.loaded}
             placeholder={tx("order.pickCategory")}
             renderValue={(c) => <CategoryLabel category={c} />}
             renderOption={(c) => <CategoryLabel category={c} />}
@@ -299,6 +355,9 @@ export function OrderForm({
             value={service}
             onChange={handleServiceChange}
             getKey={(s) => s.id}
+            searchable
+            onSearch={setOptionsSearch}
+            loading={optionsLoading}
             placeholder={category ? "Pilih layanan" : "Pilih kategori terlebih dahulu"}
             disabled={!category}
             renderValue={(s) => <ServiceLabel service={s} />}
@@ -365,7 +424,7 @@ export function OrderForm({
             ) : (
               <p className="mt-1.5 text-[9.5px] text-slate-400">
                 {service
-                  ? `Min: ${service.min.toLocaleString("id-ID")} - Maks: ${service.max.toLocaleString("id-ID")}`
+                  ? `Min: ${service.min.toLocaleString("id-ID")} - Maks: ${formatMaxQty(service.max)}`
                   : "Pilih layanan untuk melihat batas jumlah"}
               </p>
             )}
@@ -418,9 +477,17 @@ export function OrderForm({
           </div>
 
           <ul className="mt-3 max-h-80 space-y-1.5 overflow-y-auto">
-            {searchQuery.trim() && searchResults.length === 0 ? (
+            {searchQuery.trim().length >= 2 && searching && searchResults.length === 0 ? (
+              <li role="status" className="px-2 py-6 text-center text-[10.5px] text-slate-400">
+                Mencari...
+              </li>
+            ) : searchQuery.trim().length >= 2 && searchResults.length === 0 ? (
               <li className="px-2 py-6 text-center text-[10.5px] text-slate-400">
                 Layanan tidak ditemukan.
+              </li>
+            ) : searchQuery.trim().length < 2 && searchQuery.trim() ? (
+              <li className="px-2 py-6 text-center text-[10.5px] text-slate-400">
+                Ketik minimal 2 karakter.
               </li>
             ) : (
               searchResults.map((s) => (
@@ -434,7 +501,7 @@ export function OrderForm({
                       {s.id}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-ink dark:text-slate-200">
-                      {getServiceFullName(s)}
+                      {getServiceFullName(rowToService(s))}
                     </span>
                   </button>
                 </li>

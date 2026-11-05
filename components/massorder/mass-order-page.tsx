@@ -4,10 +4,9 @@ import { ListChecks } from "lucide-react";
 import { HeaderLine, HeaderZone } from "@/components/shell/header-zone";
 import { PageHeading } from "@/components/shell/page-heading";
 import { MassOrderForm } from "./mass-order-form";
-import { services } from "@/lib/dashboard-data";
 import { useLanguage } from "@/lib/i18n/provider";
 
-export function MassOrderPage() {
+export function MassOrderPage({ hasServices }: { hasServices: boolean }) {
   const { t } = useLanguage();
   return (
     <div>
@@ -34,7 +33,7 @@ export function MassOrderPage() {
             </h2>
           </div>
           <div className="mt-5">
-            {services.length === 0 ? (
+            {!hasServices ? (
               <div role="status" className="rounded-2xl border border-dashed border-primary-200 bg-primary-50/40 px-6 py-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
                 <p className="text-[11px] font-semibold text-ink dark:text-slate-200">{t("order.noServices")}</p>
                 <p className="mt-1 text-[10px] text-[#5B6B8C] dark:text-slate-400">{t("order.noServicesHint")}</p>
