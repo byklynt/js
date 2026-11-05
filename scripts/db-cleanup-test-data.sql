@@ -6,6 +6,8 @@ alter table public.audit_logs disable trigger audit_logs_no_change;
 
 create temp table zt_users on commit drop as select id from auth.users where email like '%@jagoansosmed-test.invalid';
 
+create temp table zt_refunds on commit drop as select id::text as id from public.refunds where user_id in (select id from zt_users);
+delete from public.audit_logs where target_type = 'refund' and target_id in (select id from zt_refunds);
 delete from public.refunds where user_id in (select id from zt_users);
 delete from public.refill_requests where user_id in (select id from zt_users);
 delete from public.cancel_requests where user_id in (select id from zt_users);
