@@ -5,7 +5,7 @@
 //   NEXT_PUBLIC_SUPABASE_URL          must be exactly https://PROJECT_REF.supabase.co
 //   SUPABASE_SECRET_KEY               (or SUPABASE_SERVICE_ROLE_KEY) the service role / secret key of THAT project
 //   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (or ..._ANON_KEY)   optional: enables the live "anon cannot read" probe
-// It calls public.prod_verify() (migration 28) and public.prod_verify_blog() (migration 34), service role only, and, with the anon key, probes every table
+// It calls public.prod_verify() (migration 28), public.prod_verify_blog() (34) and public.prod_verify_payments() (37), service role only, and, with the anon key, probes every table
 // over REST. The ONLY public data are the published blog posts (and the categories / tags / links of those posts): everything else must stay closed.
 // It writes nothing.
 // Prints a pass/fail table and exits 1 when anything fails.
@@ -130,6 +130,37 @@ if (blog) {
   const badWrites = writes.filter((p) => !(p.roles.length === 1 && p.roles[0] === "authenticated" && p.admin));
   add("Tulis ke blog-images hanya untuk admin (insert / update / delete)", ["INSERT", "UPDATE", "DELETE"].every((c) => writes.some((p) => p.cmd === c)) && badWrites.length === 0,
     badWrites.length ? `policy tulis yang tidak dibatasi admin: ${badWrites.map((p) => p.name).join(", ")}` : `${writes.length} policy tulis, semuanya admin`);
+}
+
+// --- payments (Paymenku): columns, the credit functions (server only), no credited SANDBOX deposit, and the key / secret mode of THIS session ---
+let pay = null;
+if (report) {
+  try {
+    const res = await rest("/rest/v1/rpc/prod_verify_payments", serviceKey, { method: "POST", body: "{}" });
+    if (res.ok) pay = await res.json();
+    else add("Fungsi prod_verify_payments() bisa dipanggil", false, `HTTP ${res.status}: migrasi 36 / 37 (Paymenku) belum diterapkan`);
+  } catch (e) {
+    add("Fungsi prod_verify_payments() bisa dipanggil", false, e instanceof Error ? e.message : String(e));
+  }
+}
+if (pay) {
+  const need = ["gateway", "channel_code", "pay_amount", "fee_amount", "pay_url", "payment_info", "gateway_status", "expires_at", "paid_at", "is_sandbox", "needs_review", "review_reason"];
+  const missing = need.filter((c) => !pay.columns.includes(c));
+  add("Kolom Paymenku ada di tabel deposits", missing.length === 0, missing.length ? `tidak ada: ${missing.join(", ")}` : `${need.length} kolom`);
+  add("deposits.status mengizinkan 'dibatalkan' dan external_id (trx_id) UNIK", pay.statusAllowsCancelled && pay.externalIdUnique, `status: ${pay.statusAllowsCancelled ? "ok" : "BELUM"}; trx_id unik: ${pay.externalIdUnique ? "ok" : "BELUM"}`);
+  const fns = ["paymenku_settle_deposit", "paymenku_mark_deposit", "credit_deposit"];
+  const bad = fns.filter((n) => !pay.functions[n] || pay.functions[n].anon || pay.functions[n].authenticated || !pay.functions[n].service);
+  add("Fungsi kredit deposit hanya bisa dijalankan service role (bukan anon / pengguna)", bad.length === 0, bad.length ? `bermasalah: ${bad.join(", ")}` : fns.join(", "));
+  if (!isDev) add("Tidak ada deposit SANDBOX yang sudah dikreditkan", pay.sandboxCredited === 0, pay.sandboxCredited ? `${pay.sandboxCredited} deposit sandbox berstatus berhasil: periksa ledger!` : "tidak ada");
+  add("Deposit yang perlu dicek admin", pay.needsReview === 0, pay.needsReview ? `${pay.needsReview} deposit bertanda Perlu dicek (admin > Deposit > Perlu dicek)` : "tidak ada");
+  // the API key and the webhook secret of THIS session (never printed): a live key only with the matching approval, never a sandbox key on production
+  const key = process.env.PAYMENKU_API_KEY ?? "";
+  if (key) {
+    const live = key.startsWith("sk_live_");
+    const approved = (process.env.PAYMENT_LIVE_APPROVED_REF ?? "") === ref;
+    add("Kunci Paymenku di session sesuai project", isDev ? key.startsWith("sk_test_") : live && approved, isDev ? (key.startsWith("sk_test_") ? "sandbox di DEV" : "DEV hanya boleh kunci sandbox") : live ? (approved ? "live, PAYMENT_LIVE_APPROVED_REF cocok" : "live tetapi PAYMENT_LIVE_APPROVED_REF tidak sama dengan ref project") : "kunci sandbox di production: gateway akan mati");
+    add("PAYMENKU_WEBHOOK_SECRET terisi di session", Boolean(process.env.PAYMENKU_WEBHOOK_SECRET), process.env.PAYMENKU_WEBHOOK_SECRET ? "terisi (isinya tidak ditampilkan)" : "kosong: webhook akan ditolak");
+  }
 }
 
 const w = Math.max(...rows.map((r) => r.name.length));
