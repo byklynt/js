@@ -9,6 +9,7 @@ import {
   List,
   LogOut,
   Megaphone,
+  Newspaper,
   ReceiptText,
   RefreshCcw,
   ScrollText,
@@ -135,6 +136,7 @@ export const adminNav: NavItem[] = [
   { label: "Tiket", labelKey: "nav.tiket", href: "/admin/tickets", icon: Headset, group: "Keuangan dan dukungan", badgeKey: "tickets" },
 
   { label: "Pengumuman", labelKey: "nav.pengumuman", href: "/admin/announcements", icon: Megaphone, group: "Konten" },
+  { label: "Blog", labelKey: "nav.blog", href: "/admin/blog", icon: Newspaper, group: "Konten" },
   { label: "Log Aktivitas", labelKey: "nav.log_aktivitas", href: "/admin/logs", icon: ScrollText, group: "Konten" },
 
   { label: "Pengaturan Situs", labelKey: "nav.pengaturan_situs", href: "/admin/settings", icon: Settings, group: "Sistem" },
@@ -155,6 +157,9 @@ export const adminBreadcrumbs: Record<string, Crumb> = {
   "/admin/notifications": { label: "Notifikasi", subtitle: "Semua pemberitahuan operasional", labelKey: "page.notifications", subtitleKey: "notif.page.subtitleAdmin" },
   "/admin/tickets": { label: "Tiket", subtitle: "Balas dan kelola tiket bantuan", labelKey: "crumb.tiket", subtitleKey: "crumbsub.balas_dan_kelola_tiket_bantuan" },
   "/admin/announcements": { label: "Pengumuman", subtitle: "Atur pengumuman untuk pengguna", labelKey: "crumb.pengumuman", subtitleKey: "crumbsub.atur_pengumuman_untuk_pengguna" },
+  "/admin/blog": { label: "Blog", subtitle: "Tulis dan kelola artikel blog", labelKey: "crumb.blog", subtitleKey: "crumbsub.tulis_dan_kelola_artikel_blog" },
+  "/admin/blog/new": { label: "Artikel Baru", subtitle: "Tulis artikel baru untuk blog", labelKey: "crumb.artikel_baru", subtitleKey: "crumbsub.tulis_artikel_baru_untuk_blog", parents: ["Blog"] },
+  "/admin/blog/[id]": { label: "Ubah Artikel", subtitle: "Ubah, terbitkan, atau jadwalkan artikel", labelKey: "crumb.ubah_artikel", subtitleKey: "crumbsub.ubah_terbitkan_atau_jadwalkan_artikel", parents: ["Blog"] },
   "/admin/logs": { label: "Log Aktivitas", subtitle: "Jejak audit semua tindakan admin", labelKey: "crumb.log_aktivitas", subtitleKey: "crumbsub.jejak_audit_semua_tindakan_admin" },
   "/admin/settings": { label: "Pengaturan Situs", subtitle: "Konfigurasi situs dan keamanan admin", labelKey: "crumb.pengaturan_situs", subtitleKey: "crumbsub.konfigurasi_situs_dan_keamanan_admin" },
   "/admin/settings/payments": { label: "Pengaturan Situs", subtitle: "Konfigurasi situs dan keamanan admin", labelKey: "crumb.pengaturan_situs", subtitleKey: "crumbsub.konfigurasi_situs_dan_keamanan_admin" },

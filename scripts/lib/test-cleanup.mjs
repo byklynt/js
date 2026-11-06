@@ -55,7 +55,7 @@ export async function cleanupTestData({ marker = null, env = process.env, retrie
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const { data, error } = await sb.rpc("test_cleanup", marker ? { p_marker: marker } : {});
-      if (!error) return data ?? {};
+      if (!error) return { ...(data ?? {}), ...(await removeTestImages(sb, marker)) };
       lastError = `${error.message}${error.hint ? ` (${error.hint})` : ""}`;
       if (error.hint === "disabled" || error.hint === "bad_marker") break; // not transient
     } catch (err) {
@@ -64,6 +64,23 @@ export async function cleanupTestData({ marker = null, env = process.env, retrie
     if (attempt < retries) await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
   }
   throw new CleanupError(`test_cleanup gagal: ${lastError}`);
+}
+
+/**
+ * Test images in the public "blog-images" bucket (names zt-...): SQL cannot delete storage objects, the Storage API can. Only objects whose name
+ * starts with zt- (and zt-<marker> when a marker is given) are removed. Throws nothing: a failed removal is reported as a count of 0.
+ */
+async function removeTestImages(sb, marker) {
+  try {
+    const { data } = await sb.storage.from("blog-images").list("", { limit: 1000, search: "zt-" });
+    const prefix = marker ? `zt-${marker}` : "zt-";
+    const names = (data ?? []).map((o) => o.name).filter((n) => n.startsWith(prefix));
+    if (!names.length) return {};
+    const { data: removed } = await sb.storage.from("blog-images").remove(names);
+    return { blog_images: removed?.length ?? 0 };
+  } catch {
+    return {};
+  }
 }
 
 /** "services=5005, auth_users=21" (only the tables that had rows) or "tidak ada yang dihapus". */
