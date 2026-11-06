@@ -49,7 +49,7 @@ export function DataTable<T>({
 
   return (
     <>
-      <div className="thin-scroll relative hidden max-h-[calc(100vh-240px)] overflow-auto rounded-2xl border border-slate-200/70 bg-white md:block dark:border-slate-800 dark:bg-slate-900">
+      <div className="thin-scroll relative hidden max-h-[calc(var(--app-h)-240px)] overflow-auto rounded-2xl border border-slate-200/70 bg-white md:block dark:border-slate-800 dark:bg-slate-900">
         <table aria-label={ariaLabel} className="w-full border-collapse text-left">
           <thead>
             <tr>

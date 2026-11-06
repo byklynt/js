@@ -13,6 +13,10 @@ const jakarta = Plus_Jakarta_Sans({
 
 /** Browser chrome color (address bar on mobile): the brand blue. */
 export const viewport: Viewport = {
+  // viewport-fit=cover lets the pages use the iPhone safe areas (env(safe-area-inset-*)); user zoom stays enabled (no maximum-scale)
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: brandColors.light },
     { media: "(prefers-color-scheme: dark)", color: brandColors.dark },

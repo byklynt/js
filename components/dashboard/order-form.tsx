@@ -400,6 +400,10 @@ export function OrderForm({
             <input
               id={linkId}
               type="text"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               value={link}
               onChange={(e) => setLink(e.target.value)}
               placeholder="Tempel link postingan atau profil"

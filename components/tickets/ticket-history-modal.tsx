@@ -63,7 +63,7 @@ export function TicketHistoryModal({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="flex max-h-[calc(100vh-16px)] min-h-[min(560px,calc(100vh-16px))] w-full max-w-[520px] flex-col overflow-hidden rounded-3xl bg-white shadow-2xl outline-none dark:border dark:border-slate-800 dark:bg-slate-900"
+              className="flex max-h-[calc(var(--app-h)-16px)] min-h-[min(560px,calc(var(--app-h)-16px))] w-full max-w-[520px] flex-col overflow-hidden rounded-3xl bg-white shadow-2xl outline-none dark:border dark:border-slate-800 dark:bg-slate-900"
             >
               <div className="flex items-center justify-between gap-3 px-5 py-4">
                 <div className="flex min-w-0 items-center gap-3">

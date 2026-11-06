@@ -50,11 +50,15 @@ export function useDialogA11y<T extends HTMLElement>(open: boolean, onClose: () 
     }
 
     document.addEventListener("keydown", handleKeyDown);
+    // iOS Safari needs the lock on <html> as well as <body>, otherwise the page behind still scrolls under the finger
     const previousOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
       previouslyFocused?.focus();
     };
   }, [open]);

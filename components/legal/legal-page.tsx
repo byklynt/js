@@ -5,7 +5,7 @@ import { Logo } from "@/components/shared/logo";
 /** Plain, theme-aware shell for the public pages (terms, refund policy, status, maintenance). */
 export function LegalPage({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-200">
+    <div className="min-h-[var(--app-h)] bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-200">
       <header className="border-b border-primary-100 px-4 py-4 dark:border-slate-800">
         <div className="mx-auto flex max-w-3xl items-center justify-between">
           <Logo />

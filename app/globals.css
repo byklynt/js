@@ -338,3 +338,53 @@ html.dark:has(.dash)::-webkit-scrollbar-thumb {
   .dep-pop { animation: dep-pop 0.5s ease-out both; }
   .dep-check-path { stroke-dasharray: 30; stroke-dashoffset: 30; animation: dep-draw 0.5s 0.25s ease-out forwards; }
 }
+
+/* =====================================================================================================================
+   Mobile QA (phones and tablets). Desktop with a mouse is untouched: everything below is limited to touch input.
+   ===================================================================================================================== */
+:root { --app-h: 100vh; }
+@supports (height: 100dvh) { :root { --app-h: 100dvh; } }   /* the iOS Safari address bar must not cut full-height pages */
+
+html {
+  -webkit-text-size-adjust: 100%;   /* iOS must not inflate text in landscape */
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: rgb(0 112 255 / 0.12); /* intentional: a soft brand tint on tap instead of the grey default */
+}
+
+/* iOS Safari zooms into any field whose text is smaller than 16px: on touch devices every text field is 16px (and a comfortable 40px tall).
+   Unlayered on purpose: it must win over the text-[10px] / text-[11px] utilities. */
+@media (hover: none) and (pointer: coarse) {
+  input:is(:not([type]), [type="text"], [type="email"], [type="password"], [type="search"], [type="tel"], [type="url"], [type="number"], [type="date"], [type="datetime-local"], [type="time"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  input:is(:not([type]), [type="text"], [type="email"], [type="password"], [type="search"], [type="tel"], [type="url"], [type="number"], [type="date"], [type="datetime-local"], [type="time"]),
+  select {
+    min-height: 40px;
+  }
+}
+
+/* Small controls keep their look but get a 44px touch area (an invisible ::after centred on the control). Lower layer than the utilities. */
+@layer base {
+  @media (pointer: coarse) {
+    :where(button, [role="button"], [role="tab"], [role="switch"], [role="menuitem"], [role="radio"], summary, nav a, footer a, header a, aside a, li > a, a.flex, a.inline-flex, a[class*="h-"]):not([data-no-tap-area]) {
+      position: relative;
+    }
+    :where(button, [role="button"], [role="tab"], [role="switch"], [role="menuitem"], [role="radio"], summary, nav a, footer a, header a, aside a, li > a, a.flex, a.inline-flex, a[class*="h-"]):not([data-no-tap-area])::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+  }
+}
+
+/* viewport-fit=cover (app/layout.tsx) lets pages reach under the iPhone notch in landscape: keep the content out of it. Zero everywhere else. */
+body {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}

@@ -21,7 +21,7 @@ export function AuthShell({
   backHref?: string;
 }) {
   return (
-    <div className="flex min-h-screen w-full bg-white dark:bg-slate-950">
+    <div className="flex min-h-[var(--app-h)] w-full bg-white dark:bg-slate-950">
       <div className="relative flex w-full flex-col lg:w-1/2 lg:border-r lg:border-primary-100 lg:dark:border-slate-800">
         <Link
           href={backHref}

@@ -358,7 +358,7 @@ export function DepositPay({ initial }: { initial: DepositView }) {
                   ) : null}
 
                   {payLink && (kind === "wallet" || kind === "other" || kind === "store") ? (
-                    <div className="sticky bottom-3 z-20 sm:static">
+                    <div className="sticky bottom-[max(12px,env(safe-area-inset-bottom))] z-20 sm:static">
                       <a href={payLink} target="_blank" rel="noopener noreferrer" className={primary}>
                         <ExternalLink className="h-3.5 w-3.5" aria-hidden /> Bayar sekarang
                       </a>

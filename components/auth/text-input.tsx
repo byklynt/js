@@ -43,6 +43,10 @@ export function TextInput({
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           autoComplete={autoComplete}
+          autoCapitalize={autoComplete === "username" || type === "email" ? "none" : undefined}
+          autoCorrect={autoComplete === "username" || type === "email" ? "off" : undefined}
+          spellCheck={autoComplete === "username" || type === "email" ? false : undefined}
+          inputMode={type === "email" ? "email" : undefined}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? errorId : undefined}
           className={cn(

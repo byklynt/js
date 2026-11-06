@@ -419,7 +419,7 @@ export function ServicesView({ initial, meta, providers, minMargin = 5, reviewTh
           role="region"
           aria-label="Aksi layanan terpilih"
           data-testid="bulk-bar"
-          className="sticky bottom-4 z-20 mx-auto mt-5 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-2xl border border-slate-200/70 bg-white p-2 pl-4 shadow-lg dark:border-slate-700 dark:bg-slate-900"
+          className="sticky bottom-[max(16px,env(safe-area-inset-bottom))] z-20 mx-auto mt-5 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-2xl border border-slate-200/70 bg-white p-2 pl-4 shadow-lg dark:border-slate-700 dark:bg-slate-900"
         >
           <span data-testid="bulk-count" className="text-[10.5px] font-semibold text-ink dark:text-white">
             {selectedCount.toLocaleString("id-ID")} layanan terpilih

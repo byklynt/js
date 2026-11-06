@@ -15,7 +15,7 @@ export function SelectionBar({
     <div
       role="region"
       aria-label="Aksi item terpilih"
-      className="sticky bottom-4 z-20 mx-auto mt-5 flex w-fit items-center gap-3 rounded-full border border-slate-200/70 bg-white py-2 pr-2 pl-4 shadow-lg dark:border-slate-700 dark:bg-slate-900"
+      className="sticky bottom-[max(16px,env(safe-area-inset-bottom))] z-20 mx-auto mt-5 flex w-fit items-center gap-3 rounded-full border border-slate-200/70 bg-white py-2 pr-2 pl-4 shadow-lg dark:border-slate-700 dark:bg-slate-900"
     >
       <span className="text-[10.5px] font-semibold text-ink dark:text-white">{count} dipilih</span>
       <button

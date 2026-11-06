@@ -25,7 +25,7 @@ export function SettingsShell({
   const { username, email } = useDashboardUser();
 
   return (
-    <div className="-mx-4 -mt-6 -mb-10 flex min-h-[calc(100vh-67px)] flex-col sm:-mx-6 md:flex-row lg:-mx-[53px] lg:-mt-[60px]">
+    <div className="-mx-4 -mt-6 -mb-10 flex min-h-[calc(var(--app-h)-67px)] flex-col sm:-mx-6 md:flex-row lg:-mx-[53px] lg:-mt-[60px]">
       <aside className="shrink-0 border-b border-slate-200/70 bg-white p-4 md:w-[215px] md:border-r md:border-b-0 md:p-5 dark:border-slate-800 dark:bg-slate-950">
         <div className="flex items-center gap-3 md:flex-col md:items-start md:gap-0">
           <div aria-hidden className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary-soft text-[22px] font-semibold text-primary-accent">

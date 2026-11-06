@@ -19,9 +19,9 @@ function RevenuePill({ value }: { value: number }) {
   return (
     <div
       title="Pendapatan hari ini"
-      className="flex h-11 items-center gap-2.5 rounded-full border border-slate-200/70 bg-white py-1.5 pr-3.5 pl-1.5 dark:border-primary-border dark:bg-[#0F2038]"
+      className="flex h-11 items-center gap-2.5 rounded-full border border-slate-200/70 bg-white py-1.5 pr-3.5 pl-1.5 max-[380px]:pl-3.5 dark:border-primary-border dark:bg-[#0F2038]"
     >
-      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-soft text-primary-accent">
+      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-soft text-primary-accent max-[380px]:hidden">
         <Wallet className="h-4 w-4" aria-hidden />
       </span>
       <span className="leading-tight">

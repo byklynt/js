@@ -92,13 +92,13 @@ export function CurrencyPill() {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="flex h-10 items-center gap-2 rounded-full border border-slate-200/70 bg-white py-1 pr-3 pl-1 shadow-none transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-primary-border dark:bg-[#0F1822] dark:hover:bg-[#142130] text-[12px] font-semibold text-ink dark:text-white"
+        className="flex h-10 items-center gap-1.5 rounded-full border border-slate-200/70 bg-white py-1 pr-2 pl-1 max-[380px]:pl-3 sm:gap-2 sm:pr-3 shadow-none transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-primary-border dark:bg-[#0F1822] dark:hover:bg-[#142130] text-[12px] font-semibold text-ink dark:text-white"
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-soft text-[11px] font-semibold text-primary-accent">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-soft text-[11px] font-semibold text-primary-accent max-[380px]:hidden">
           Rp
         </span>
         {formatBalance(balance)}
-        <ChevronDown className="h-3.5 w-3.5 stroke-[1.75] text-[#8FA1B5]" />
+        <ChevronDown className="h-3.5 w-3.5 stroke-[1.75] text-[#8FA1B5] max-[380px]:hidden" />
       </button>
       {open ? (
         <div className="absolute right-0 z-30 mt-2 w-40 rounded-xl border border-primary-100 bg-white p-1.5 text-[9.5px] shadow-xl dark:border-slate-700 dark:bg-slate-900">
@@ -143,7 +143,7 @@ export function Topbar({
 
   return (
     <header className="sticky top-0 z-20 h-[67px] border-b border-slate-200/70 bg-white/80 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/80">
-      <div className="flex h-[67px] items-center justify-between gap-3 px-4 lg:px-6">
+      <div className="flex h-[67px] items-center justify-between gap-2 px-3 sm:gap-3 sm:px-4 lg:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
@@ -173,7 +173,7 @@ export function Topbar({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-3">
           <ThemeTogglePill />
           {bell}
           <LanguageSwitcher />

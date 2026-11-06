@@ -8,6 +8,7 @@ import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { Logo } from "@/components/shared/logo";
 import type { NavItem } from "@/lib/nav-config";
 import { cn } from "@/lib/utils";
+import { useDialogA11y } from "@/lib/use-dialog-a11y";
 import { useLanguage } from "@/lib/i18n/provider";
 import { slugOf } from "@/lib/i18n";
 
@@ -216,6 +217,8 @@ export function Sidebar({
   onCloseMobile,
   ...props
 }: SidebarProps & { mobileOpen: boolean; onCloseMobile: () => void }) {
+  // the phone menu is a modal: focus trap, Escape, and the page behind stops scrolling
+  const drawerRef = useDialogA11y<HTMLElement>(mobileOpen, onCloseMobile);
   return (
     <>
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[182px] shrink-0 box-border overflow-hidden border-r border-slate-200/70 bg-white dark:border-slate-800 dark:bg-slate-950 lg:flex lg:flex-col">
@@ -238,11 +241,16 @@ export function Sidebar({
       <AnimatePresence>
         {mobileOpen ? (
           <motion.aside
+            ref={drawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu navigasi"
+            tabIndex={-1}
             initial={{ x: "-100%" }}
             animate={{ x: 0 }}
             exit={{ x: "-100%" }}
             transition={{ duration: 0.25, ease: "easeOut" }}
-            className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-950 lg:hidden"
+            className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col overflow-hidden bg-white pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] shadow-2xl outline-none dark:bg-slate-950 lg:hidden"
           >
             <div className="flex shrink-0 items-center justify-end px-4 pt-4">
               <button

@@ -33,7 +33,7 @@ async function PanelGate({ children }: { children: React.ReactNode }) {
 
 function PanelFallback() {
   return (
-    <div aria-busy="true" className="min-h-screen bg-white dark:bg-slate-950">
+    <div aria-busy="true" className="min-h-[var(--app-h)] bg-white dark:bg-slate-950">
       <div className="mx-auto max-w-[1100px] space-y-4 px-6 pt-24">
         <div className="animate-shimmer h-8 w-48 rounded-md" />
         <div className="animate-shimmer h-4 w-72 rounded-md" />

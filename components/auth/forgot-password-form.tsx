@@ -35,7 +35,7 @@ export function ForgotPasswordForm() {
       <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Masukkan email akunmu. Kami kirim link untuk mengatur ulang password.</p>
       <form noValidate onSubmit={handleSubmit} className="mt-7 space-y-4">
         <FormAlert state={alert} />
-        <TextInput label="Email" value={email} onChange={setEmail} placeholder="nama@email.com" error={error} autoComplete="email" icon={Mail} />
+        <TextInput label="Email" value={email} onChange={setEmail} placeholder="nama@email.com" error={error} type="email" autoComplete="email" icon={Mail} />
         <button type="submit" disabled={submitting} className="relative flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-primary-400 to-primary-600 py-3 text-sm font-semibold text-white shadow-lg shadow-primary-500/30 ring-1 ring-white/40 ring-inset transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-80">
           {submitting ? <><Loader2 className="h-4 w-4 animate-spin" />Mengirim...</> : "Kirim link"}
         </button>

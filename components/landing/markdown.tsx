@@ -55,8 +55,8 @@ function inline(text: string, keyBase: string): ReactNode[] {
       const lm = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(t)!;
       const href = safeHref(lm[2]);
       if (!href) out.push(lm[1]);
-      else if (isExternal(href)) out.push(<a key={key} href={href} rel="nofollow noopener noreferrer" target="_blank" className="text-primary-600 underline dark:text-primary-300">{lm[1]}</a>);
-      else out.push(<Link key={key} href={href} className="text-primary-600 underline dark:text-primary-300">{lm[1]}</Link>);
+      else if (isExternal(href)) out.push(<a key={key} href={href} rel="nofollow noopener noreferrer" target="_blank" className="text-primary-600 underline [overflow-wrap:anywhere] dark:text-primary-300">{lm[1]}</a>);
+      else out.push(<Link key={key} href={href} className="text-primary-600 underline [overflow-wrap:anywhere] dark:text-primary-300">{lm[1]}</Link>);
     } else out.push(<em key={key}>{t.slice(1, -1)}</em>);
     last = idx + t.length;
   }

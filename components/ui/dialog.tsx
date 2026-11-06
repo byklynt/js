@@ -52,7 +52,7 @@ export function Dialog({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.98 }}
               transition={{ duration: 0.18 }}
-              className={`max-h-[calc(100vh-32px)] w-full ${maxWidth} overflow-y-auto rounded-2xl border border-slate-200/70 bg-white p-5 shadow-xl outline-none dark:border-slate-700 dark:bg-slate-900`}
+              className={`max-h-[calc(var(--app-h)-32px)] w-full ${maxWidth} overflow-y-auto overscroll-contain rounded-2xl border border-slate-200/70 bg-white p-5 shadow-xl outline-none dark:border-slate-700 dark:bg-slate-900`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div>

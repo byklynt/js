@@ -67,7 +67,7 @@ export function contactRows() {
 export function LegalLayout({ doc }: { doc: LegalDoc }) {
   const toc = [...doc.sections.map((s, i) => ({ id: s.id, label: `${i + 1}. ${s.heading}` })), { id: "hubungi-kami", label: "Hubungi kami" }];
   return (
-    <div className="min-h-screen bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-200">
+    <div className="min-h-[var(--app-h)] bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-200">
       <header className="border-b border-primary-100 px-4 py-4 dark:border-slate-800">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
           <Logo />

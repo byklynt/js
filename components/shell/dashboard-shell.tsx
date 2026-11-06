@@ -51,7 +51,7 @@ export function DashboardShell({
   return (
     <UserProvider value={{ username, email }}>
       <ToastProvider>
-        <div className="dash min-h-screen bg-white dark:bg-slate-950">
+        <div className="dash min-h-[var(--app-h)] bg-white dark:bg-slate-950">
           <Sidebar
             nav={nav}
             account={account}

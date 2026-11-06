@@ -165,7 +165,7 @@ export function AdminTicketsView({ tickets }: { tickets: AdminTicket[] }) {
     <div>
       <PageHeader title="Tiket" subtitle="Balas dan kelola tiket bantuan pengguna." />
 
-      <div className="mt-8 grid gap-4 lg:h-[calc(100vh-300px)] lg:min-h-[520px] lg:grid-cols-[340px_1fr]">
+      <div className="mt-8 grid grid-cols-1 gap-4 lg:h-[calc(var(--app-h)-300px)] lg:min-h-[520px] lg:grid-cols-[340px_1fr]">
         <section aria-label="Daftar tiket" className="flex min-h-0 flex-col rounded-2xl border border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-900">
           <div className="space-y-2.5 border-b border-slate-200/70 p-3 dark:border-slate-800">
             <SegmentedControl<Filter> items={filterItems} value={list.filter} onChange={list.setFilter} ariaLabel="Filter status tiket" className="h-10" />

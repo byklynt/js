@@ -66,6 +66,9 @@ export function PasswordField({ label, error, hint, className, ...props }: TextF
           type={visible ? "text" : "password"}
           aria-invalid={Boolean(error)}
           aria-describedby={described}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           className={cn(
             inputClass,
             "pr-10",

@@ -217,7 +217,7 @@ export function AdminDashboard({ data }: { data: Data }) {
         subtitle={data.sanity ? `Pemeriksaan harian terakhir ${formatDateTime(data.sanity.at)}: ${data.sanity.balanceMismatches} selisih saldo, ${data.sanity.refundMismatches} refund tidak sesuai.` : "Perbandingan data panel dengan provider dan buku besar."}
         action={<Link href="/admin/ledger" className={linkClass}>Buka buku besar</Link>}
       >
-        <ul className="grid gap-2 md:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-2 md:grid-cols-3">
           {[
             { label: "Status beda dengan provider", value: data.reconciliation.discrepancies, hint: "Pesanan aktif yang jawaban providernya tidak dikenal atau gagal dibaca. Detailnya ada di tiap pesanan.", href: "/admin/orders?status=berjalan" },
             { label: "Saldo tidak cocok dengan buku besar", value: data.reconciliation.balanceMismatches.length, hint: data.reconciliation.balanceMismatches.map((m) => m.username).join(", ") || "Semua saldo cocok.", href: "/admin/ledger" },

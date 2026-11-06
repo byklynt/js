@@ -18,7 +18,7 @@ export function SearchPill({
     <form
       role="search"
       onSubmit={(e) => e.preventDefault()}
-      className="flex h-[38px] w-full max-w-[200px] items-center rounded-full border border-slate-200/70 bg-white pr-1 pl-4 dark:border-slate-700 dark:bg-slate-900"
+      className="flex h-[38px] w-full min-w-0 max-w-[200px] items-center rounded-full border border-slate-200/70 bg-white pr-1 pl-4 dark:border-slate-700 dark:bg-slate-900"
     >
       <input
         type="search"

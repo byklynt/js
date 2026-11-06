@@ -75,7 +75,7 @@ export function Drawer({
                 </button>
               </div>
               <div className="h-px bg-slate-200/70 dark:bg-slate-800" />
-              <div className="thin-scroll flex-1 overflow-y-auto p-4">{children}</div>
+              <div className="thin-scroll flex-1 overflow-y-auto overscroll-contain p-4">{children}</div>
               {footer ? (
                 <div className="border-t border-slate-200/70 p-4 dark:border-slate-800">{footer}</div>
               ) : null}

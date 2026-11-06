@@ -357,7 +357,7 @@ export function AdminOrdersView({ orders, stuckIds = [], sync }: { orders: Admin
         <div
           role="region"
           aria-label="Aksi pesanan terpilih"
-          className="sticky bottom-4 z-20 mx-auto mt-5 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-2xl border border-slate-200/70 bg-white p-2 pl-4 shadow-lg dark:border-slate-700 dark:bg-slate-900"
+          className="sticky bottom-[max(16px,env(safe-area-inset-bottom))] z-20 mx-auto mt-5 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-2xl border border-slate-200/70 bg-white p-2 pl-4 shadow-lg dark:border-slate-700 dark:bg-slate-900"
         >
           <span className="text-[10.5px] font-semibold text-ink dark:text-white">{selected.size} dipilih</span>
           <label htmlFor="bulk-status" className="sr-only">
