@@ -3,6 +3,7 @@ import { WalletCards } from "lucide-react";
 import type { PaymentStatus } from "@/lib/payments-data";
 import type { MyDeposit } from "@/lib/user-actions";
 import { formatDateTime, formatIdr } from "@/lib/balance";
+import { depositFeeLine } from "@/lib/funds-copy";
 import { cn } from "@/lib/utils";
 
 const statusStyles: Record<PaymentStatus, string> = {
@@ -32,6 +33,9 @@ export function PaymentHistoryItem({ payment }: { payment: MyDeposit }) {
           </Link>
         ) : null}
       </div>
+      {payment.gateway && payment.payAmount !== undefined && depositFeeLine({ amount: payment.amount, payAmount: payment.payAmount, feeAmount: payment.fee }) ? (
+        <p className="mt-1 text-[9.5px] text-[#5B6B8C] dark:text-slate-400">{depositFeeLine({ amount: payment.amount, payAmount: payment.payAmount, feeAmount: payment.fee })}</p>
+      ) : null}
       <div className="mt-3 flex items-center justify-between gap-2">
         <p className="text-[10px] font-medium text-ink dark:text-slate-100">
           ID: {payment.id}

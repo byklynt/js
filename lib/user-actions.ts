@@ -221,7 +221,7 @@ export type DepositConfig = {
   /** Paymenku: channels the admin enabled (already filtered by the fee policy); `sandbox` = test mode (no real money). */
   gateway: { enabled: boolean; sandbox: boolean; maxDeposit: number; channels: GatewayChannelOption[] };
 };
-export type MyDeposit = { id: string; method: string; amount: number; status: "berhasil" | "menunggu" | "gagal" | "kedaluwarsa" | "dibatalkan"; createdAt: string; gateway?: boolean };
+export type MyDeposit = { id: string; method: string; amount: number; status: "berhasil" | "menunggu" | "gagal" | "kedaluwarsa" | "dibatalkan"; createdAt: string; gateway?: boolean; payAmount?: number; fee?: number };
 
 export async function getDepositConfig(): Promise<DepositConfig> {
   const [{ payments }, gw] = await Promise.all([loadSettings(), getGatewayConfig()]);
@@ -236,8 +236,8 @@ export async function getDepositConfig(): Promise<DepositConfig> {
 export async function getMyDeposits(): Promise<MyDeposit[]> {
   const userId = await currentUserId();
   if (!userId) return [];
-  const { data } = await supabaseAdmin().from("deposits").select("id,method,amount,status,created_at,gateway").eq("user_id", userId).order("created_at", { ascending: false }).limit(200);
-  return (data ?? []).map((d) => ({ id: d.id, method: d.method, amount: Number(d.amount), status: (["berhasil", "menunggu", "kedaluwarsa", "dibatalkan"].includes(d.status) ? d.status : "gagal"), createdAt: d.created_at, gateway: d.gateway === "paymenku" }) as MyDeposit);
+  const { data } = await supabaseAdmin().from("deposits").select("id,method,amount,status,created_at,gateway,pay_amount,fee_amount").eq("user_id", userId).order("created_at", { ascending: false }).limit(200);
+  return (data ?? []).map((d) => ({ id: d.id, method: d.method, amount: Number(d.amount), status: (["berhasil", "menunggu", "kedaluwarsa", "dibatalkan"].includes(d.status) ? d.status : "gagal"), createdAt: d.created_at, gateway: d.gateway === "paymenku", ...(d.gateway === "paymenku" ? { payAmount: Number(d.pay_amount ?? d.amount), fee: Number(d.fee_amount ?? 0) } : {}) }) as MyDeposit);
 }
 
 const depositSchema = z.object({ amount: z.coerce.number().int("Jumlah harus bilangan bulat."), methodId: z.string().trim().min(1).max(30) });

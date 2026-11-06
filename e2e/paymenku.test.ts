@@ -193,14 +193,17 @@ describe.skipIf(!enabled || process.env.E2E_PAYMENKU !== "1")("paymenku top-up w
   let depId = "";
   let trx: Tx;
 
-  it("Tambah Saldo: QRIS is offered with the fee stated; paying creates the deposit and opens its payment page", async () => {
+  it("Tambah Saldo: QRIS is offered with the fee summary under the amount; paying creates the deposit and opens its payment page", async () => {
     await user.goto("/dashboard/add-funds");
     await user.waitForLoadState("networkidle").catch(() => {});
     await user.getByLabel("Jumlah").fill("50000");
     const fee = user.getByTestId("fee-info");
     await expect.poll(async () => fee.innerText(), { timeout: 15_000 }).toContain("Biaya layanan");
-    expect(await fee.innerText()).toMatch(/ditanggung kamu/);
-    expect(await fee.innerText()).toMatch(/saldo yang masuk tetap Rp\s?50\.000/);
+    expect(await fee.innerText()).toMatch(/Total bayar ± Rp\s?50\.550/);
+    expect(await fee.innerText()).toMatch(/saldo masuk Rp\s?50\.000/);
+    expect(await fee.innerText()).not.toMatch(/tanpa biaya/i);
+    // no label in the page claims "tanpa biaya" for the method itself
+    expect(await user.locator("body").innerText()).not.toMatch(/otomatis, tanpa biaya/i);
     await user.getByRole("button", { name: "Bayar sekarang" }).click();
     await user.waitForURL(/\/deposit\/[0-9a-f-]{36}$/, { timeout: 40_000 });
     depId = new URL(user.url()).pathname.split("/").pop()!;

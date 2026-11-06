@@ -8,6 +8,7 @@ import { PageHeading } from "@/components/shell/page-heading";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/shared/toast";
 import { formatDateTime, formatIdr } from "@/lib/balance";
+import { depositFee } from "@/lib/funds-copy";
 import { cancelMyDeposit, getMyDepositView, type DepositView } from "@/lib/user-actions";
 import { cn } from "@/lib/utils";
 
@@ -320,10 +321,10 @@ export function DepositPay({ initial }: { initial: DepositView }) {
                 <dt className="text-[#5B6B8C] dark:text-slate-400">Saldo yang masuk</dt>
                 <dd data-testid="deposit-amount" className="font-semibold tabular-nums text-ink dark:text-white">{formatIdr(view.amount)}</dd>
               </div>
-              {view.payAmount > view.amount ? (
+              {depositFee({ amount: view.amount, payAmount: view.payAmount, feeAmount: view.fee }).kind === "fee" ? (
                 <div className="flex items-center justify-between gap-3">
                   <dt className="text-[#5B6B8C] dark:text-slate-400">Biaya layanan</dt>
-                  <dd className="font-medium tabular-nums text-ink dark:text-slate-200">{formatIdr(view.payAmount - view.amount)}</dd>
+                  <dd className="font-medium tabular-nums text-ink dark:text-slate-200">{formatIdr(depositFee({ amount: view.amount, payAmount: view.payAmount, feeAmount: view.fee }).fee)}</dd>
                 </div>
               ) : null}
             </dl>
