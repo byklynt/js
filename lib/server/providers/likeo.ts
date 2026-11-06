@@ -25,6 +25,8 @@ export type LikeoOptions = {
   /** Receives safe, key-free diagnostics. Defaults to console.warn. */
   log?: (event: string, meta: Record<string, unknown>) => void;
   mode?: "mock" | "live";
+  /** Allow Custom Comments orders (the comments parameter is unverified, so this is off unless PROVIDER_CUSTOM_COMMENTS=1). */
+  customComments?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -222,9 +224,17 @@ export function createLikeoAdapter(opts: LikeoOptions): ProviderAdapter {
       return { balance: p.data.balance, currency: p.data.currency };
     },
 
-    async createOrder({ serviceId, link, quantity }) {
+    async createOrder({ serviceId, link, quantity, comments }) {
       // One attempt only. Any ambiguous failure (timeout, 5xx, dropped connection) is surfaced as such so the caller
       // marks the order for a manual check instead of sending it again.
+      // Custom Comments: PerfectPanel convention (UNVERIFIED for Likeo): service, link, comments = one comment per line (LF); the quantity is
+      // the number of lines, so it is not sent. Off unless explicitly enabled; a refusal here is definite (nothing was sent), never ambiguous.
+      if (comments && comments.length) {
+        if (!(opts.customComments ?? false)) throw new ProviderError("Pesanan Custom Comments belum diaktifkan untuk Likeo.", { kind: "config" });
+        const p2 = addBody.safeParse(await once("add", { service: serviceId, link, comments: comments.join(String.fromCharCode(10)) }));
+        if (!p2.success) throw new ProviderError("Jawaban Likeo untuk pesanan tidak sesuai format. Cek manual di Likeo.", { kind: "invalid", ambiguous: true });
+        return { orderId: p2.data.order };
+      }
       const p = addBody.safeParse(await once("add", { service: serviceId, link, quantity: String(quantity) }));
       if (!p.success) throw new ProviderError("Jawaban Likeo untuk pesanan tidak sesuai format. Cek manual di Likeo.", { kind: "invalid", ambiguous: true });
       return { orderId: p.data.order };

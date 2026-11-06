@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/server/supabase-admin";
 
 /** Order columns + the few joined fields the UI needs (service name / platform / refill, username). Server only. */
 export const ORDER_SELECT =
-  "id,user_id,service_id,provider_id,provider_order_id,link,quantity,charge,provider_cost,start_count,remains,status,refunded_amount,submit_attempts,held,needs_manual_check,cancelled_by,cancel_policy_percent,accepted_rules_version,accepted_at,last_synced_at,completed_at,created_at,provider_status,sync_error,violation_reason,service:services(id,name,platform,provider_service_id,refill,cancel,refill_days),user:profiles(username)";
+  "id,user_id,service_id,provider_id,provider_order_id,link,quantity,charge,provider_cost,start_count,remains,status,refunded_amount,submit_attempts,held,needs_manual_check,cancelled_by,cancel_policy_percent,accepted_rules_version,accepted_at,last_synced_at,completed_at,created_at,provider_status,sync_error,violation_reason,service:services(id,name,platform,provider_service_id,refill,cancel,refill_days),user:profiles(username),order_comments(line_count)";
 
 type Row = {
   id: number; user_id: string; service_id: string; provider_id: string; provider_order_id: string; link: string; quantity: number; charge: number;
@@ -14,6 +14,8 @@ type Row = {
   accepted_at: string | null; last_synced_at: string | null; completed_at: string | null; created_at: string; provider_status: string | null; sync_error: string | null; violation_reason: string | null;
   service: { id: string; name: string; platform: string; provider_service_id: string; refill: boolean; cancel: boolean; refill_days: number | null } | null;
   user: { username: string } | null;
+  /** To-one embed (order_id is the primary key): an object, or null for orders without comments. */
+  order_comments: { line_count: number } | null;
 };
 
 export function toAdminOrder(r: Row): AdminOrder {
@@ -24,6 +26,7 @@ export function toAdminOrder(r: Row): AdminOrder {
     refillable: Boolean(r.service?.refill), providerCost: Number(r.provider_cost), refundedAmount: Number(r.refunded_amount), submitAttempts: r.submit_attempts,
     lastSyncedAt: r.last_synced_at, completedAt: r.completed_at, held: r.held, acceptedRulesVersion: r.accepted_rules_version, acceptedAt: r.accepted_at,
     providerStatus: r.provider_status, syncError: r.sync_error, violationReason: r.violation_reason,
+    ...(r.order_comments ? { commentCount: Number(r.order_comments.line_count) } : {}),
     needsManualCheck: r.needs_manual_check || undefined, cancelledBy: r.cancelled_by as AdminOrder["cancelledBy"], cancelPolicyPercent: r.cancel_policy_percent,
   };
 }
@@ -35,7 +38,7 @@ export async function getOrder(id: string | number): Promise<AdminOrder | null> 
 
 /** The service data submitToProvider needs (provider-side id). */
 export async function getOrderService(order: AdminOrder) {
-  const { data } = await supabaseAdmin().from("services").select("id,provider_service_id,refill,cancel,refill_days").eq("id", order.serviceId).maybeSingle();
+  const { data } = await supabaseAdmin().from("services").select("id,provider_service_id,refill,cancel,refill_days,provider_type").eq("id", order.serviceId).maybeSingle();
   return data;
 }
 

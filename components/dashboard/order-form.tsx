@@ -28,6 +28,7 @@ import { CustomSelect } from "@/components/ui/select";
 import { FormAlert, type AlertState } from "@/components/shared/form-alert";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/provider";
+import { analyzeComments, commentsError, commentsPrice, MAX_COMMENT_LENGTH } from "@/lib/comments";
 
 function platformForCategory(category: CategoryRow | null): Platform | undefined {
   if (!category) return undefined;
@@ -47,6 +48,9 @@ function ServiceLabel({ service }: { service: Service }) {
     <span className="flex min-w-0 items-center gap-2">
       <IdBadge id={service.id} />
       <span className="min-w-0 flex-1 truncate">{getServiceFullName(service)}</span>
+      {service.kind === "unsupported" ? (
+        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">Belum tersedia</span>
+      ) : null}
     </span>
   );
 }
@@ -103,6 +107,7 @@ export function OrderForm({
   const [optionsSearch, setOptionsSearch] = useState("");
   const [link, setLink] = useState("");
   const [quantity, setQuantity] = useState("");
+  const [comments, setComments] = useState("");
   const [errors, setErrors] = useState<{ link?: string; quantity?: string }>({});
   const [submitting, setSubmitting] = useState(false);
   const [alert, setAlert] = useState<AlertState>(null);
@@ -112,6 +117,7 @@ export function OrderForm({
 
   const linkId = useId();
   const quantityId = useId();
+  const commentsId = useId();
   const linkErrorId = useId();
   const quantityErrorId = useId();
 
@@ -183,6 +189,7 @@ export function OrderForm({
   function handleServiceChange(next: Service) {
     setService(next);
     setQuantity("");
+    setComments("");
     setErrors({});
     onServiceChange(next, platformForCategory(category));
   }
@@ -196,17 +203,23 @@ export function OrderForm({
     setOptionsSearch("");
     setService(next);
     setQuantity("");
+    setComments("");
     setErrors({});
     onServiceChange(next, platformForCategory(cat));
     setTab("baru");
     setSearchQuery("");
   }
 
-  const quantityNumber = Number(quantity.replace(/[^\d]/g, ""));
+  const isComments = service?.kind === "comments";
+  const notOrderable = service?.kind === "unsupported";
+  // Custom Comments: the quantity is the number of non-empty lines (computed here for the form; place_order recomputes it).
+  const commentsInfo = useMemo(() => analyzeComments(comments), [comments]);
+  const quantityNumber = isComments ? commentsInfo.count : Number(quantity.replace(/[^\d]/g, ""));
   // Delivery estimate for the chosen quantity bucket (service-wide until a quantity is typed or while the bucket has too few samples).
   const estimate = chooseEstimate(service?.est, quantityNumber > 0 ? quantityNumber : null);
-  const subtotal =
-    service && quantity && Number.isFinite(quantityNumber)
+  const subtotal = isComments
+    ? service && commentsInfo.count > 0 ? commentsPrice(service.pricePer1000, commentsInfo.count) : 0
+    : service && quantity && Number.isFinite(quantityNumber)
       ? (service.pricePer1000 * quantityNumber) / 1000
       : 0;
 
@@ -219,6 +232,11 @@ export function OrderForm({
 
     if (!service) {
       next.quantity = "Pilih layanan terlebih dahulu.";
+    } else if (notOrderable) {
+      next.quantity = "Layanan ini belum tersedia untuk dipesan.";
+    } else if (isComments) {
+      const problem = commentsError(commentsInfo, service.min, service.max);
+      if (problem) next.quantity = problem;
     } else if (!quantity || !Number.isFinite(quantityNumber) || quantityNumber <= 0) {
       next.quantity = "Jumlah wajib diisi.";
     } else if (quantityNumber < service.min || quantityNumber > service.max) {
@@ -240,11 +258,13 @@ export function OrderForm({
         serviceId: service.id,
         link,
         quantity: quantityNumber,
+        ...(isComments ? { comments } : {}),
       });
       if (result.success) {
         setAlert({ type: "success", message: "Pesanan berhasil dibuat!" });
         setLink("");
         setQuantity("");
+        setComments("");
       } else {
         setAlert({ type: "error", message: result.message });
       }
@@ -396,50 +416,113 @@ export function OrderForm({
             ) : null}
           </div>
 
-          <div>
-            <label
-              htmlFor={quantityId}
-              className="mb-1.5 block text-[10.5px] font-semibold text-ink dark:text-slate-200"
-            >
-              {tx("order.quantity")}
-            </label>
-            <input
-              id={quantityId}
-              type="text"
-              inputMode="numeric"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              placeholder="Masukkan jumlah"
-              aria-invalid={Boolean(errors.quantity)}
-              aria-describedby={errors.quantity ? quantityErrorId : undefined}
-              disabled={!service}
-              className={cn(
-                "h-[34px] w-full rounded-[10px] border bg-white px-3 text-[10px] text-ink outline-none transition placeholder:text-slate-400 focus:border-primary-400 focus:ring-4 focus:ring-primary-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:ring-primary-900/40",
-                errors.quantity
-                  ? "border-red-300 focus:border-red-400 focus:ring-red-100 dark:border-red-900"
-                  : "border-slate-200 dark:border-slate-700"
+          {notOrderable ? (
+            <p role="status" data-testid="not-orderable" className="rounded-[10px] border border-dashed border-slate-300 px-3 py-2.5 text-[10px] font-medium text-slate-500 dark:border-slate-700 dark:text-slate-400">
+              Belum tersedia untuk dipesan
+            </p>
+          ) : null}
+
+          {isComments ? (
+            <div>
+              <label htmlFor={commentsId} className="mb-1.5 block text-[10.5px] font-semibold text-ink dark:text-slate-200">
+                Komentar (satu komentar per baris)
+              </label>
+              <textarea
+                id={commentsId}
+                value={comments}
+                onChange={(e) => setComments(e.target.value)}
+                rows={6}
+                placeholder={"Contoh:\nKeren banget!\nMantap, lanjutkan"}
+                aria-invalid={Boolean(errors.quantity)}
+                aria-describedby={quantityErrorId}
+                className={cn(
+                  "w-full resize-y rounded-[10px] border bg-white px-3 py-2 text-[10px] leading-relaxed text-ink outline-none transition placeholder:text-slate-400 focus:border-primary-400 focus:ring-4 focus:ring-primary-100 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:ring-primary-900/40",
+                  errors.quantity ? "border-red-300 focus:border-red-400 focus:ring-red-100 dark:border-red-900" : "border-slate-200 dark:border-slate-700"
+                )}
+              />
+              <p data-testid="comments-count" className="mt-1.5 text-[10px] font-semibold text-ink dark:text-slate-100">
+                Jumlah: {commentsInfo.count.toLocaleString("id-ID")} komentar
+              </p>
+              {errors.quantity ? (
+                <p id={quantityErrorId} className="mt-1.5 text-[9.5px] font-medium text-red-500">
+                  {errors.quantity}
+                </p>
+              ) : (
+                <p id={quantityErrorId} className="mt-1.5 text-[9.5px] text-slate-400">
+                  {service
+                    ? `Min: ${service.min.toLocaleString("id-ID")} - Maks: ${formatMaxQty(service.max)} komentar${
+                        commentsInfo.count > service.max
+                          ? ` • Kelebihan ${(commentsInfo.count - service.max).toLocaleString("id-ID")}`
+                          : commentsInfo.count > 0 && commentsInfo.count < service.min
+                            ? ` • Kurang ${(service.min - commentsInfo.count).toLocaleString("id-ID")}`
+                            : ` • Sisa ${Math.max(0, service.max - commentsInfo.count).toLocaleString("id-ID")}`
+                      } • Maks ${MAX_COMMENT_LENGTH} karakter per komentar`
+                    : ""}
+                  {service ? (
+                    <>
+                      <span aria-hidden> &bull; </span>
+                      <span data-estimate data-testid="order-estimate" title={estimate.note ?? undefined}>
+                        {estimate.kind === "none" ? estimate.text : `Estimasi: ${estimate.text}`}
+                      </span>
+                    </>
+                  ) : null}
+                </p>
               )}
-            />
-            {errors.quantity ? (
-              <p id={quantityErrorId} className="mt-1.5 text-[9.5px] font-medium text-red-500">
-                {errors.quantity}
-              </p>
-            ) : (
-              <p className="mt-1.5 text-[9.5px] text-slate-400">
-                {service
-                  ? `Min: ${service.min.toLocaleString("id-ID")} - Maks: ${formatMaxQty(service.max)}`
-                  : "Pilih layanan untuk melihat batas jumlah"}
-                {service ? (
-                  <>
-                    <span aria-hidden> &bull; </span>
-                    <span data-estimate data-testid="order-estimate" title={estimate.note ?? undefined}>
-                      {estimate.kind === "none" ? estimate.text : `Estimasi: ${estimate.text}`}
-                    </span>
-                  </>
-                ) : null}
-              </p>
-            )}
-          </div>
+              {commentsInfo.duplicates > 0 ? (
+                <p role="status" className="mt-1 text-[9.5px] font-medium text-amber-600 dark:text-amber-400">
+                  {commentsInfo.duplicates} komentar sama dengan komentar lain. Komentar yang berulang bisa ditolak atau dianggap spam oleh platform.
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <>
+            <div>
+              <label
+                htmlFor={quantityId}
+                className="mb-1.5 block text-[10.5px] font-semibold text-ink dark:text-slate-200"
+              >
+                {tx("order.quantity")}
+              </label>
+              <input
+                id={quantityId}
+                type="text"
+                inputMode="numeric"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                placeholder="Masukkan jumlah"
+                aria-invalid={Boolean(errors.quantity)}
+                aria-describedby={errors.quantity ? quantityErrorId : undefined}
+                disabled={!service}
+                className={cn(
+                  "h-[34px] w-full rounded-[10px] border bg-white px-3 text-[10px] text-ink outline-none transition placeholder:text-slate-400 focus:border-primary-400 focus:ring-4 focus:ring-primary-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:ring-primary-900/40",
+                  errors.quantity
+                    ? "border-red-300 focus:border-red-400 focus:ring-red-100 dark:border-red-900"
+                    : "border-slate-200 dark:border-slate-700"
+                )}
+              />
+              {errors.quantity ? (
+                <p id={quantityErrorId} className="mt-1.5 text-[9.5px] font-medium text-red-500">
+                  {errors.quantity}
+                </p>
+              ) : (
+                <p className="mt-1.5 text-[9.5px] text-slate-400">
+                  {service
+                    ? `Min: ${service.min.toLocaleString("id-ID")} - Maks: ${formatMaxQty(service.max)}`
+                    : "Pilih layanan untuk melihat batas jumlah"}
+                  {service ? (
+                    <>
+                      <span aria-hidden> &bull; </span>
+                      <span data-estimate data-testid="order-estimate" title={estimate.note ?? undefined}>
+                        {estimate.kind === "none" ? estimate.text : `Estimasi: ${estimate.text}`}
+                      </span>
+                    </>
+                  ) : null}
+                </p>
+              )}
+            </div>
+
+            </>
+          )}
 
           <div className="flex flex-col gap-2 sm:flex-row">
             <div className="flex h-10 items-center gap-2 rounded-xl border border-slate-200/80 px-1.5 dark:border-slate-700 sm:flex-1">
@@ -453,7 +536,7 @@ export function OrderForm({
             </div>
             <button
               type="submit"
-              disabled={submitting || !service}
+              disabled={submitting || !service || notOrderable}
               className="flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-primary-from to-primary-to text-[10px] font-semibold text-white shadow-[0_2px_0_var(--primary-pressed)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60 dark:border dark:border-white/25 sm:flex-1"
             >
               {submitting ? (

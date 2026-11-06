@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth-server";
+import { getOrderComments } from "@/lib/server/repo/order-comments";
 import { listDeposits, listLedger, listLogs, listOrders, listRefills, listRefunds, listTicketsPage, listUsers, loadUserDetail } from "@/lib/server/admin/lists";
 
 /**
@@ -46,4 +47,17 @@ export async function loadUserDetailAction(userId: unknown) {
   }
   const id = z.string().uuid().safeParse(userId);
   return id.success ? loadUserDetail(id.data) : null;
+}
+
+/** Admin: the comments of one Custom Comments order. */
+export async function loadOrderCommentsAction(orderId: unknown): Promise<{ ok: true; comments: string[] } | { ok: false; error: string }> {
+  try {
+    await requireAdmin("action");
+  } catch {
+    return { ok: false, error: "Kamu tidak punya akses untuk tindakan ini." };
+  }
+  const id = z.string().regex(/^d{1,12}$/).safeParse(orderId);
+  if (!id.success) return { ok: false, error: "Pesanan tidak valid." };
+  const comments = await getOrderComments(id.data);
+  return comments ? { ok: true, comments } : { ok: false, error: "Pesanan ini tidak memiliki komentar." };
 }

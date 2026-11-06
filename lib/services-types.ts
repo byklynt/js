@@ -20,6 +20,8 @@ export type ServiceRow = {
   speed?: number;
   /** Measured delivery-time numbers (aggregates only). Absent when the service has none and no manual text: show "Belum ada estimasi". */
   est?: EstimateStats;
+  /** Absent = a normal service. "comments" = Custom Comments (the buyer supplies the comments). "unsupported" = cannot be ordered ("Belum tersedia untuk dipesan"). */
+  kind?: "comments" | "unsupported";
   /** Only set when the request carried favoriteIds. */
   favorite?: boolean;
 };

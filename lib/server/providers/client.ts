@@ -10,7 +10,7 @@ import { likeoCredentials } from "@/lib/server/repo/providers";
 import { toProviderStatus } from "../rules";
 import { ProviderError, type ProviderClient } from "../provider-client";
 import type { ProviderOrderState } from "../types";
-import { LIKEO_ID, providerMode } from "./config";
+import { customCommentsEnabled, LIKEO_ID, providerMode } from "./config";
 import { createLikeoAdapter } from "./likeo";
 import { createMockAdapter } from "./mock";
 import type { MappedProviderStatus, ProviderAdapter, ProviderOrderStatus } from "./types";
@@ -28,7 +28,7 @@ export async function getAdapter(): Promise<ProviderAdapter> {
   if (mode === "off") throw new ProviderError("Provider belum aktif. Isi PROVIDER_MODE=live di .env.local lalu restart server.", { kind: "config" });
   const { apiUrl, apiKey } = await likeoCredentials();
   if (!apiKey) throw new ProviderError("API key Likeo belum diisi. Jalankan npm run bootstrap setelah mengisi LIKEO_API_KEY dan PROVIDER_KEY_ENC_KEY.", { kind: "config" });
-  return createLikeoAdapter({ apiUrl, apiKey, mode: "live" });
+  return createLikeoAdapter({ apiUrl, apiKey, mode: "live", customComments: customCommentsEnabled() });
 }
 
 /** Canonical status text the sync rules understand. Unknown status text is passed on as is: the sync keeps the old status and logs it. */
@@ -41,7 +41,7 @@ function toState(s: ProviderOrderStatus): ProviderOrderState {
 export function createProviderClient(): ProviderClient {
   return {
     async addOrder(_providerId, input) {
-      const res = await (await getAdapter()).createOrder({ serviceId: input.service, link: input.link, quantity: input.quantity });
+      const res = await (await getAdapter()).createOrder({ serviceId: input.service, link: input.link, quantity: input.quantity, ...(input.comments ? { comments: input.comments } : {}) });
       return { providerOrderId: res.orderId };
     },
     async getOrderStatus(_providerId, id) {

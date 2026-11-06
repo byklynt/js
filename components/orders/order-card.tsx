@@ -8,6 +8,8 @@ import { InfoChip } from "@/components/ui/info-chip";
 import { RecordCard } from "@/components/ui/record-card";
 import { OrderStatusChip } from "./order-status-chip";
 import { OrderChips } from "./order-chips";
+import { OrderComments } from "./order-comments";
+import { getMyOrderComments } from "@/lib/user-actions";
 
 export type RefillState = "idle" | "loading" | "done";
 
@@ -47,6 +49,7 @@ export function OrderCard({
     >
       <OrderChips order={order} />
       {order.refunded > 0 ? <InfoChip icon={Undo2}>Refund: {formatIdr(order.refunded)}</InfoChip> : null}
+      {order.commentCount ? <OrderComments orderId={order.id} count={order.commentCount} load={getMyOrderComments} /> : null}
       <CancelRequestButton order={order} onRequest={onCancel} />
       {canRefill ? (
         <button

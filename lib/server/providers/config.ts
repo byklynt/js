@@ -59,6 +59,16 @@ export const providerMode = (): ProviderMode => {
   return "mock";
 };
 
+/**
+ * Whether "Custom Comments" services can be ordered. The mock accepts them (tests, development). Live, they stay OFF until
+ * PROVIDER_CUSTOM_COMMENTS=1 is set: the parameter name and newline format Likeo expects for the comments are not verified (see README),
+ * so nothing is sent to the real provider on a guess.
+ */
+export const customCommentsEnabled = (): boolean => {
+  const mode = providerMode();
+  return mode === "mock" || (mode === "live" && clean(process.env.PROVIDER_CUSTOM_COMMENTS) === "1");
+};
+
 export type ModeInfo = {
   mode: ProviderMode;
   /** Raw value as Next.js loaded it (null = the variable does not exist). Not secret. */

@@ -46,8 +46,11 @@ export function cleanServiceName(name: string): string {
 
 export const slugOf = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "lainnya";
 
-/** Only plain "Default" services are imported. Package, Custom Comments, Subscriptions, ... are listed as unsupported. */
-export const isSupportedType = (type: string) => type.trim().toLowerCase() === "default" || type.trim() === "";
+/** "Default" and "Custom Comments" services are imported. Package, Custom Comments Package, Poll, Mentions, ... are listed as unsupported. */
+export const isSupportedType = (type: string) => {
+  const t = type.trim().toLowerCase();
+  return t === "default" || t === "" || t === "custom comments";
+};
 
 /** Provider rate per 1000 (provider currency) -> Rupiah per 1000, rounded up to a whole Rupiah. */
 export function rateToRupiah(rate: number, rateIdr: number): number {

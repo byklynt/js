@@ -665,6 +665,35 @@ export type Database = {
           },
         ]
       }
+      order_comments: {
+        Row: {
+          comments: string
+          created_at: string
+          line_count: number
+          order_id: number
+        }
+        Insert: {
+          comments: string
+          created_at?: string
+          line_count: number
+          order_id: number
+        }
+        Update: {
+          comments?: string
+          created_at?: string
+          line_count?: number
+          order_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_comments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           accepted_at: string | null
@@ -1685,6 +1714,7 @@ export type Database = {
           est_p25: number | null
           est_p75: number | null
           id: string | null
+          kind: string | null
           max: number | null
           min: number | null
           name: string | null
@@ -1868,6 +1898,7 @@ export type Database = {
           est_p25: number
           est_p75: number
           id: string
+          kind: string
           max: number
           min: number
           name: string
@@ -1975,9 +2006,11 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      parse_comment_lines: { Args: { p_text: string }; Returns: string[] }
       place_order: {
         Args: {
           p_accepted_rules_version?: string
+          p_comments?: string
           p_link: string
           p_quantity: number
           p_service: string
@@ -2068,6 +2101,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      service_kind: { Args: { p_type: string }; Returns: string }
       service_sort_key: { Args: { p_id: string }; Returns: number }
       test_cleanup: { Args: { p_marker?: string }; Returns: Json }
       user_stats: {

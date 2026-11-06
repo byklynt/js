@@ -200,11 +200,11 @@ describe("catalogue sync", () => {
   });
   const local = () => db.services.filter((s) => s.providerId === LIKEO_ID);
 
-  it("imports only Default services and lists the rest as unsupported", () => {
+  it("imports Default and Custom Comments services and lists the rest as unsupported", () => {
     const preview = buildSyncPreview(db, LIKEO_ID, MOCK_CATALOG);
     const supported = MOCK_CATALOG.filter((s) => isSupportedType(s.type));
     expect(preview.changes).toHaveLength(supported.length);
-    expect(preview.unsupported.map((u) => u.type).sort()).toEqual(["Custom Comments", "Package", "Subscription"]);
+    expect(preview.unsupported.map((u) => u.type).sort()).toEqual(["Package", "Subscription"]);
     applyCatalog(db, LIKEO_ID, MOCK_CATALOG);
     expect(local()).toHaveLength(supported.length);
     expect(local().every((s) => s.imported && s.providerName)).toBe(true);
