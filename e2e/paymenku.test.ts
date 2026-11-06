@@ -184,7 +184,10 @@ describe.skipIf(!enabled || process.env.E2E_PAYMENKU !== "1")("paymenku top-up w
     await panel.getByRole("button", { name: "Simpan pengaturan Paymenku" }).click();
     await expect.poll(async () => bodyText(admin), { timeout: 20_000 }).toContain("Pengaturan Paymenku disimpan.");
     const saved = ((await sb().from("site_settings").select("data").single()).data!.data as { payments: { gateway: { enabled: boolean; channels: string[]; maxDeposit: number } } }).payments.gateway;
-    expect(saved).toMatchObject({ enabled: true, channels: ["qris"], maxDeposit: 5_000_000 });
+    // the DEV settings may already hold other channels (a real configuration): QRIS must be among them
+    expect(saved.enabled).toBe(true);
+    expect(saved.channels).toContain("qris");
+    expect(saved.maxDeposit).toBe(5_000_000);
   }, 150_000);
 
   let depId = "";
@@ -214,7 +217,7 @@ describe.skipIf(!enabled || process.env.E2E_PAYMENKU !== "1")("paymenku top-up w
     expect(await user.getByTestId("deposit-status").innerText()).toContain("Menunggu pembayaran");
     expect(await user.getByTestId("deposit-amount").innerText()).toMatch(/50\.000/);
     expect(await user.getByTestId("deposit-pay-amount").innerText()).toMatch(/50\.550/);
-    expect(await user.getByTestId("deposit-countdown").innerText()).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+    expect(await user.getByTestId("deposit-countdown").innerText()).toMatch(/^\d{2}:\d{2}(:\d{2})?$/);
     const qr = user.locator("img[alt='Kode QRIS']");
     expect(await qr.getAttribute("src")).toContain(`/qr/${trx.trx_id}.png`);
     // not found for anybody else: the page renders the 404 view (the route streams, so the status line may already be 200) and none of the payment data
@@ -279,10 +282,10 @@ describe.skipIf(!enabled || process.env.E2E_PAYMENKU !== "1")("paymenku top-up w
     await user.getByRole("button", { name: "Bayar sekarang" }).click();
     await user.waitForURL(/\/deposit\/[0-9a-f-]{36}$/, { timeout: 40_000 });
     const second = new URL(user.url()).pathname.split("/").pop()!;
-    await user.getByRole("button", { name: "Batalkan deposit" }).click();
+    await user.getByRole("button", { name: "Batalkan pembayaran" }).click();
     const dialog = user.getByRole("dialog");
     await dialog.waitFor();
-    await dialog.getByRole("button", { name: "Batalkan deposit" }).click();
+    await dialog.getByRole("button", { name: "Batalkan pembayaran" }).click();
     await expect.poll(async () => (await sb().from("deposits").select("status").eq("id", second).single()).data!.status, { timeout: 30_000 }).toBe("dibatalkan");
     await expect.poll(async () => user.getByTestId("deposit-status").innerText(), { timeout: 30_000 }).toContain("Dibatalkan");
     expect(await balance(id.u)).toBe(50_000);

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { DepositPay } from "@/components/funds/deposit-pay";
+import { DepositPay, DepositPaySkeleton } from "@/components/funds/deposit-pay";
 import { getMyDepositView } from "@/lib/user-actions";
 
 export const metadata: Metadata = { title: "Pembayaran - JagoanSosmed", robots: { index: false } };
@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Pembayaran - JagoanSosmed", robots: 
  */
 export default function Page({ params }: PageProps<"/deposit/[id]">) {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<DepositPaySkeleton />}>
       <Content params={params} />
     </Suspense>
   );
