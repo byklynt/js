@@ -80,6 +80,9 @@ if (report) {
   add("Tidak ada bucket publik selain avatars", publicOthers.length === 0, publicOthers.length ? list(publicOthers) : "-");
   add("Realtime aktif untuk notifications dan ticket_messages", ["notifications", "ticket_messages"].every((t) => report.realtime.includes(t)), `publikasi: ${list(report.realtime)}`);
 
+  const flags = report.devFlags ?? [];
+  add("Tidak ada dev flag yang aktif (mis. allow_test_cleanup)", flags.length === 0, flags.length ? `AKTIF: ${list(flags)} (hanya boleh di project DEV)` : "tidak ada");
+
   const tr = report.testRows;
   const dirty = Object.entries(tr).filter(([, n]) => Number(n) > 0).map(([k, n]) => `${k}=${n}`);
   add("Tidak ada baris uji / demo (akun uji, layanan ZT-, pesanan MK-, dll.)", dirty.length === 0, dirty.length ? dirty.join(", ") : "bersih");

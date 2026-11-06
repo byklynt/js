@@ -3,12 +3,12 @@
  * A page FAILS the test on: an error overlay / "page couldn't load" text, a console error, an uncaught page error, a failed request,
  * or any same-origin response >= 400. Run with `npm run test:e2e` (build first). Temp accounts are removed afterwards.
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import * as OTPAuth from "otpauth";
 import { chromium, type Browser, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { cleanupOrFail } from "../scripts/lib/test-cleanup.mjs";
 
 const BASE = process.env.E2E_BASE ?? "http://localhost:3110";
 const env: Record<string, string> = {};
@@ -38,11 +38,13 @@ export const USER_ROUTES = [
 const CRASH_TEXT = /This page couldn[’']t load|A server error occurred|Application error|Runtime Error|Unhandled Runtime Error|Internal Server Error|Terjadi kesalahan di server/i;
 
 describe.skipIf(!enabled)("smoke: every admin and user route renders cleanly", () => {
-  const run = Math.random().toString(36).slice(2, 7);
+  /** Every fixture of this file carries MARKER (ids, usernames, slugs): the pre-clean removes leftovers by it. */
+  const MARKER = "sm";
+  const run = MARKER + Math.random().toString(36).slice(2, 7);
   const password = `Smk-${run}-Pass12`;
   const userName = `zt_smk_${run}`;
   const adminName = `zt_sadm_${run}`;
-  const svcId = `ZT-S${run.toUpperCase()}`;
+  const svcId = `ZT-${run.toUpperCase()}`;
   let browser: Browser;
   let totpSecret = "";
   let ids = { user: "", admin: "" };
@@ -96,6 +98,7 @@ describe.skipIf(!enabled)("smoke: every admin and user route renders cleanly", (
     const ctx = await browser.newContext({ baseURL: BASE });
     const page = await ctx.newPage();
     await page.goto("/admin/login");
+    await page.waitForLoadState("networkidle"); // the login screen can briefly render twice while it streams in: wait until it has settled
     await page.getByPlaceholder("nama_admin").fill(adminName);
     await page.getByPlaceholder("Password admin").fill(password);
     await page.locator("form button[type=submit]").click();
@@ -109,6 +112,7 @@ describe.skipIf(!enabled)("smoke: every admin and user route renders cleanly", (
     const ctx = await browser.newContext({ baseURL: BASE });
     const page = await ctx.newPage();
     await page.goto("/login");
+    await page.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await page.getByPlaceholder("nama_pengguna").fill(userName);
     await page.getByPlaceholder("Minimal 8 karakter").fill(password);
     await page.getByRole("button", { name: "Masuk", exact: true }).click();
@@ -119,6 +123,7 @@ describe.skipIf(!enabled)("smoke: every admin and user route renders cleanly", (
   beforeAll(async () => {
     const ref = env.SUPABASE_DEV_PROJECT_REF;
     if (!ref || new URL(url).hostname !== `${ref}.supabase.co`) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
+    await cleanupOrFail({ marker: MARKER }); // leftovers of an earlier killed run of this suite only
     const admin = sb();
     const mk = async (username: string) => {
       const { data, error } = await admin.auth.admin.createUser({ email: `${username}@jagoansosmed-test.invalid`, password, email_confirm: true, user_metadata: { username } });
@@ -137,9 +142,8 @@ describe.skipIf(!enabled)("smoke: every admin and user route renders cleanly", (
 
   afterAll(async () => {
     await browser?.close();
-    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
-    if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1200));
-  }, 120_000);
+    await cleanupOrFail({ marker: MARKER }); // in-process, loud on failure (prints the manual command)
+  }, 300_000);
 
   it("admin: every route renders on an empty database", async () => {
     const { ctx, page } = await adminPage();
@@ -158,7 +162,7 @@ describe.skipIf(!enabled)("smoke: every admin and user route renders cleanly", (
   it("admin and user: every route renders after data exists (user, order, ticket, deposit, refund, announcement)", async () => {
     const db = sb();
     await db.from("service_categories").insert({ id: `zt-cat-${run}`, label: `ZT Kategori ${run}`, platform: "instagram" });
-    expect((await db.from("services").insert({ id: svcId, provider_id: "5c1e0a00-0000-4000-8000-00000000e001", provider_service_id: "1001", category_id: `zt-cat-${run}`, name: `ZT Followers ${run}`, platform: "instagram", provider_price: 1000, price_per_1000: 1500, min: 100, max: 100000, cancel: true, refill: true, active: true, imported: true })).error).toBeNull();
+    expect((await db.from("services").insert({ id: svcId, provider_id: "5c1e0a00-0000-4000-8000-00000000e001", provider_service_id: `zt${run}`, category_id: `zt-cat-${run}`, name: `ZT Followers ${run}`, platform: "instagram", provider_price: 1000, price_per_1000: 1500, min: 100, max: 100000, cancel: true, refill: true, active: true, imported: true })).error).toBeNull();
     await db.rpc("apply_ledger_entry", { p_user: ids.user, p_type: "deposit", p_amount: 50_000, p_ref_type: "smoke", p_ref_id: `${run}:seed`, p_note: "smoke", p_by: "smoke" });
     const placed = await db.rpc("place_order", { p_user: ids.user, p_service: svcId, p_link: "https://zt.test/smoke", p_quantity: 1000 });
     expect(placed.error).toBeNull();
@@ -169,7 +173,7 @@ describe.skipIf(!enabled)("smoke: every admin and user route renders cleanly", (
     const t = await db.from("tickets").insert({ user_id: ids.user, title: "Pesanan - Lainnya", category: "pesanan", subcategory: "Lainnya", status: "menunggu" }).select("id").single();
     await db.from("ticket_messages").insert({ ticket_id: t.data!.id, sender: "user", sender_id: ids.user, body: "Halo, ini tiket uji smoke." });
     await db.from("deposits").insert({ user_id: ids.user, method: "Transfer manual", amount: 20_000, status: "menunggu" });
-    await db.from("announcements").insert({ title: `ZT Pengumuman ${run}`, body: "Isi pengumuman uji.", audience: "semua", placements: ["dashboard", "pembaruan"], publish_at: new Date(Date.now() - 120_000).toISOString() });
+    await db.from("announcements").insert({ title: `ZT ${run} Pengumuman`, body: "Isi pengumuman uji.", audience: "semua", placements: ["dashboard", "pembaruan"], publish_at: new Date(Date.now() - 120_000).toISOString() });
 
     const a = await adminPage();
     const adminProblems = await visit(a.page, ADMIN_ROUTES);

@@ -3,9 +3,9 @@
  * Every scenario has its own user and order, so the expected balances are exact. Run with: npm run test:db
  * Users (@jagoansosmed-test.invalid) and ZT- fixtures are removed afterwards by scripts/db-cleanup-test-data.sql.
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { cleanupOrFail } from "../../../scripts/lib/test-cleanup.mjs";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: () => {}, revalidateTag: () => {} }));
@@ -34,7 +34,10 @@ async function scenario(name: string, expected: string, fn: () => Promise<string
 }
 
 describe.skipIf(!enabled)("refund and cancellation flows (mock provider)", () => {
-  const run = Math.random().toString(36).slice(2, 7);
+  /** Every fixture of this file carries MARKER (ids, usernames, slugs): the pre-clean removes leftovers by it. */
+  const MARKER = "rf";
+  const run = MARKER + Math.random().toString(36).slice(2, 7);
+  let PROV = "";
   let m: {
     db: ReturnType<typeof import("@/lib/server/supabase-admin").supabaseAdmin>;
     sync: typeof import("@/lib/server/sync");
@@ -46,7 +49,7 @@ describe.skipIf(!enabled)("refund and cancellation flows (mock provider)", () =>
   const users: string[] = [];
   let admin = "";
   let seq = 0;
-  const SVC = `ZT-R${run}`.toUpperCase();
+  const SVC = `ZT-${run}`.toUpperCase();
 
   const newUser = async (label: string, role?: "admin") => {
     const username = `zt_${label}${++seq}_${run}`.slice(0, 24);
@@ -75,7 +78,7 @@ describe.skipIf(!enabled)("refund and cancellation flows (mock provider)", () =>
     expect(ce).toBeNull();
     const providerOrderId = `MK-ZT${run}${seq}`;
     const { data, error } = await m.db.from("orders").insert({
-      user_id: user, service_id: SVC, provider_id: m.config.LIKEO_ID, provider_order_id: providerOrderId, link: `https://zt.test/${run}/${seq}`,
+      user_id: user, service_id: SVC, provider_id: PROV, provider_order_id: providerOrderId, link: `https://zt.test/${run}/${seq}`,
       quantity: o.quantity, charge: o.charge, remains: o.quantity, status: "menunggu",
       ...(o.ageHours ? { created_at: new Date(Date.now() - o.ageHours * 3_600_000).toISOString() } : {}),
     }).select("id").single();
@@ -101,22 +104,24 @@ describe.skipIf(!enabled)("refund and cancellation flows (mock provider)", () =>
       config: await import("@/lib/server/providers/config"),
     };
     expect(m.config.providerMode()).toBe("mock");
-    const prov = await m.db.from("providers").select("id").eq("id", m.config.LIKEO_ID).maybeSingle();
-    if (!prov.data) throw new Error("Run `npm run bootstrap` first (Likeo provider row is missing).");
+    // pre-clean: leftovers of an earlier (killed) run of THIS suite only, found by the suite marker; then fixtures that are unique to this run
+    await cleanupOrFail({ marker: MARKER });
+    const provRow = await m.db.from("providers").insert({ name: `ZT ${run}`, slug: `zt-${run}`, mode: "mock", active: true }).select("id").single();
+    expect(provRow.error).toBeNull();
+    PROV = provRow.data!.id;
     await m.db.from("service_categories").insert({ id: `zt-cat-${run}`, label: `ZT Kategori ${run}`, platform: "instagram" });
     const svc = await m.db.from("services").insert({
-      id: SVC, provider_id: m.config.LIKEO_ID, provider_service_id: "1001", category_id: `zt-cat-${run}`, name: `ZT Refund ${run}`, platform: "instagram",
+      id: SVC, provider_id: PROV, provider_service_id: `zt${run}`, category_id: `zt-cat-${run}`, name: `ZT Refund ${run}`, platform: "instagram",
       provider_price: 1000, price_per_1000: 1500, min: 1, max: 100000, cancel: true, refill: true, refill_days: 30, active: true, imported: true,
     });
     expect(svc.error).toBeNull();
     admin = await newUser("adm", "admin");
-  }, 90_000);
+  }, 240_000);
 
   afterAll(async () => {
     console.log("\nSCENARIO TABLE\n" + report.map((r) => `${r.ok ? "PASS" : "FAIL"} | ${r.scenario} | expected: ${r.expected} | actual: ${r.actual}`).join("\n"));
-    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
-    if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1500));
-  }, 120_000);
+    await cleanupOrFail({ marker: MARKER }); // in-process, loud on failure (prints the manual command)
+  }, 300_000);
 
   it("Canceled by provider: full refund, one refund entry, status dibatalkan, notifications", async () => {
     await scenario("Canceled by provider", "balance back to start; 1 refund entry of 1500; dibatalkan; notified", async () => {
@@ -337,7 +342,7 @@ describe.skipIf(!enabled)("refund and cancellation flows (mock provider)", () =>
     });
     await scenario("Quantity 0", "impossible: the database refuses the order and place_order refuses the form", async () => {
       const user = await newUser("q0");
-      const ins = await m.db.from("orders").insert({ user_id: user, service_id: SVC, provider_id: m.config.LIKEO_ID, link: `https://zt.test/${run}/q0`, quantity: 0, charge: 100 });
+      const ins = await m.db.from("orders").insert({ user_id: user, service_id: SVC, provider_id: PROV, link: `https://zt.test/${run}/q0`, quantity: 0, charge: 100 });
       expect(ins.error?.message).toMatch(/orders_quantity_check|check constraint/i);
       await m.db.rpc("apply_ledger_entry", { p_user: user, p_type: "deposit", p_amount: 50_000, p_ref_type: "zt", p_ref_id: `${run}:${user}:q0`, p_note: "seed", p_by: "t" });
       const placed = await m.db.rpc("place_order", { p_user: user, p_service: SVC, p_link: `https://zt.test/${run}/q0b`, p_quantity: 0 });
@@ -427,7 +432,7 @@ describe.skipIf(!enabled)("refund and cancellation flows (mock provider)", () =>
       const before = await dash();
       const o = await makeOrder({ charge: 1000, quantity: 100 });
       await m.db.from("orders").update({ sync_error: "Status provider tidak dikenal: \"x\"" }).eq("id", o.id);
-      const rows = Array.from({ length: 25 }, (_, i) => ({ user_id: o.user, service_id: SVC, provider_id: m.config.LIKEO_ID, link: `https://zt.test/${run}/failed-${i}`, quantity: 100, charge: 0, remains: 100, status: "gagal_kirim", needs_manual_check: true }));
+      const rows = Array.from({ length: 25 }, (_, i) => ({ user_id: o.user, service_id: SVC, provider_id: PROV, link: `https://zt.test/${run}/failed-${i}`, quantity: 100, charge: 0, remains: 100, status: "gagal_kirim", needs_manual_check: true }));
       expect((await m.db.from("orders").insert(rows)).error).toBeNull();
       const after = await dash();
       expect(after.failedCount - before.failedCount).toBe(25);

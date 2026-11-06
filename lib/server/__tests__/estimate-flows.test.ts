@@ -3,10 +3,10 @@
  * Durations are exact: provider_accepted_at = T - d and the sync is applied with now = T, so completed_at - provider_accepted_at = d seconds.
  * Users (@jagoansosmed-test.invalid) and ZT- services are removed afterwards by scripts/db-cleanup-test-data.sql.
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { cleanupOrFail } from "../../../scripts/lib/test-cleanup.mjs";
 import { chooseEstimate, statsFromColumns, summarizeDurations, quantityBucket } from "@/lib/service-estimate";
 
 vi.mock("server-only", () => ({}));
@@ -23,7 +23,10 @@ for (const [k, v] of Object.entries(fileEnv)) if (process.env[k] === undefined) 
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY));
 
 describe.skipIf(!enabled)("measured delivery-time estimates (mock provider)", () => {
-  const run = Math.random().toString(36).slice(2, 7);
+  /** Every fixture of this file carries MARKER (ids, usernames, slugs): the pre-clean removes leftovers by it. */
+  const MARKER = "ef";
+  const run = MARKER + Math.random().toString(36).slice(2, 7);
+  let PROV = "";
   let m: {
     db: ReturnType<typeof import("@/lib/server/supabase-admin").supabaseAdmin>;
     sync: typeof import("@/lib/server/sync");
@@ -32,8 +35,8 @@ describe.skipIf(!enabled)("measured delivery-time estimates (mock provider)", ()
     client: typeof import("@/lib/server/providers/client");
     config: typeof import("@/lib/server/providers/config");
   };
-  const SVC = `ZT-E${run}`.toUpperCase();
-  const SVC2 = `ZT-F${run}`.toUpperCase();
+  const SVC = `ZT-${run}A`.toUpperCase();
+  const SVC2 = `ZT-${run}B`.toUpperCase();
   let user = "";
   let admin = "";
   let seq = 0;
@@ -56,7 +59,7 @@ describe.skipIf(!enabled)("measured delivery-time estimates (mock provider)", ()
     seq++;
     const pid = `MK-ZE${run}${seq}`;
     const { data, error } = await m.db.from("orders").insert({
-      user_id: user, service_id: o.service ?? SVC, provider_id: m.config.LIKEO_ID, provider_order_id: pid, link: `https://zt.test/${run}/e${seq}`,
+      user_id: user, service_id: o.service ?? SVC, provider_id: PROV, provider_order_id: pid, link: `https://zt.test/${run}/e${seq}`,
       quantity: o.quantity ?? 1000, charge: 0, remains: o.quantity ?? 1000, status: "berjalan",
       provider_accepted_at: new Date(T.getTime() - d * 1000).toISOString(), created_at: new Date(T.getTime() - d * 1000 - 5000).toISOString(),
       last_synced_at: o.lastSyncedAgo === null ? null : new Date(T.getTime() - (o.lastSyncedAgo ?? 60) * 1000).toISOString(),
@@ -81,20 +84,24 @@ describe.skipIf(!enabled)("measured delivery-time estimates (mock provider)", ()
       client: await import("@/lib/server/providers/client"),
       config: await import("@/lib/server/providers/config"),
     };
-    expect((await m.db.from("providers").select("id").eq("id", m.config.LIKEO_ID).maybeSingle()).data).not.toBeNull();
+    // pre-clean: leftovers of an earlier (killed) run of THIS suite only, found by the suite marker; then fixtures that are unique to this run
+    await cleanupOrFail({ marker: MARKER });
+    const provRow = await m.db.from("providers").insert({ name: `ZT ${run}`, slug: `zt-${run}`, mode: "mock", active: true }).select("id").single();
+    expect(provRow.error).toBeNull();
+    PROV = provRow.data!.id;
     await m.db.from("service_categories").insert({ id: `zt-cat-${run}`, label: `ZT Kategori ${run}`, platform: "instagram" });
     for (const id of [SVC, SVC2]) {
-      const r = await m.db.from("services").insert({ id, provider_id: m.config.LIKEO_ID, provider_service_id: id === SVC2 ? "1001" : `zt${run}`, category_id: `zt-cat-${run}`, name: `ZT Estimasi ${id}`, platform: "instagram", provider_price: 1000, price_per_1000: 1500, min: 1, max: 100000, active: true, imported: true });
+      const r = await m.db.from("services").insert({ id, provider_id: PROV, provider_service_id: `zt${run}${id.slice(-1).toLowerCase()}`, category_id: `zt-cat-${run}`, name: `ZT Estimasi ${id}`, platform: "instagram", provider_price: 1000, price_per_1000: 1500, min: 1, max: 100000, active: true, imported: true });
       expect(r.error).toBeNull();
+      m.client.mockWorld().services.push({ providerId: m.config.LIKEO_ID, providerServiceId: `zt${run}${id.slice(-1).toLowerCase()}` } as never); // the mock provider accepts it
     }
     user = (await newUser("u")).id;
     admin = (await newUser("adm", "admin")).id;
-  }, 90_000);
+  }, 240_000);
 
   afterAll(async () => {
-    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
-    if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1500));
-  }, 120_000);
+    await cleanupOrFail({ marker: MARKER }); // in-process, loud on failure (prints the manual command)
+  }, 300_000);
 
   it("the stats follow the first completions: exact median / p25 / p75, display threshold at 2 -> 3 -> 5 samples", async () => {
     expect(await stats()).toBeNull();
@@ -220,7 +227,7 @@ describe.skipIf(!enabled)("measured delivery-time estimates (mock provider)", ()
     expect(detail!.estimate).toBe(chooseEstimate(est).text);
     // a service nobody completed an order for carries no estimate at all (nothing misleading)
     expect((await m.services.getServices({ search: `ZT Estimasi ${SVC2}` })).items[0]?.est?.n).toBe(20);
-    await m.db.from("services").insert({ id: `ZT-N${run}`.toUpperCase(), provider_id: m.config.LIKEO_ID, provider_service_id: `zt${run}n`, category_id: `zt-cat-${run}`, name: `ZT Kosong ${run}`, platform: "instagram", provider_price: 1000, price_per_1000: 1500, min: 1, max: 1000, active: true, imported: true });
+    await m.db.from("services").insert({ id: `ZT-${run}N`.toUpperCase(), provider_id: PROV, provider_service_id: `zt${run}n`, category_id: `zt-cat-${run}`, name: `ZT Kosong ${run}`, platform: "instagram", provider_price: 1000, price_per_1000: 1500, min: 1, max: 1000, active: true, imported: true });
     const none = (await m.services.getServices({ search: `ZT Kosong ${run}` })).items[0];
     expect(none.est).toBeUndefined();
     expect(chooseEstimate(none.est).text).toBe("Belum ada estimasi");

@@ -5,13 +5,13 @@
 // first group expanded), the order form and /admin/services on both servers, and prints which regions differ. A region is "explained"
 // when it touches an element marked data-estimate (the new estimate elements) or, on the admin table, the new "Estimasi" column.
 // Images go to .shots/ (git-ignored). pngjs is the PNG decoder that comes with `qrcode` (no new dependency).
-import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import * as OTPAuth from "otpauth";
 import { chromium } from "playwright";
 import { PNG } from "pngjs";
 import { checkDevOnly, readDevRef } from "./lib/prod-guard.mjs";
+import { cleanupTestData } from "./lib/test-cleanup.mjs";
 
 const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
 const BEFORE = arg("--before");
@@ -228,6 +228,6 @@ try {
   console.error(e instanceof Error ? e.message : e);
   exitCode = 1;
 } finally {
-  spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
+  await cleanupTestData().catch((e) => console.error(e instanceof Error ? e.message : String(e)));
 }
 process.exit(exitCode);

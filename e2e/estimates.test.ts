@@ -5,12 +5,12 @@
  * services page (sample count, manual text, "Reset statistik") and the min-samples site setting.
  * Refuses to run unless the Supabase URL matches SUPABASE_DEV_PROJECT_REF.
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import * as OTPAuth from "otpauth";
 import { chromium, type Browser, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { cleanupOrFail } from "../scripts/lib/test-cleanup.mjs";
 
 const BASE = process.env.E2E_BASE ?? "http://localhost:3110";
 const env: Record<string, string> = {};
@@ -27,12 +27,14 @@ const anonKey = env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPA
 const LIKEO = "5c1e0a00-0000-4000-8000-00000000e001";
 
 describe.skipIf(!enabled)("delivery-time estimates: services page, order form, admin", () => {
-  const run = Math.random().toString(36).slice(2, 7);
+  /** Every fixture of this file carries MARKER (ids, usernames, slugs): the pre-clean removes leftovers by it. */
+  const MARKER = "es";
+  const run = MARKER + Math.random().toString(36).slice(2, 7);
   const password = `Esm-${run}-Pass12`;
   const uName = `zt_eu_${run}`;
   const aName = `zt_ea_${run}`;
-  const SVC = `ZT-X${run.toUpperCase()}`; // gets completed orders
-  const SVC2 = `ZT-Y${run.toUpperCase()}`; // gets a manual text
+  const SVC = `ZT-${run.toUpperCase()}X`; // gets completed orders
+  const SVC2 = `ZT-${run.toUpperCase()}Y`; // gets a manual text
   const CAT = `ZT Kategori ${run}`;
   const email = (n: string) => `${n}@jagoansosmed-test.invalid`;
   let browser: Browser;
@@ -90,6 +92,7 @@ describe.skipIf(!enabled)("delivery-time estimates: services page, order form, a
   beforeAll(async () => {
     const ref = env.SUPABASE_DEV_PROJECT_REF;
     if (!ref || new URL(url).hostname !== `${ref}.supabase.co`) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
+    await cleanupOrFail({ marker: MARKER }); // leftovers of an earlier killed run of this suite only
     const db = sb();
     const mk = async (n: string) => {
       const { data, error } = await db.auth.admin.createUser({ email: email(n), password, email_confirm: true, user_metadata: { username: n } });
@@ -113,6 +116,7 @@ describe.skipIf(!enabled)("delivery-time estimates: services page, order form, a
     const uctx = await browser.newContext({ baseURL: BASE });
     user = await uctx.newPage();
     await user.goto("/login");
+    await user.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await user.getByPlaceholder("nama_pengguna").fill(uName);
     await user.getByPlaceholder("Minimal 8 karakter").fill(password);
     await user.getByRole("button", { name: "Masuk", exact: true }).click();
@@ -120,6 +124,7 @@ describe.skipIf(!enabled)("delivery-time estimates: services page, order form, a
     const actx = await browser.newContext({ baseURL: BASE });
     admin = await actx.newPage();
     await admin.goto("/admin/login");
+    await admin.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await admin.getByPlaceholder("nama_admin").fill(aName);
     await admin.getByPlaceholder("Password admin").fill(password);
     await admin.locator("form button[type=submit]").click();
@@ -131,9 +136,8 @@ describe.skipIf(!enabled)("delivery-time estimates: services page, order form, a
 
   afterAll(async () => {
     await browser?.close();
-    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
-    if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1200));
-  }, 120_000);
+    await cleanupOrFail({ marker: MARKER }); // in-process, loud on failure (prints the manual command)
+  }, 300_000);
 
   it("no estimate before the 3rd completed order; the estimate at 3; the p25-p75 range at 5", async () => {
     expect(await cardEstimate(SVC)).toBe("Belum ada estimasi"); // 0 orders

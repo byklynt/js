@@ -4,9 +4,9 @@
  * The tests create their own temporary users (@jagoansosmed-test.invalid) and ZT- fixtures and remove them afterwards
  * with scripts/db-cleanup-test-data.sql. They refuse to run unless SUPABASE_DEV_PROJECT_REF matches the project URL.
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { cleanupOrFail } from "../../../scripts/lib/test-cleanup.mjs";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 function loadEnv(): Record<string, string> {
@@ -26,7 +26,9 @@ const enabled = env.RUN_DB_TESTS === "1" && Boolean(url && key);
 
 describe.skipIf(!enabled)("money functions under concurrency (real database)", () => {
   let db: SupabaseClient;
-  const run = Math.random().toString(36).slice(2, 8);
+  /** Every fixture of this file carries MARKER (ids, usernames, slugs): the pre-clean removes leftovers by it. */
+  const MARKER = "cc";
+  const run = MARKER + Math.random().toString(36).slice(2, 8);
   const users: string[] = [];
 
   async function newUser(label: string): Promise<string> {
@@ -47,6 +49,7 @@ describe.skipIf(!enabled)("money functions under concurrency (real database)", (
     const ref = env.SUPABASE_DEV_PROJECT_REF;
     if (!ref || new URL(url).hostname !== `${ref}.supabase.co`) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
     db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+    await cleanupOrFail({ marker: MARKER }); // leftovers of an earlier killed run of this suite only
     const prov = await db.from("providers").insert({ name: "ZT", slug: `zt-${run}`, mode: "mock" }).select("id").single();
     expect(prov.error).toBeNull();
     await db.from("service_categories").insert({ id: `zt-cat-${run}`, label: "ZT", platform: "instagram" });
@@ -58,12 +61,11 @@ describe.skipIf(!enabled)("money functions under concurrency (real database)", (
     // Order rules are required to order. Insert a test-owned row only when the platform has none yet.
     const rules = await db.from("service_rules").select("platform").in("platform", ["instagram"]);
     if (!rules.data?.length) await db.from("service_rules").insert({ platform: "instagram", label: "Instagram", title: "t", bullets: [], version: "zt-rules" });
-  }, 60_000);
+  }, 180_000);
 
-  afterAll(() => {
-    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
-    if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1500));
-  }, 120_000);
+  afterAll(async () => {
+    await cleanupOrFail({ marker: MARKER }); // in-process, loud on failure (prints the manual command)
+  }, 300_000);
 
   const order = (user: string, link: string, quantity = 1000) =>
     db.rpc("place_order", { p_user: user, p_service: `ZT-${run}`, p_link: link, p_quantity: quantity });

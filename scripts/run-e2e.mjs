@@ -3,7 +3,7 @@ import { assertDevOnlyWithFile } from "./lib/prod-guard.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { openSync } from "node:fs";
 
-assertDevOnlyWithFile({ linked: true }); // tests create and delete data: dev project only
+assertDevOnlyWithFile(); // tests create and delete data: dev project only (cleanup is in-process, no CLI link needed)
 const PORT = "3110";
 const win = process.platform === "win32";
 const log = openSync(".e2e-server.log", "w");

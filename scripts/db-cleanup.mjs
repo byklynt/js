@@ -1,20 +1,19 @@
 // Removes the data the DB / e2e tests and the dev tools create (users @jagoansosmed-test.invalid, ZT- fixtures ...).
-//   node scripts/db-cleanup.mjs
-// It runs scripts/db-cleanup-test-data.sql with the Supabase CLI against the LINKED project, and refuses unless that project is the DEV one
-// (SUPABASE_DEV_PROJECT_REF), and unless the environment URL, when present, is the DEV project too. It never runs against anything else.
-import { spawnSync } from "node:child_process";
-import { assertLinkedIsDev, checkDevOnly, readDevRef } from "./lib/prod-guard.mjs";
+//   node scripts/db-cleanup.mjs              everything tagged as test data
+//   node scripts/db-cleanup.mjs --marker rf  only the fixtures of one suite (its run ids start with "rf")
+// It runs IN-PROCESS: one HTTPS call to public.test_cleanup() (no CLI, no extra process, so it works under memory pressure). It refuses
+// unless NEXT_PUBLIC_SUPABASE_URL is exactly the DEV project (SUPABASE_DEV_PROJECT_REF). It prints how many rows it removed per table and
+// exits 1 (printing the exact command to run by hand) if anything goes wrong.
+import { cleanupTestData, summarizeCleanup } from "./lib/test-cleanup.mjs";
 
-const devRef = assertLinkedIsDev();
-if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-  const c = checkDevOnly(process.env, devRef);
-  if (!c.ok) {
-    console.error(c.error);
-    process.exit(1);
-  }
+const i = process.argv.indexOf("--marker");
+const marker = i === -1 ? null : (process.argv[i + 1] ?? "");
+
+try {
+  const counts = await cleanupTestData({ marker: marker === "" ? "?" : marker });
+  console.log(`db-cleanup${marker ? ` (marker ${marker})` : ""}: ${summarizeCleanup(counts)}`);
+  console.log(JSON.stringify(counts));
+} catch (e) {
+  console.error(e instanceof Error ? e.message : String(e));
+  process.exit(1);
 }
-void readDevRef;
-const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
-process.stdout.write(r.stdout ?? "");
-process.stderr.write(r.stderr ?? "");
-process.exit(r.status ?? 1);

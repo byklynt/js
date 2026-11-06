@@ -5,12 +5,12 @@
  * Indonesian message and never saved. The site settings are restored afterwards.
  * Refuses to run unless the Supabase URL matches SUPABASE_DEV_PROJECT_REF.
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import * as OTPAuth from "otpauth";
 import { chromium, type Browser, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { cleanupOrFail } from "../scripts/lib/test-cleanup.mjs";
 
 const BASE = process.env.E2E_BASE ?? "http://localhost:3110";
 const env: Record<string, string> = {};
@@ -26,7 +26,9 @@ const serviceKey = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || "
 const anonKey = env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
 describe.skipIf(!enabled)("community links: admin-controlled sidebar and footers", () => {
-  const run = Math.random().toString(36).slice(2, 7);
+  /** Every fixture of this file carries MARKER (ids, usernames, slugs): the pre-clean removes leftovers by it. */
+  const MARKER = "cl";
+  const run = MARKER + Math.random().toString(36).slice(2, 7);
   const password = `Com-${run}-Pass12`;
   const uName = `zt_cu_${run}`;
   const aName = `zt_ca_${run}`;
@@ -78,6 +80,7 @@ describe.skipIf(!enabled)("community links: admin-controlled sidebar and footers
   beforeAll(async () => {
     const ref = env.SUPABASE_DEV_PROJECT_REF;
     if (!ref || new URL(url).hostname !== `${ref}.supabase.co`) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
+    await cleanupOrFail({ marker: MARKER }); // leftovers of an earlier killed run of this suite only
     const db = sb();
     original = (((await db.from("site_settings").select("data").maybeSingle()).data?.data ?? {}) as Record<string, unknown>);
     const mk = async (n: string) => {
@@ -97,6 +100,7 @@ describe.skipIf(!enabled)("community links: admin-controlled sidebar and footers
     const uctx = await browser.newContext({ baseURL: BASE, viewport: { width: 1280, height: 900 } });
     user = await uctx.newPage();
     await user.goto("/login");
+    await user.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await user.getByPlaceholder("nama_pengguna").fill(uName);
     await user.getByPlaceholder("Minimal 8 karakter").fill(password);
     await user.getByRole("button", { name: "Masuk", exact: true }).click();
@@ -104,6 +108,7 @@ describe.skipIf(!enabled)("community links: admin-controlled sidebar and footers
     const actx = await browser.newContext({ baseURL: BASE, viewport: { width: 1280, height: 900 } });
     admin = await actx.newPage();
     await admin.goto("/admin/login");
+    await admin.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await admin.getByPlaceholder("nama_admin").fill(aName);
     await admin.getByPlaceholder("Password admin").fill(password);
     await admin.locator("form button[type=submit]").click();
@@ -116,9 +121,8 @@ describe.skipIf(!enabled)("community links: admin-controlled sidebar and footers
   afterAll(async () => {
     await browser?.close();
     await sb().from("site_settings").upsert({ id: true, data: original as never }); // the site settings are put back exactly as they were
-    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
-    if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1200));
-  }, 120_000);
+    await cleanupOrFail({ marker: MARKER }); // in-process, loud on failure (prints the manual command)
+  }, 300_000);
 
   it("nothing is shown while no link is set: no group, no '#' links, no 'Aplikasi Mobile'", async () => {
     await setLinks({}); // all empty

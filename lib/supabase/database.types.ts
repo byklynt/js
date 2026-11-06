@@ -549,6 +549,24 @@ export type Database = {
           },
         ]
       }
+      dev_flags: {
+        Row: {
+          key: string
+          set_at: string
+          value: string
+        }
+        Insert: {
+          key: string
+          set_at?: string
+          value: string
+        }
+        Update: {
+          key?: string
+          set_at?: string
+          value?: string
+        }
+        Relationships: []
+      }
       favorites: {
         Row: {
           created_at: string
@@ -2051,6 +2069,7 @@ export type Database = {
         }
       }
       service_sort_key: { Args: { p_id: string }; Returns: number }
+      test_cleanup: { Args: { p_marker?: string }; Returns: Json }
       user_stats: {
         Args: { p_user: string }
         Returns: {

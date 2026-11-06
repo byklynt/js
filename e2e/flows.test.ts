@@ -4,7 +4,6 @@
  * admin balance adjustment, admin refund approval, and the access rules (another user's data, non-admin blocked from /admin).
  * It refuses to run unless the Supabase URL matches SUPABASE_DEV_PROJECT_REF. Temporary users are created and removed through the service role.
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import * as OTPAuth from "otpauth";
@@ -12,6 +11,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from "playwrig
 import { LEGAL_VERSION } from "@/lib/legal-content";
 import { hashPassword } from "@/lib/server/password";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { cleanupOrFail } from "../scripts/lib/test-cleanup.mjs";
 
 const BASE = process.env.E2E_BASE ?? "http://localhost:3110";
 const env: Record<string, string> = {};
@@ -26,19 +26,21 @@ const url = env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const serviceKey = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || "";
 const anonKey = env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
-const LIKEO = "5c1e0a00-0000-4000-8000-00000000e001";
 
 describe.skipIf(!enabled)("browser flows: signup, order, ticket, language, admin actions, access rules", () => {
-  const run = Math.random().toString(36).slice(2, 7);
+  /** Every fixture of this file carries MARKER (ids, usernames, slugs): the pre-clean removes leftovers by it. */
+  const MARKER = "fl";
+  const run = MARKER + Math.random().toString(36).slice(2, 7);
   const password = `Flw-${run}-Pass12`;
   const uName = `zt_f_${run}`; // signs up through the UI
   const vName = `zt_v_${run}`; // "someone else"
   const aName = `zt_a_${run}`; // admin
-  const SVC = `ZT-F${run.toUpperCase()}`;
+  const SVC = `ZT-${run.toUpperCase()}`;
   const email = (n: string) => `${n}@jagoansosmed-test.invalid`;
   let browser: Browser;
   let totpSecret = "";
   const id: Record<string, string> = {};
+  let PROV = ""; // a provider of this run only: the mock catalogue id 1001 can then never collide with leftovers
   const sb = () => createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const code = () => new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(totpSecret), digits: 6, period: 30 }).generate();
   let lastUsed = "";
@@ -53,6 +55,7 @@ describe.skipIf(!enabled)("browser flows: signup, order, ticket, language, admin
     const ctx = await browser.newContext({ baseURL: BASE });
     const page = await ctx.newPage();
     await page.goto("/login");
+    await page.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await page.getByPlaceholder("nama_pengguna").fill(name);
     await page.getByPlaceholder("Minimal 8 karakter").fill(password);
     if (remember) await page.getByRole("checkbox").check();
@@ -64,6 +67,7 @@ describe.skipIf(!enabled)("browser flows: signup, order, ticket, language, admin
     const ctx = await browser.newContext({ baseURL: BASE });
     const page = await ctx.newPage();
     await page.goto("/admin/login");
+    await page.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await page.getByPlaceholder("nama_admin").fill(aName);
     await page.getByPlaceholder("Password admin").fill(password);
     await page.locator("form button[type=submit]").click();
@@ -77,6 +81,7 @@ describe.skipIf(!enabled)("browser flows: signup, order, ticket, language, admin
   beforeAll(async () => {
     const ref = env.SUPABASE_DEV_PROJECT_REF;
     if (!ref || new URL(url).hostname !== `${ref}.supabase.co`) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
+    await cleanupOrFail({ marker: MARKER }); // leftovers of an earlier killed run of this suite only
     const db = sb();
     const mk = async (n: string) => {
       const { data, error } = await db.auth.admin.createUser({ email: email(n), password, email_confirm: true, user_metadata: { username: n } });
@@ -92,7 +97,10 @@ describe.skipIf(!enabled)("browser flows: signup, order, ticket, language, admin
     totpSecret = enrol.data!.totp.secret;
     expect((await c.auth.mfa.challengeAndVerify({ factorId: enrol.data!.id, code: await freshCode() })).error).toBeNull();
     await db.from("service_categories").insert({ id: `zt-cat-${run}`, label: `ZT Kategori ${run}`, platform: "instagram" });
-    expect((await db.from("services").insert({ id: SVC, provider_id: LIKEO, provider_service_id: "1001", category_id: `zt-cat-${run}`, name: `ZT Followers ${run}`, platform: "instagram", provider_price: 1000, price_per_1000: 1500, min: 100, max: 100000, cancel: true, refill: true, active: true, imported: true })).error).toBeNull();
+    const provRow = await db.from("providers").insert({ name: `ZT ${run}`, slug: `zt-${run}`, mode: "mock", active: true }).select("id").single();
+    expect(provRow.error).toBeNull();
+    PROV = provRow.data!.id;
+    expect((await db.from("services").insert({ id: SVC, provider_id: PROV, provider_service_id: "1001", category_id: `zt-cat-${run}`, name: `ZT Followers ${run}`, platform: "instagram", provider_price: 1000, price_per_1000: 1500, min: 100, max: 100000, cancel: true, refill: true, active: true, imported: true })).error).toBeNull();
     browser = await chromium.launch();
   }, 90_000);
 
@@ -109,9 +117,8 @@ describe.skipIf(!enabled)("browser flows: signup, order, ticket, language, admin
       }
       if (paths.length) await bucket.remove(paths);
     }
-    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
-    if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1200));
-  }, 120_000);
+    await cleanupOrFail({ marker: MARKER }); // in-process, loud on failure (prints the manual command)
+  }, 300_000);
 
   it("signup through the UI gives a definite outcome and creates the account with the chosen username", async () => {
     const ctx = await browser.newContext({ baseURL: BASE });
@@ -310,6 +317,7 @@ describe.skipIf(!enabled)("browser flows: signup, order, ticket, language, admin
     const fresh = await browser.newContext({ baseURL: BASE });
     const lp = await fresh.newPage();
     await lp.goto("/login");
+    await lp.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await lp.getByPlaceholder("nama_pengguna").fill(bName);
     await lp.getByPlaceholder("Minimal 8 karakter").fill(password);
     await lp.getByRole("button", { name: "Masuk", exact: true }).click();
@@ -364,6 +372,7 @@ describe.skipIf(!enabled)("browser flows: signup, order, ticket, language, admin
     const ctx = await browser.newContext({ baseURL: BASE });
     const page = await ctx.newPage();
     await page.goto("/admin/login");
+    await page.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await page.getByPlaceholder("nama_admin").fill(bName);
     await page.getByPlaceholder("Password admin").fill(password);
     await page.locator("form button[type=submit]").click();

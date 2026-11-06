@@ -4,12 +4,12 @@
  * providers table, "Pesanan Gagal Kirim" with "Kirim ulang semua", "Rekonsiliasi"). A failed order created through the service role
  * moves the counter and shows up in the list. Refuses to run unless the Supabase URL matches SUPABASE_DEV_PROJECT_REF.
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import * as OTPAuth from "otpauth";
 import { chromium, type Browser, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { cleanupOrFail } from "../scripts/lib/test-cleanup.mjs";
 
 const BASE = process.env.E2E_BASE ?? "http://localhost:3110";
 const env: Record<string, string> = {};
@@ -27,11 +27,13 @@ const LIKEO = "5c1e0a00-0000-4000-8000-00000000e001";
 const LABELS = ["Tiket Menunggu", "Order Gagal Kirim", "Order Macet", "Refund Tidak Sesuai", "Deposit Menunggu", "Margin Tipis", "Perlu Ditinjau"];
 
 describe.skipIf(!enabled)("admin dashboard: every section, real data", () => {
-  const run = Math.random().toString(36).slice(2, 7);
+  /** Every fixture of this file carries MARKER (ids, usernames, slugs): the pre-clean removes leftovers by it. */
+  const MARKER = "ad";
+  const run = MARKER + Math.random().toString(36).slice(2, 7);
   const password = `Dsh-${run}-Pass12`;
   const aName = `zt_da_${run}`;
   const uName = `zt_du_${run}`;
-  const SVC = `ZT-D${run.toUpperCase()}`;
+  const SVC = `ZT-${run.toUpperCase()}`;
   const email = (n: string) => `${n}@jagoansosmed-test.invalid`;
   let browser: Browser;
   let admin: Page;
@@ -59,6 +61,7 @@ describe.skipIf(!enabled)("admin dashboard: every section, real data", () => {
   beforeAll(async () => {
     const ref = env.SUPABASE_DEV_PROJECT_REF;
     if (!ref || new URL(url).hostname !== `${ref}.supabase.co`) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
+    await cleanupOrFail({ marker: MARKER }); // leftovers of an earlier killed run of this suite only
     const db = sb();
     const mk = async (n: string) => {
       const { data, error } = await db.auth.admin.createUser({ email: email(n), password, email_confirm: true, user_metadata: { username: n } });
@@ -74,11 +77,12 @@ describe.skipIf(!enabled)("admin dashboard: every section, real data", () => {
     totpSecret = enrol.data!.totp.secret;
     expect((await c.auth.mfa.challengeAndVerify({ factorId: enrol.data!.id, code: await freshCode() })).error).toBeNull();
     await db.from("service_categories").insert({ id: `zt-cat-${run}`, label: `ZT Kategori ${run}`, platform: "instagram" });
-    expect((await db.from("services").insert({ id: SVC, provider_id: LIKEO, provider_service_id: "1001", category_id: `zt-cat-${run}`, name: `ZT Followers ${run}`, platform: "instagram", provider_price: 1000, price_per_1000: 1500, min: 100, max: 100000, active: true, imported: true })).error).toBeNull();
+    expect((await db.from("services").insert({ id: SVC, provider_id: LIKEO, provider_service_id: `zt${run}`, category_id: `zt-cat-${run}`, name: `ZT Followers ${run}`, platform: "instagram", provider_price: 1000, price_per_1000: 1500, min: 100, max: 100000, active: true, imported: true })).error).toBeNull();
     browser = await chromium.launch();
     const ctx = await browser.newContext({ baseURL: BASE });
     admin = await ctx.newPage();
     await admin.goto("/admin/login");
+    await admin.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await admin.getByPlaceholder("nama_admin").fill(aName);
     await admin.getByPlaceholder("Password admin").fill(password);
     await admin.locator("form button[type=submit]").click();
@@ -90,9 +94,8 @@ describe.skipIf(!enabled)("admin dashboard: every section, real data", () => {
 
   afterAll(async () => {
     await browser?.close();
-    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
-    if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1200));
-  }, 120_000);
+    await cleanupOrFail({ marker: MARKER }); // in-process, loud on failure (prints the manual command)
+  }, 300_000);
 
   it("all sections render: 4 stat cards, 7 attention cards (even at 0), sync health, failed orders with 'Kirim ulang semua', reconciliation", async () => {
     await admin.goto("/admin");

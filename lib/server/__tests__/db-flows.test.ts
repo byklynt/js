@@ -3,10 +3,10 @@
  * against the linked DEV Supabase project, with the mock provider. Run with: npm run test:db
  * Temp users (@jagoansosmed-test.invalid) and ZT- fixtures are removed afterwards by scripts/db-cleanup-test-data.sql.
  */
-import { spawnSync } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { cleanupOrFail } from "../../../scripts/lib/test-cleanup.mjs";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: () => {}, revalidateTag: () => {} }));
@@ -25,7 +25,11 @@ for (const [k, v] of Object.entries(fileEnv)) if (process.env[k] === undefined) 
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY));
 
 describe.skipIf(!enabled)("server flows on Supabase (mock provider)", () => {
-  const run = Math.random().toString(36).slice(2, 7);
+  /** Every fixture of this file carries MARKER (ids, usernames, slugs): the pre-clean removes leftovers by it. */
+  const MARKER = "df";
+  const run = MARKER + Math.random().toString(36).slice(2, 7);
+  let PROV = "";
+  const PSID = `zt${run}`;
   // Loaded lazily so the env above is in place before the modules read it.
   let m: {
     db: ReturnType<typeof import("@/lib/server/supabase-admin").supabaseAdmin>;
@@ -69,19 +73,22 @@ describe.skipIf(!enabled)("server flows on Supabase (mock provider)", () => {
       client: await import("@/lib/server/providers/client"),
       config: await import("@/lib/server/providers/config"),
     };
-    const prov = await m.db.from("providers").select("id,active").eq("id", m.config.LIKEO_ID).maybeSingle();
-    if (!prov.data) throw new Error("Run `npm run bootstrap` first (Likeo provider row is missing).");
-    await m.db.from("providers").update({ active: true }).eq("id", m.config.LIKEO_ID);
+    // pre-clean: leftovers of an earlier (killed) run of THIS suite only, found by the suite marker; then fixtures that are unique to this run
+    await cleanupOrFail({ marker: MARKER });
+    const provRow = await m.db.from("providers").insert({ name: `ZT ${run}`, slug: `zt-${run}`, mode: "mock", active: true }).select("id").single();
+    expect(provRow.error).toBeNull();
+    PROV = provRow.data!.id;
+    m.client.mockWorld().services.push({ providerId: m.config.LIKEO_ID, providerServiceId: PSID } as never); // the mock provider accepts this service id
     await m.db.from("service_categories").insert({ id: `zt-cat-${run}`, label: `ZT Kategori ${run}`, platform: "instagram" });
     const svc = await m.db.from("services").insert({
-      id: SVC, provider_id: m.config.LIKEO_ID, provider_service_id: "1001", category_id: `zt-cat-${run}`, name: `ZT Followers ${run}`, platform: "instagram",
+      id: SVC, provider_id: PROV, provider_service_id: PSID, category_id: `zt-cat-${run}`, name: `ZT Followers ${run}`, platform: "instagram",
       provider_price: 1000, price_per_1000: 1500, min: 100, max: 100000, cancel: true, refill: true, refill_days: 30, active: true, imported: true,
     });
     expect(svc.error).toBeNull();
     user = await newUser("u");
     admin = await newUser("adm", "admin");
     await credit(user, 50_000, "seed");
-  }, 90_000);
+  }, 240_000);
 
   afterAll(async () => {
     // Ticket attachments live in Storage, which SQL cleanup cannot reach: remove ONLY the folders of the users this run created.
@@ -95,9 +102,8 @@ describe.skipIf(!enabled)("server flows on Supabase (mock provider)", () => {
       }
       if (paths.length) await bucket.remove(paths);
     }
-    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
-    if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1500));
-  }, 120_000);
+    await cleanupOrFail({ marker: MARKER }); // in-process, loud on failure (prints the manual command)
+  }, 300_000);
 
   it("the catalogue shows the service with public fields only, with search, category counts and favorites filter", async () => {
     const page = await m.services.getServices({ search: `zt followers ${run}` });
@@ -379,7 +385,7 @@ describe.skipIf(!enabled)("server flows on Supabase (mock provider)", () => {
 
   it("performance: 5,000 services stay fast (page, search, category counts)", async () => {
     const rows = Array.from({ length: 5000 }, (_, i) => ({
-      id: `ZT-P${run.toUpperCase()}${i}`, provider_id: m.config.LIKEO_ID, provider_service_id: `p${run}${i}`, category_id: `zt-cat-${run}`, name: `Perf Service ${i} ${i % 7 === 0 ? "Instagram Likes" : "TikTok Views"}`,
+      id: `ZT-${run.toUpperCase()}P${i}`, provider_id: PROV, provider_service_id: `p${run}${i}`, category_id: `zt-cat-${run}`, name: `Perf Service ${i} ${i % 7 === 0 ? "Instagram Likes" : "TikTok Views"}`,
       platform: "instagram", provider_price: 500 + (i % 90), price_per_1000: 700 + (i % 90), min: 10, max: 100000, active: true, imported: true,
     }));
     for (let i = 0; i < rows.length; i += 500) expect((await m.db.from("services").insert(rows.slice(i, i + 500))).error).toBeNull();

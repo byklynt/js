@@ -4,11 +4,11 @@
  * on the legal pages and inside the dashboard. Also the implied-acceptance text on /signup and the redirects from the old paths.
  * Dashboard footer: a temporary user is created through the service role (DEV project only) and removed afterwards.
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { chromium, type Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { cleanupOrFail } from "../scripts/lib/test-cleanup.mjs";
 import { LEGAL_VERSION, formatLegalDate, LEGAL_DOCS } from "@/lib/legal-content";
 
 const BASE = process.env.E2E_BASE ?? "http://localhost:3110";
@@ -33,7 +33,9 @@ const BANNED = ["Supabase", "UU PDP", "Undang-Undang", "Likeo", "Postgres", "Ver
 const FOOTER = ["/syarat-ketentuan", "/kebijakan-refund", "/kebijakan-privasi"];
 
 describe.skipIf(!enabled)("legal pages", () => {
-  const run = Math.random().toString(36).slice(2, 7);
+  /** Every fixture of this file carries MARKER (ids, usernames, slugs): the pre-clean removes leftovers by it. */
+  const MARKER = "lg";
+  const run = MARKER + Math.random().toString(36).slice(2, 7);
   const uName = `zt_l_${run}`;
   const password = `Leg-${run}-Pass12`;
   let browser: Browser;
@@ -41,6 +43,7 @@ describe.skipIf(!enabled)("legal pages", () => {
   beforeAll(async () => {
     const ref = env.SUPABASE_DEV_PROJECT_REF;
     if (!ref || new URL(url).hostname !== `${ref}.supabase.co`) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
+    await cleanupOrFail({ marker: MARKER }); // leftovers of an earlier killed run of this suite only
     const { error } = await createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } }).auth.admin.createUser({
       email: `${uName}@jagoansosmed-test.invalid`, password, email_confirm: true, user_metadata: { username: uName },
     });
@@ -50,9 +53,8 @@ describe.skipIf(!enabled)("legal pages", () => {
 
   afterAll(async () => {
     await browser?.close();
-    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
-    if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1200));
-  }, 120_000);
+    await cleanupOrFail({ marker: MARKER }); // in-process, loud on failure (prints the manual command)
+  }, 300_000);
 
   for (const [index, p] of PAGES.entries()) {
     it(`${p.path}: public, heading, metadata, updated date, working table of contents, contact block, footer links`, async () => {
@@ -142,6 +144,7 @@ describe.skipIf(!enabled)("legal pages", () => {
     const ctx = await browser.newContext({ baseURL: BASE });
     const page = await ctx.newPage();
     await page.goto("/login");
+    await page.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await page.getByPlaceholder("nama_pengguna").fill(uName);
     await page.getByPlaceholder("Minimal 8 karakter").fill(password);
     await page.getByRole("button", { name: "Masuk", exact: true }).click();

@@ -6,13 +6,13 @@
 //   before vs after WITH links set     -> only the new elements (and whatever they push down) may differ.
 // Creates a temporary user + admin (removed afterwards) and restores the site settings. Images: .shots/community/ (git-ignored).
 // pngjs is the PNG decoder that comes with `qrcode` (no new dependency).
-import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import * as OTPAuth from "otpauth";
 import { chromium } from "playwright";
 import { PNG } from "pngjs";
 import { checkDevOnly, readDevRef } from "./lib/prod-guard.mjs";
+import { cleanupTestData } from "./lib/test-cleanup.mjs";
 
 const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
 const BEFORE = arg("--before");
@@ -288,6 +288,6 @@ try {
   exitCode = 1;
 } finally {
   if (original) await sb.from("site_settings").upsert({ id: true, data: original });
-  spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
+  await cleanupTestData().catch((e) => console.error(e instanceof Error ? e.message : String(e)));
 }
 process.exit(exitCode);

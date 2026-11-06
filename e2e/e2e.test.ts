@@ -3,12 +3,12 @@
  * Run with: npm run test:e2e   (builds nothing: run `npm run build` first). Temp accounts (@jagoansosmed-test.invalid) are
  * created through the service role, used through the UI, and removed afterwards by scripts/db-cleanup-test-data.sql.
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import * as OTPAuth from "otpauth";
 import { chromium, type Browser, type BrowserContext, type Page, type Response } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { cleanupOrFail } from "../scripts/lib/test-cleanup.mjs";
 
 const BASE = process.env.E2E_BASE ?? "http://localhost:3110";
 const env: Record<string, string> = {};
@@ -25,7 +25,9 @@ const anonKey = env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPA
 const SECRETS = [serviceKey, env.PROVIDER_KEY_ENC_KEY, env.LIKEO_API_KEY, env.CRON_SECRET].filter((v): v is string => Boolean(v && v.length >= 12));
 
 describe.skipIf(!enabled)("browser e2e: auth, roles, MFA, data isolation", () => {
-  const run = Math.random().toString(36).slice(2, 7);
+  /** Every fixture of this file carries MARKER (ids, usernames, slugs): the pre-clean removes leftovers by it. */
+  const MARKER = "ea";
+  const run = MARKER + Math.random().toString(36).slice(2, 7);
   const password = `E2e-${run}-Pass12`;
   const userName = `zt_e2e_${run}`;
   const adminName = `zt_adm_${run}`;
@@ -65,6 +67,7 @@ describe.skipIf(!enabled)("browser e2e: auth, roles, MFA, data isolation", () =>
   beforeAll(async () => {
     const ref = env.SUPABASE_DEV_PROJECT_REF;
     if (!ref || new URL(url).hostname !== `${ref}.supabase.co`) throw new Error("Refusing to run: SUPABASE_DEV_PROJECT_REF does not match NEXT_PUBLIC_SUPABASE_URL.");
+    await cleanupOrFail({ marker: MARKER }); // leftovers of an earlier killed run of this suite only
     const admin = db();
     const mk = async (username: string) => {
       const { data, error } = await admin.auth.admin.createUser({ email: `${username}@jagoansosmed-test.invalid`, password, email_confirm: true, user_metadata: { username } });
@@ -86,9 +89,8 @@ describe.skipIf(!enabled)("browser e2e: auth, roles, MFA, data isolation", () =>
 
   afterAll(async () => {
     await browser?.close();
-    const r = spawnSync("node", ["scripts/db-cleanup.mjs"], { encoding: "utf8", shell: process.platform === "win32" });
-    if (r.status !== 0) console.error("CLEANUP FAILED:", `${r.stdout}${r.stderr}`.slice(-1200));
-  }, 120_000);
+    await cleanupOrFail({ marker: MARKER }); // in-process, loud on failure (prints the manual command)
+  }, 300_000);
 
   it("signed-out visitors are sent to the login pages", async () => {
     const [ctx, page] = await fresh();
@@ -105,6 +107,7 @@ describe.skipIf(!enabled)("browser e2e: auth, roles, MFA, data isolation", () =>
     const [ctx, page] = await fresh();
     const attempt = async (u: string, p: string) => {
       await page.goto("/login");
+      await page.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
       await page.getByPlaceholder("nama_pengguna").fill(u);
       await page.getByPlaceholder("Minimal 8 karakter").fill(p);
       await page.getByRole("button", { name: "Masuk", exact: true }).click();
@@ -127,6 +130,7 @@ describe.skipIf(!enabled)("browser e2e: auth, roles, MFA, data isolation", () =>
   it("a normal user cannot open /admin", async () => {
     const [ctx, page] = await fresh();
     await page.goto("/login");
+    await page.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await page.getByPlaceholder("nama_pengguna").fill(userName);
     await page.getByPlaceholder("Minimal 8 karakter").fill(password);
     await page.getByRole("button", { name: "Masuk", exact: true }).click();
@@ -143,6 +147,7 @@ describe.skipIf(!enabled)("browser e2e: auth, roles, MFA, data isolation", () =>
   it("admin: password alone is NOT enough, the TOTP code opens the panel, and the panel shows real data", async () => {
     const [ctx, page] = await fresh();
     await page.goto("/admin/login");
+    await page.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await page.getByPlaceholder("nama_admin").fill(adminName);
     await page.getByPlaceholder("Password admin").fill(password);
     await page.locator("form button[type=submit]").click();
@@ -181,6 +186,7 @@ describe.skipIf(!enabled)("browser e2e: auth, roles, MFA, data isolation", () =>
   it("logout ends the session", async () => {
     const [ctx, page] = await fresh();
     await page.goto("/login");
+    await page.waitForLoadState("networkidle").catch(() => {}); // streaming can render the screen twice for a moment
     await page.getByPlaceholder("nama_pengguna").fill(userName);
     await page.getByPlaceholder("Minimal 8 karakter").fill(password);
     await page.getByRole("button", { name: "Masuk", exact: true }).click();
