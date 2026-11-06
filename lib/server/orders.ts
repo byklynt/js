@@ -6,12 +6,18 @@ import { getOrder, getOrderService, updateOrder } from "./repo/orders";
 import { ProviderError, type ProviderClient } from "./provider-client";
 import { ServiceError } from "./tx";
 import { supabaseAdmin } from "./supabase-admin";
+import { customCommentsEnabled } from "./providers/config";
+import { getOrderComments } from "./repo/order-comments";
+import { serviceKind } from "@/lib/service-kind";
 
 export type PlaceOrderInput = {
   userId: string;
   serviceId: string;
   link: string;
-  quantity: number;
+  /** For Custom Comments services the quantity is computed from the comments in place_order (a different number is refused). */
+  quantity?: number;
+  /** Custom Comments only: one comment per line. */
+  comments?: string;
   /** Optional: the rules version the form showed. A stale one is refused (the user re-reads the rules). */
   acceptedRulesVersion?: string;
 };
@@ -35,8 +41,13 @@ export const normalizeLink = (link: string) => link.trim().toLowerCase().replace
  * 3) if every attempt fails: status gagal_kirim and an automatic full refund.
  */
 export async function placeOrder(input: PlaceOrderInput, deps: OrderDeps): Promise<AdminOrder> {
+  // Live, Custom Comments stays off until the provider format is verified (PROVIDER_CUSTOM_COMMENTS=1): never take money for an order we cannot send.
+  if (input.comments !== undefined && !customCommentsEnabled()) throw new ServiceError("Layanan ini belum tersedia untuk dipesan.", "not_orderable");
   const rows = await callFn("place_order", {
-    p_user: input.userId, p_service: input.serviceId, p_link: input.link, p_quantity: input.quantity,
+    p_user: input.userId, p_service: input.serviceId, p_link: input.link, // null = "computed from the comments" (Custom Comments); for any other service SQL refuses it (bad_quantity)
+    p_quantity: input.quantity ?? (null as unknown as number),
+    // NUL cannot be stored in Postgres text; the other control characters are stripped by place_order itself
+    ...(input.comments !== undefined ? { p_comments: input.comments.replaceAll(String.fromCharCode(0), "") } : {}),
     ...(input.acceptedRulesVersion ? { p_accepted_rules_version: input.acceptedRulesVersion } : {}),
   });
   const placed = rows[0];
@@ -61,13 +72,14 @@ export async function submitToProvider(orderId: string | number, deps: OrderDeps
   const order = await getOrder(orderId);
   if (!order) throw new ServiceError("Pesanan tidak ditemukan.", "no_order");
   const service = await getOrderService(order);
+  const comments = service && serviceKind(service.provider_type) === "comments" ? await getOrderComments(order.id) : null;
   let lastError = "";
   let ambiguous = false;
 
   for (let attempt = 1; attempt <= MAX_SUBMIT_ATTEMPTS; attempt++) {
     await updateOrder(order.id, { submit_attempts: attempt });
     try {
-      const res = await deps.client.addOrder(order.providerId, { service: service?.provider_service_id ?? order.serviceId, link: order.link, quantity: order.quantity });
+      const res = await deps.client.addOrder(order.providerId, { service: service?.provider_service_id ?? order.serviceId, link: order.link, quantity: order.quantity, ...(comments ? { comments } : {}) });
       await updateOrder(order.id, { provider_order_id: res.providerOrderId, provider_accepted_at: new Date().toISOString(), submit_attempts: attempt });
       return true;
     } catch (e) {

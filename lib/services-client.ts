@@ -53,6 +53,7 @@ export function rowToService(row: ServiceRow | ServiceDetailData): Service {
     speedPerHour: row.speed ?? 0, startTime: row.avgTime ?? "Bervariasi", refillDays: row.refillDays,
     guarantee: detail.guarantee ?? (row.refillDays ? "Garansi refill" : "Tanpa garansi"), estimate: detail.estimate ?? chooseEstimate(row.est).text, est: row.est,
     linkFormat: detail.linkFormat ?? "https://", description: detail.description ?? [],
+    ...(row.kind ? { kind: row.kind } : {}),
   };
 }
 

@@ -8,6 +8,8 @@ export type CreateOrderPayload = {
   serviceId: string;
   link: string;
   quantity: number;
+  /** Custom Comments only: one comment per line. The server counts them and refuses a different quantity. */
+  comments?: string;
 };
 
 export type CreateBulkOrderPayload = {

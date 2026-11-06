@@ -74,11 +74,12 @@ export function createMockAdapter(db: AdminDb, providerId: string = LIKEO_ID): P
       guard();
       return { balance: 75.5, currency: "USD" };
     },
-    async createOrder({ serviceId, quantity }) {
+    async createOrder({ serviceId, quantity, comments }) {
       guard();
       if (!MOCK_CATALOG.some((s) => s.id === serviceId) && !db.services.some((s) => s.providerId === providerId && s.providerServiceId === serviceId)) {
         throw new ProviderError("Layanan tidak ditemukan di Likeo.", { kind: "provider" });
       }
+      if (comments && comments.length !== quantity) throw new ProviderError("Jumlah komentar tidak sama dengan jumlah pesanan.", { kind: "provider" });
       const orderId = `MK-${100_000 + Object.keys(db.providerOrders).length * 3 + 1}`;
       db.providerOrders[orderId] = { status: "Pending", startCount: 0, remains: quantity };
       return { orderId };

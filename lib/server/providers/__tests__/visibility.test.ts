@@ -14,7 +14,7 @@ beforeEach(() => {
   db = seedAdminDb();
 });
 
-const supported = MOCK_CATALOG.filter((s) => s.type === "Default");
+const supported = MOCK_CATALOG.filter((s) => s.type === "Default" || s.type === "Custom Comments");
 const imported = () => db.services.filter((s) => s.imported);
 
 describe("zero-price import is blocked", () => {

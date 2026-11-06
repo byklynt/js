@@ -36,6 +36,8 @@ import { PackageSearch } from "lucide-react";
 import { useListState, useParamFilter } from "@/lib/use-list-state";
 import { cn } from "@/lib/utils";
 import { useAdminRunner } from "../use-admin-runner";
+import { OrderComments } from "@/components/orders/order-comments";
+import { loadOrderCommentsAction } from "@/lib/admin-list-actions";
 
 type Filter = OrderStatus | "semua" | "macet";
 
@@ -340,6 +342,7 @@ export function AdminOrdersView({ orders, stuckIds = [], sync }: { orders: Admin
                   {order.violationReason ? <InfoChip icon={Ban}>Dibatalkan karena pelanggaran: {order.violationReason}</InfoChip> : null}
                   {order.refundedAmount > 0 ? <InfoChip icon={Undo2}>Refund: {formatIdr(order.refundedAmount)}</InfoChip> : null}
                   {stuck.has(order.id) ? <InfoChip icon={TriangleAlert}>Macet</InfoChip> : null}
+                  {order.commentCount ? <OrderComments orderId={order.id} count={order.commentCount} load={loadOrderCommentsAction} /> : null}
                   {order.held ? <InfoChip icon={TriangleAlert}>Menunggu persetujuan</InfoChip> : null}
                   {order.needsManualCheck ? <InfoChip icon={TriangleAlert}>Perlu dicek manual</InfoChip> : null}
                 </RecordCard>

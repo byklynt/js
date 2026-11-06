@@ -108,6 +108,8 @@ export type Service = {
   est?: import("@/lib/service-estimate").EstimateStats;
   linkFormat: string;
   description: string[];
+  /** See ServiceRow.kind. */
+  kind?: "comments" | "unsupported";
 };
 
 export const rupiahFormatter = new Intl.NumberFormat("id-ID", {

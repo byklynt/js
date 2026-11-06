@@ -48,6 +48,8 @@ export type AdminUser = {
 export type AdminOrder = {
   /** What the provider last said (raw text) and the last submit / sync error of this order. */
   providerStatus?: string | null;
+  /** Custom Comments orders: how many comments were submitted (the text is loaded on demand). */
+  commentCount?: number;
   /** Set when an admin cancelled the order for a policy violation (no refund). */
   violationReason?: string | null;
   syncError?: string | null;

@@ -50,7 +50,7 @@ export interface ProviderAdapter {
   getServices(): Promise<ProviderServiceInfo[]>;
   getBalance(): Promise<ProviderBalance>;
   /** NEVER retried automatically: a timeout here is ambiguous (the order may exist at the provider). */
-  createOrder(input: { serviceId: string; link: string; quantity: number }): Promise<{ orderId: string }>;
+  createOrder(input: { serviceId: string; link: string; quantity: number; comments?: string[] }): Promise<{ orderId: string }>;
   getOrderStatus(id: string): Promise<ProviderOrderStatus>;
   /** Up to 100 ids per call. */
   getOrdersStatus(ids: string[]): Promise<Record<string, BatchStatusItem>>;

@@ -2,6 +2,7 @@ import "server-only";
 import { cleanServiceName } from "@/lib/service-format";
 import { chooseEstimate, statsFromColumns } from "@/lib/service-estimate";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
+import { customCommentsEnabled } from "@/lib/server/providers/config";
 import {
   DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MIN_SEARCH_LENGTH,
   type CategoryRow, type ServiceDetailData, type ServiceRow, type ServicesPage, type ServicesQuery,
@@ -22,14 +23,22 @@ const platformRank = (id: string) => {
 };
 
 type PageRow = { id: string; name: string; category_id: string; price: number; min: number; max: number; refill_days: number | null; avg_time: string | null; speed: number | null; total: number;
-  est_n?: number | null; est_median?: number | null; est_p25?: number | null; est_p75?: number | null; est_buckets?: unknown; est_override?: string | null; est_min?: number | null };
+  est_n?: number | null; est_median?: number | null; est_p25?: number | null; est_p75?: number | null; est_buckets?: unknown; est_override?: string | null; est_min?: number | null; kind?: string | null };
 
 const rowOf = (r: Omit<PageRow, "total">): ServiceRow => ({
   ...(statsFromColumns(r) ? { est: statsFromColumns(r) } : {}),
   id: r.id, name: cleanServiceName(r.name), categoryId: r.category_id, price: Number(r.price), min: Number(r.min), max: Number(r.max),
   refillDays: r.refill_days === null ? null : Number(r.refill_days),
   ...(r.avg_time ? { avgTime: r.avg_time } : {}), ...(r.speed ? { speed: Number(r.speed) } : {}),
+  ...orderKind(r.kind),
 });
+
+/** Custom Comments is orderable only where the provider format is enabled (mock, or live with PROVIDER_CUSTOM_COMMENTS=1); other types never are. */
+function orderKind(kind: string | null | undefined): { kind?: "comments" | "unsupported" } {
+  if (kind === "comments") return customCommentsEnabled() ? { kind: "comments" } : { kind: "unsupported" };
+  if (kind === "unsupported") return { kind: "unsupported" };
+  return {};
+}
 
 function filterArgs(q: ServicesQuery) {
   const text = (q.search ?? "").trim();
@@ -101,7 +110,7 @@ export async function getServiceDetail(id: string): Promise<ServiceDetailData | 
   const { data } = await supabaseAdmin().from("catalogue_services").select("*").eq("id", id).maybeSingle();
   if (!data) return null;
   const row = rowOf({ id: data.id!, name: data.name!, category_id: data.category_id!, price: data.price!, min: data.min!, max: data.max!, refill_days: data.refill_days, avg_time: data.avg_time, speed: data.speed,
-    est_n: data.est_n, est_median: data.est_median, est_p25: data.est_p25, est_p75: data.est_p75, est_buckets: data.est_buckets, est_override: data.est_override, est_min: data.est_min });
+    est_n: data.est_n, est_median: data.est_median, est_p25: data.est_p25, est_p75: data.est_p75, est_buckets: data.est_buckets, est_override: data.est_override, est_min: data.est_min, kind: data.kind });
   return {
     ...row,
     badges: [],

@@ -9,7 +9,7 @@ import type { AdminDb, AdminOrder } from "@/lib/admin-data";
 import type { ProviderOrderState } from "./types";
 
 export interface ProviderClient {
-  addOrder(providerId: string, input: { service: string; link: string; quantity: number }): Promise<{ providerOrderId: string }>;
+  addOrder(providerId: string, input: { service: string; link: string; quantity: number; comments?: string[] }): Promise<{ providerOrderId: string }>;
   getOrderStatus(providerId: string, providerOrderId: string): Promise<ProviderOrderState>;
   cancelOrder(providerId: string, providerOrderId: string): Promise<{ requestId: string }>;
   refillOrder(providerId: string, providerOrderId: string): Promise<{ requestId: string }>;

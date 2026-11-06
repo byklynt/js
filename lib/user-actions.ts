@@ -15,6 +15,7 @@ import { createDepositRequest, methodLabel } from "@/lib/server/deposits";
 import { MIN_PASSWORD, EMAIL_RE, verifyPasswordFor } from "@/lib/server/user-auth";
 import { notifyAdmins } from "@/lib/server/repo/notify";
 import { listUserOrders } from "@/lib/server/repo/orders";
+import { getOrderComments } from "@/lib/server/repo/order-comments";
 import { loadSettings } from "@/lib/server/repo/settings";
 import { requestCancel, requestRefill } from "@/lib/server/requests";
 import { cancelEligibility, computeUserCancelRefund, refillEligibility, type Eligibility } from "@/lib/server/rules";
@@ -45,12 +46,17 @@ const orderSchema = z.object({
   link: z.string().trim().min(1, "Tautan wajib diisi.").max(500),
   quantity: z.coerce.number().int("Jumlah harus bilangan bulat.").positive("Jumlah harus lebih dari 0."),
 });
+/** Single order: for Custom Comments the quantity may be omitted (the server counts the comments); a quantity that differs is refused by place_order. */
+const singleOrderSchema = orderSchema.extend({
+  quantity: orderSchema.shape.quantity.optional(),
+  comments: z.string().max(70_000, "Komentar terlalu panjang.").optional(),
+});
 
 const orderIdSchema = z.string().trim().regex(/^\d{1,12}$/, "Pesanan tidak valid.");
 
 /** Single order. The accepted rules version is recorded by place_order (current version, server side). */
 export async function submitOrder(input: unknown) {
-  const parsed = orderSchema.safeParse(input);
+  const parsed = singleOrderSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Data tidak valid." } as const;
   return guard(async (userId) => {
     const order = await placeOrder({ userId, ...parsed.data }, { client: createProviderClient() });
@@ -73,7 +79,10 @@ export async function submitMassOrder(input: unknown) {
         const order = await placeOrder({ userId, ...line }, { client: createProviderClient() });
         ids.push(order.id);
       } catch (e) {
-        if (e instanceof ServiceError) return { ok: false, error: `Baris ${i + 1}: ${e.message}` } as const;
+        if (e instanceof ServiceError) {
+          const msg = e.code === "no_comments" ? "Layanan Custom Comments butuh daftar komentar. Pesan lewat tab Order Baru." : e.message;
+          return { ok: false, error: `Baris ${i + 1}: ${msg}` } as const;
+        }
         throw e;
       }
     }
@@ -100,7 +109,7 @@ export async function submitCancel(orderId: unknown) {
 }
 
 /** Cancel info for the orders page: eligibility, when it opens, and what a cancellation would refund right now. */
-export type MyOrder = Order & { refunded: number; refill: Eligibility; cancel: Eligibility; cancelRefundPreview: number; cancelPercent: number; cancelMinAgeHours: number };
+export type MyOrder = Order & { commentCount?: number; refunded: number; refill: Eligibility; cancel: Eligibility; cancelRefundPreview: number; cancelPercent: number; cancelMinAgeHours: number };
 
 export async function getMyOrders(): Promise<MyOrder[]> {
   const userId = await currentUserId();
@@ -130,6 +139,7 @@ export async function getMyOrders(): Promise<MyOrder[]> {
       id: o.id, serviceId: o.serviceId, platform: o.platform, name: o.name, link: o.link, charge: o.charge, quantity: o.quantity,
       startCount: o.startCount, remains: o.remains, status: o.status, createdAt: o.createdAt, refillable: Boolean(service?.refill),
       refunded: o.refundedAmount,
+      ...(o.commentCount ? { commentCount: o.commentCount } : {}),
       refill: refillEligibility(o, service, refillBy.get(Number(o.id)) ?? [], now),
       cancel: cancelEligibility(o, service, cancelBy.get(Number(o.id)) ?? [], now, policy),
       cancelRefundPreview: computeUserCancelRefund(o, policy.refundPercent),
@@ -300,4 +310,16 @@ export async function getMySettings(section: string): Promise<Record<string, unk
   if (!userId || !(SETTINGS_SECTIONS as readonly string[]).includes(section)) return {};
   const { data } = await supabaseAdmin().from("profiles").select("prefs").eq("id", userId).single();
   return ((data?.prefs as Record<string, Record<string, unknown>> | null) ?? {})[section] ?? {};
+}
+
+/** The comments of one of MY Custom Comments orders (plain text lines; the owner is checked here, never taken from the client). */
+export async function getMyOrderComments(orderId: unknown): Promise<{ ok: true; comments: string[] } | { ok: false; error: string }> {
+  const userId = await currentUserId();
+  if (!userId) return { ok: false, error: "Silakan masuk terlebih dahulu." };
+  const id = orderIdSchema.safeParse(orderId);
+  if (!id.success) return { ok: false, error: "Pesanan tidak valid." };
+  const { data: owned } = await supabaseAdmin().from("orders").select("id").eq("id", Number(id.data)).eq("user_id", userId).maybeSingle();
+  if (!owned) return { ok: false, error: "Pesanan tidak ditemukan." };
+  const comments = await getOrderComments(id.data);
+  return comments ? { ok: true, comments } : { ok: false, error: "Pesanan ini tidak memiliki komentar." };
 }

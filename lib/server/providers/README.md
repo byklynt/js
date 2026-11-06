@@ -45,7 +45,7 @@ Everything here is **server only**. The API key is read from the environment and
 - **Status mapping** (case-insensitive): Pending = menunggu; Processing / In progress = berjalan; Completed = selesai; Partial = sebagian (uses `remains`, refund = floor(charge x remains / quantity)); Canceled / Cancelled = dibatalkan (full refund); Fail / Failed / Error = failed, full refund. Unknown text keeps the old status and writes `sync.unknown_status` to the activity log.
 - Status sync asks up to 100 order ids per call.
 - **Pricing**: Likeo's rate is per 1000 in the provider currency. Cost in Rupiah = `ceil(rate x kurs)` (stored as `providerPrice`, and per order as `providerCost`). Selling price = cost x (1 + markup), rounded **up** to the "pembulatan" step. New services take the category markup, else the provider markup, else the default. Services under the minimum margin are flagged in the preview and on `/admin/services`.
-- **Sync**: only services of type `Default` are imported; `Package`, `Custom Comments`, `Subscription`, ... are listed as "tidak didukung". A service Likeo drops becomes nonaktif (never deleted) and comes back when listed again. "Terapkan" is locked to the previewed diff (fingerprint): if the catalogue or the kurs changed in between, you must preview again.
+- **Sync**: services of type `Default` and `Custom Comments` are imported; every other type (`Custom Comments Package`, `Package`, `Poll`, `Mentions ...`, `Comment Likes`, `Web Traffic`, `SEO`, `Invites from Groups`, ...) is listed as "tidak didukung" and not imported. A service of an unsupported type that is already in the catalogue is shown as "Belum tersedia untuk dipesan" and `place_order` refuses it (`public.service_kind`). A service Likeo drops becomes nonaktif (never deleted) and comes back when listed again. "Terapkan" is locked to the previewed diff (fingerprint): if the catalogue or the kurs changed in between, you must preview again.
 - Imported services appear in the user's order form and Layanan page (`CatalogBoundary` in the dashboard layout). The bundled demo services stay.
 - The key is never logged, never in error messages (redacted), never in `PublicProvider`; the card shows the last 4 characters only.
 
@@ -80,3 +80,11 @@ I could **not** read Likeo's API documentation. Everything below marked "assumed
 - Tests: `lib/server/providers/__tests__/refill-cancel.test.ts` (adapter + mock) and `lib/server/__tests__/db-flows.test.ts` (sync against the database).
 
 Send the real API docs and I will adjust the adapter (paths, field names, error texts, currency).
+
+## Service types (Custom Comments)
+
+Real `action=services` answer of Likeo (read-only call, 5.225 services; fields `service, name, type, rate, min, max, dripfeed, refill, cancel, category`): Default 5102, Custom Comments 79, Comment Likes 12, Package 9, Web Traffic 6, Custom Comments Package 5, Invites from Groups 4, SEO 3, Mentions Hashtag 2, Poll 2, Mentions Custom List 1.
+
+- Orderable: `Default` (quantity) and `Custom Comments` (one comment per line; the quantity = number of non-empty lines, recomputed in `place_order`; stored in `order_comments`, owner and admins can read).
+- **UNVERIFIED (Likeo docs not available)**: the `add` parameters for Custom Comments. The adapter follows the PerfectPanel convention: `service`, `link`, `comments` (lines joined with a line feed), no `quantity`. Because this is a guess, it is **off in live mode** until `PROVIDER_CUSTOM_COMMENTS=1` is set (the mock always accepts it); while off, those services show "Belum tersedia untuk dipesan" and `placeOrder` refuses before any money moves. Also unverified: whether comments must be unique (the form only warns), the per-comment and total length limits (we use 300 characters and 50.000 characters), and whether `quantity` may be sent together with `comments`.
+- `add` is never retried (unchanged).
