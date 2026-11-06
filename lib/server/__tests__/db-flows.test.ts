@@ -205,6 +205,9 @@ describe.skipIf(!enabled)("server flows on Supabase (mock provider)", () => {
   it("notifications: created by the money functions, own rows only, mark read", async () => {
     const repo = await import("@/lib/server/repo/notifications");
     const other = await newUser("n");
+    // a credited deposit notifies the user inside credit_deposit's transaction
+    const dep = await m.deposits.createDepositRequest({ userId: user, amount: 20_000, methodId: "manual" });
+    await m.deposits.creditDeposit({ depositId: dep.id, externalId: null, by: "test" });
     const page = await repo.listNotifications(user);
     expect(page.items.some((n) => n.type === "deposit")).toBe(true); // credit_deposit notified in the same transaction
     expect(page.unread).toBeGreaterThan(0);
