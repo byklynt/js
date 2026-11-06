@@ -1842,6 +1842,39 @@ export type Database = {
           status: string
         }[]
       }
+      bulk_service_targets: {
+        Args: {
+          p_category?: string
+          p_ids?: string[]
+          p_min_margin?: number
+          p_platform?: string
+          p_review_threshold?: number
+          p_search?: string
+          p_thin?: boolean
+        }
+        Returns: {
+          active: boolean
+          id: string
+          review: boolean
+        }[]
+      }
+      bulk_set_services_active: {
+        Args: {
+          p_active: boolean
+          p_admin: string
+          p_category?: string
+          p_dry_run?: boolean
+          p_ids?: string[]
+          p_include_review?: boolean
+          p_min_margin?: number
+          p_platform?: string
+          p_review_threshold?: number
+          p_scope?: string
+          p_search?: string
+          p_thin?: boolean
+        }
+        Returns: Json
+      }
       catalogue_categories: {
         Args: {
           p_guarantee?: string

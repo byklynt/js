@@ -73,6 +73,26 @@ const serviceFields = {
 };
 
 export const serviceActiveSchema = z.object({ id, active: z.boolean() });
+/** Bulk activate / deactivate. `scope`: selected ids, everything the current filter / search matches, the whole catalogue, one category or one platform. */
+export const bulkServicesSchema = z.object({
+  active: z.boolean(),
+  scope: z.enum(["ids", "filter", "all", "category", "platform"]),
+  ids: z.array(z.string().trim().min(1).max(60)).max(20_000).optional(),
+  category: z.string().trim().max(80).optional(),
+  platform: z.string().trim().max(40).optional(),
+  search: z.string().max(80).optional(),
+  thin: z.boolean().optional(),
+  /** Activating: also switch on the services flagged "Perlu dicek" (the admin confirmed it explicitly). */
+  includeReview: z.boolean().optional(),
+  /** Only count what would change. */
+  dryRun: z.boolean().optional(),
+  /** The admin confirmed the dialog (needed when more than BULK_CONFIRM_ABOVE services change). */
+  confirmed: z.boolean().optional(),
+  /** The word typed for a scoped deactivation ("NONAKTIFKAN"). */
+  typed: z.string().max(40).optional(),
+});
+export { BULK_CONFIRM_ABOVE, BULK_CONFIRM_WORD } from "./bulk-services";
+
 export const serviceUpdateSchema = z
   .object({ id, ...serviceFields })
   .refine((v) => v.min <= v.max, { message: "Minimal tidak boleh lebih besar dari maksimal.", path: ["max"] });

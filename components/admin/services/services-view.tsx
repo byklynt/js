@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, LayoutGrid, Pencil, Plus, RefreshCw, SlidersHorizontal, Upload } from "lucide-react";
+import { Download, LayoutGrid, ListChecks, Pencil, Plus, RefreshCw, SlidersHorizontal, Upload } from "lucide-react";
 import { finalPrice, type AdminService, type PublicProvider } from "@/lib/admin-data";
-import { importServicesCsv, setServiceActive, updateService } from "@/lib/admin-actions";
+import { bulkSetServicesActive, importServicesCsv, setServiceActive, updateService, type BulkServicesCounts } from "@/lib/admin-actions";
+import { BULK_CONFIRM_ABOVE, BULK_CONFIRM_WORD } from "@/lib/bulk-services";
+import { BulkConfirm, BulkScopeDialog, type BulkRequest } from "./bulk-actions";
 import { reviewReasons } from "@/lib/service-review";
 import { ReviewBadge } from "./review-badge";
 import { formatIdr } from "@/lib/balance";
@@ -107,6 +109,75 @@ export function ServicesView({ initial, meta, providers, minMargin = 5, reviewTh
   }, [data.items]);
 
   const providerName = (id: string) => providers.find((p) => p.id === id)?.name ?? id;
+
+  // --- Aksi massal: row selection (ids), "all results of the current filter / search", scoped actions; ONE server call per action ---
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [allResults, setAllResults] = useState(false);
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [pendingBulk, setPendingBulk] = useState<{ req: BulkRequest; counts: BulkServicesCounts; summary: string } | null>(null);
+  const selectedCount = allResults ? data.total : selected.size;
+  const pageIds = () => data.items.map((x) => x.id);
+  const clearSelection = () => {
+    setSelected(new Set());
+    setAllResults(false);
+  };
+  // A different filter or search means a different set of results: the "all results" choice (and the picked rows) no longer apply.
+  const selectionKey = useRef(key);
+  useEffect(() => {
+    if (selectionKey.current !== key) {
+      selectionKey.current = key;
+      setSelected(new Set());
+      setAllResults(false);
+    }
+  }, [key]);
+  const filterCategory = list.filter !== "semua" && list.filter !== "margin" ? (categories.find((c) => c.id === list.filter) ?? null) : null;
+  const filterPlatform = filterCategory ? (data.items.find((s) => s.categoryId === filterCategory.id)?.platform ?? null) : null;
+  const filterRequest = (active: boolean): BulkRequest => ({ active, scope: "filter", category: filterCategory?.id, search: list.debounced, thin: list.filter === "margin" });
+  const idsRequest = (active: boolean): BulkRequest => (allResults ? filterRequest(active) : { active, scope: "ids", ids: Array.from(selected) });
+  const toggleRow = (sid: string) => {
+    const next = new Set(allResults ? pageIds() : selected);
+    if (next.has(sid)) next.delete(sid);
+    else next.add(sid);
+    setAllResults(false);
+    setSelected(next);
+  };
+
+  async function startBulk(req: BulkRequest) {
+    if (bulkBusy) return;
+    setBulkBusy(true);
+    setScopeOpen(false);
+    try {
+      const summary =
+        req.scope === "all" ? "seluruh katalog"
+        : req.scope === "category" ? `kategori ${filterCategory?.label ?? ""}`
+        : req.scope === "platform" ? `platform ${filterPlatform ?? ""}`
+        : req.scope === "filter" ? "semua hasil filter dan pencarian saat ini"
+        : "layanan yang dipilih";
+      const preview = await bulkSetServicesActive({ ...req, dryRun: true });
+      if (!preview.ok) {
+        toast(preview.error, "error");
+        return;
+      }
+      const counts = preview.data as BulkServicesCounts;
+      if (counts.changed === 0 && counts.skippedReview === 0) {
+        toast(`Tidak ada yang berubah: ${counts.matched.toLocaleString("id-ID")} layanan sudah ${req.active ? "aktif" : "nonaktif"}.`);
+        return;
+      }
+      const scoped = !req.active && req.scope !== "ids" && req.scope !== "filter";
+      if (counts.changed > BULK_CONFIRM_ABOVE || (req.active && counts.skippedReview > 0) || scoped) setPendingBulk({ req, counts, summary });
+      else await applyBulk(req, { includeReview: false });
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+  async function applyBulk(req: BulkRequest, extra: { includeReview: boolean }) {
+    const result = await run(bulkSetServicesActive({ ...req, ...extra, confirmed: true, typed: req.active ? undefined : BULK_CONFIRM_WORD }));
+    if (result.ok) {
+      clearSelection();
+      setPendingBulk(null);
+    }
+  }
 
   // The Aktif switch: flips at once (optimistic), the request runs ONCE, the switch is disabled while it is in flight, and a failure puts it back.
   const [pendingActive, setPendingActive] = useState<Record<string, boolean>>({});
@@ -250,6 +321,10 @@ export function ServicesView({ initial, meta, providers, minMargin = 5, reviewTh
           <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
           Atur markup massal
         </Button>
+        <Button variant="outline" onClick={() => setScopeOpen(true)} disabled={bulkBusy}>
+          <ListChecks className="h-3.5 w-3.5" aria-hidden />
+          Aksi massal
+        </Button>
         <Button variant="outline" onClick={() => fileRef.current?.click()}>
           <Upload className="h-3.5 w-3.5" aria-hidden />
           Impor CSV
@@ -285,10 +360,25 @@ export function ServicesView({ initial, meta, providers, minMargin = 5, reviewTh
                   columns={columns()}
                   rows={g.items}
                   rowKey={(s) => s.id}
+                  selection={{
+                    selected: allResults ? new Set(pageIds()) : selected,
+                    onToggle: toggleRow,
+                    onToggleAll: (ids, checked) => {
+                      const next = new Set(allResults ? pageIds() : selected);
+                      for (const sid of ids) {
+                        if (checked) next.add(sid);
+                        else next.delete(sid);
+                      }
+                      setAllResults(false);
+                      setSelected(next);
+                    },
+                    label: (s) => `Pilih layanan ${s.id}`,
+                  }}
                   mobileCard={(s) => (
                     <div className="space-y-2">
                       <div className="flex items-start justify-between gap-2">
                         <p className="min-w-0 text-[11px] font-medium text-ink dark:text-white">
+                          <input type="checkbox" aria-label={`Pilih layanan ${s.id}`} checked={allResults || selected.has(s.id)} onChange={() => toggleRow(s.id)} className="mr-2 h-4 w-4 align-middle accent-primary" />
                           <span className="font-semibold text-primary-accent">{s.id}</span> - {s.name}
                           {reviewOf(s).length ? <ReviewBadge reasons={reviewOf(s)} threshold={reviewThreshold} /> : null}
                         </p>
@@ -324,6 +414,47 @@ export function ServicesView({ initial, meta, providers, minMargin = 5, reviewTh
         )}
       </section>
 
+      {selectedCount > 0 ? (
+        <div
+          role="region"
+          aria-label="Aksi layanan terpilih"
+          data-testid="bulk-bar"
+          className="sticky bottom-4 z-20 mx-auto mt-5 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-2xl border border-slate-200/70 bg-white p-2 pl-4 shadow-lg dark:border-slate-700 dark:bg-slate-900"
+        >
+          <span data-testid="bulk-count" className="text-[10.5px] font-semibold text-ink dark:text-white">
+            {selectedCount.toLocaleString("id-ID")} layanan terpilih
+          </span>
+          {!allResults && data.total > selected.size ? (
+            <>
+              {data.items.some((s) => !selected.has(s.id)) ? (
+                <Button variant="outline" className="h-8 rounded-full px-4" onClick={() => setSelected(new Set(pageIds()))}>
+                  Pilih semua di halaman ini ({data.items.length.toLocaleString("id-ID")})
+                </Button>
+              ) : null}
+              <Button variant="outline" className="h-8 rounded-full px-4" onClick={() => setAllResults(true)}>
+                Pilih semua {data.total.toLocaleString("id-ID")} hasil
+              </Button>
+            </>
+          ) : null}
+          <Button className="h-8 rounded-full px-4" disabled={bulkBusy} onClick={() => void startBulk(idsRequest(true))}>
+            Aktifkan
+          </Button>
+          <Button variant="outline" className="h-8 rounded-full px-4" disabled={bulkBusy} onClick={() => void startBulk(idsRequest(false))}>
+            Nonaktifkan
+          </Button>
+          <Button variant="outline" className="h-8 rounded-full px-4" onClick={clearSelection}>
+            Batal
+          </Button>
+        </div>
+      ) : null}
+      <BulkScopeDialog
+        open={scopeOpen}
+        onClose={() => setScopeOpen(false)}
+        category={filterCategory}
+        platform={filterPlatform ? { id: filterPlatform, label: filterPlatform } : null}
+        onPick={(req) => void startBulk(req)}
+      />
+      <BulkConfirm key={pendingBulk ? `${pendingBulk.req.scope}-${pendingBulk.req.active}` : "closed"} pending={pendingBulk} onClose={() => setPendingBulk(null)} onConfirm={applyBulk} />
       <ServiceFormModal
         key={form ? (form.service?.id ?? "new") + String(Boolean(form)) : "closed"}
         open={Boolean(form)}

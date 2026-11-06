@@ -17,7 +17,6 @@ Hasil pemeriksaan teknis: tidak ada galat konsol, hydration warning, request gag
 | Navbar, tombol tema, tautan footer | Berfungsi | Tautan mati ke `#` dihapus | Ya |
 | `/terms`, `/refund-policy` | Sebagian | Teks contoh, belum ditinjau hukum. `/refund-policy` membaca aturan dari pengaturan admin | Perlu tinjauan hukum |
 | Halaman Kebijakan Privasi | Tidak ada | Belum dibuat | Daftar rilis |
-| `/status` | Berfungsi | Dihitung dari sinkronisasi nyata; tanpa pesanan tampil "Belum ada data" | Fix "terhenti" palsu saat belum ada pesanan |
 | `/robots.txt`, `/sitemap.xml`, `/manifest.webmanifest` | Berfungsi | `/admin` noindex (header dan robots) | Manifest + theme-color ditambah |
 | Logo | Sebagian | Memakai `public/brand/logo-mark.png` yang **belum ada**; sementara tampil monogram "JS" | Butuh berkas dari pemilik |
 

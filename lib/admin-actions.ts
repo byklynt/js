@@ -1,5 +1,6 @@
 "use server";
 
+import { normalizeServiceSearch } from "@/lib/search-text";
 import { revalidatePath, updateTag } from "next/cache";
 import { COMMUNITY_TAG } from "@/lib/community-links";
 import { z, type ZodType } from "zod";
@@ -432,6 +433,47 @@ export async function setServiceActive(input: unknown) {
     }
     await audit(admin, "service.update", "service", row.id, { active: row.active }, { active: d.active });
     return ok(`Layanan ${row.id} ${d.active ? "diaktifkan" : "dinonaktifkan"}.`);
+  });
+}
+
+export type BulkServicesCounts = { matched: number; changed: number; skippedReview: number; unchanged: number; dryRun: boolean };
+
+/**
+ * Bulk activate / deactivate: ONE SQL function (one UPDATE, one audit row). The server enforces the confirmations itself: more than 20 changes need
+ * `confirmed`, a scoped deactivation (all / category / platform) needs the typed word, and "Perlu dicek" services are skipped on activation unless
+ * `includeReview`. `dryRun` returns the counts for the dialog without writing.
+ */
+export async function bulkSetServicesActive(input: unknown) {
+  return run(S.bulkServicesSchema, input, async (d, admin) => {
+    if (d.scope === "ids" && !d.ids?.length) return fail("Pilih minimal satu layanan.");
+    if (d.scope === "category" && !d.category) return fail("Pilih kategori dulu.");
+    if (d.scope === "platform" && !d.platform) return fail("Platform tidak diketahui.");
+    const pricing = getDb().settings.pricing;
+    const args = {
+      p_admin: admin.sub, p_active: d.active, p_scope: d.scope,
+      p_ids: d.scope === "ids" ? d.ids : undefined,
+      p_category: d.scope === "category" || d.scope === "filter" ? d.category || undefined : undefined,
+      p_platform: d.scope === "platform" ? d.platform : undefined,
+      p_search: d.scope === "filter" ? normalizeServiceSearch(d.search) || undefined : undefined,
+      p_thin: d.scope === "filter" ? Boolean(d.thin) : false,
+      p_min_margin: pricing.minMarginPercent,
+      p_review_threshold: pricing.reviewPriceThreshold,
+      p_include_review: Boolean(d.includeReview) && d.active,
+    };
+    const preview = (await supabaseAdmin().rpc("bulk_set_services_active", { ...args, p_dry_run: true })).data as unknown as BulkServicesCounts | null;
+    if (!preview) return fail("Terjadi kesalahan di server. Coba lagi.");
+    if (d.dryRun) return ok(undefined, preview);
+    if (preview.changed === 0) return ok("Tidak ada yang berubah.", { ...preview, dryRun: false });
+    if (preview.changed > S.BULK_CONFIRM_ABOVE && !d.confirmed) return fail(`Konfirmasi diperlukan: ${preview.changed.toLocaleString("id-ID")} layanan akan diubah.`);
+    if (!d.active && d.scope !== "ids" && d.scope !== "filter" && (d.typed ?? "").trim() !== S.BULK_CONFIRM_WORD) return fail(`Ketik ${S.BULK_CONFIRM_WORD} untuk melanjutkan.`);
+    const { data, error } = await supabaseAdmin().rpc("bulk_set_services_active", { ...args, p_dry_run: false });
+    if (error || !data) throw new Error(`bulk_set_services_active: ${error?.message ?? "empty"}`);
+    const r = data as unknown as BulkServicesCounts;
+    const n = (x: number) => x.toLocaleString("id-ID");
+    const parts = [`${n(r.changed)} layanan ${d.active ? "diaktifkan" : "dinonaktifkan"}`];
+    if (r.skippedReview > 0) parts.push(`${n(r.skippedReview)} dilewati (Perlu dicek)`);
+    if (r.unchanged > 0) parts.push(`${n(r.unchanged)} sudah ${d.active ? "aktif" : "nonaktif"}`);
+    return ok(parts.join(", "), r);
   });
 }
 

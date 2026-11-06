@@ -11,6 +11,8 @@ const nextConfig: NextConfig = {
   // The first legal pages lived at English paths; keep old links (emails, bookmarks) working.
   async redirects() {
     return [
+      // The public status page was removed: old links go to the home page (permanent).
+      { source: "/status", destination: "/", permanent: true },
       { source: "/terms", destination: "/syarat-ketentuan", permanent: true },
       { source: "/refund-policy", destination: "/kebijakan-refund", permanent: true },
     ];

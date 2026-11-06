@@ -160,7 +160,7 @@ Atur di platform hosting **sebelum build** (`NEXT_PUBLIC_*` ikut tertanam saat b
 
 ## 7. Deploy aplikasi
 
-Build dan deploy dari branch yang sudah lulus `typecheck`, `lint`, tes dan `next build`. Setelah deploy pertama, buka `https://DOMAIN/login` dan `https://DOMAIN/status` (harus tampil tanpa error). Di **/admin/providers** pastikan mode tertulis **live** (bukan mock/off); bila ada peringatan soal `PROVIDER_LIVE_APPROVED_REF`, perbaiki di hosting.
+Build dan deploy dari branch yang sudah lulus `typecheck`, `lint`, tes dan `next build`. Setelah deploy pertama, buka `https://DOMAIN/login` (harus tampil tanpa error). Di **/admin/providers** pastikan mode tertulis **live** (bukan mock/off); bila ada peringatan soal `PROVIDER_LIVE_APPROVED_REF`, perbaiki di hosting.
 
 ## 8. Bootstrap data awal (provider dan pengaturan)
 
@@ -215,7 +215,7 @@ Urutan singkat; semuanya harus berhasil.
    curl -s -o /dev/null -w "%{http_code}\n" -X POST https://DOMAIN/api/cron/sync-orders
    curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer $CRON_SECRET" https://DOMAIN/api/cron/sync-orders
    ```
-3. Halaman publik: `/`, `/services`, `/syarat-ketentuan`, `/kebijakan-refund`, `/kebijakan-privasi`, `/status` tampil; footer berisi tautan hukum.
+3. Halaman publik: `/`, `/services`, `/syarat-ketentuan`, `/kebijakan-refund`, `/kebijakan-privasi`, `/blog` tampil; footer berisi tautan hukum.
 4. Daftar akun uji dengan email asli → email konfirmasi tiba (SMTP) → masuk → dasbor tampil. Cek bahwa `profiles.terms_version` terisi.
 5. Admin: masuk dengan TOTP, buka Dasbor, Provider (saldo nyata, mode **live**), Layanan, Pesanan.
 6. Satu pesanan kecil sungguhan (layanan termurah, jumlah minimum): saldo terpotong sekali, `provider_order_id` terisi (bukan `MK-...`), status berubah lewat sinkronisasi dalam beberapa menit, "Sinkronisasi terakhir" di Pesanan terisi.
