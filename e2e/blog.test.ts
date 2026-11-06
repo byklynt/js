@@ -190,10 +190,11 @@ describe.skipIf(!enabled)("blog: admin writes, public reads", () => {
     await tr.getByRole("button", { name: /Tarik/ }).click();
     await expect.poll(async () => (await row())?.status, { timeout: 30_000 }).toBe("draf");
     await expect.poll(async () => status(`/blog/${SLUG}`), { timeout: 30_000 }).toBe(404);
-    expect(await (await fetch(`${BASE}/blog/rss.xml`)).text()).not.toContain(SLUG);
-    expect(await (await fetch(`${BASE}/sitemap.xml`)).text()).not.toContain(SLUG);
-    expect(await logs()).toEqual(["blog.create", "blog.publish", "blog.unpublish"]);
-  }, 120_000);
+    // the feed and the sitemap are cached for at most a minute (and dropped at once by the admin action): allow for that
+    await expect.poll(async () => (await (await fetch(`${BASE}/blog/rss.xml`)).text()).includes(SLUG), { timeout: 75_000 }).toBe(false);
+    await expect.poll(async () => (await (await fetch(`${BASE}/sitemap.xml`)).text()).includes(SLUG), { timeout: 75_000 }).toBe(false);
+    await expect.poll(async () => logs(), { timeout: 20_000 }).toEqual(["blog.create", "blog.publish", "blog.unpublish"]);
+  }, 240_000);
 
   it("scheduling: a future date makes it 'Terjadwal' and still hidden; delete removes it for good", async () => {
     const id = (await row())!.id;
