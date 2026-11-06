@@ -266,7 +266,7 @@ export function AdminOrdersView({ orders, stuckIds = [], sync }: { orders: Admin
     <div>
       <PageHeader title="Pesanan" subtitle="Pantau dan tangani pesanan pengguna." />
       {sync ? (
-        <p className="-mt-2 mb-3 flex flex-wrap items-center gap-2 text-[11px] text-[#5B6B8C] dark:text-slate-400" data-testid="sync-indicator">
+        <p className="mt-2 mb-3 flex flex-wrap items-center gap-2 text-[11px] text-[#5B6B8C] dark:text-slate-400" data-testid="sync-indicator">
           <span>
             Sinkronisasi terakhir:{" "}
             {sync.lastSuccessAt ? <time dateTime={sync.lastSuccessAt}>{formatDateTime(sync.lastSuccessAt)}</time> : "belum pernah berhasil"}

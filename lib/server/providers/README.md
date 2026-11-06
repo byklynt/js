@@ -63,7 +63,7 @@ I could **not** read Likeo's API documentation. Everything below marked "assumed
 - Errors arrive as `{"error": "..."}` (HTTP 200 or 4xx). The Indonesian mapping covers the usual English messages; anything else is shown shortened.
 - `rate` is per 1000 and in a currency that matches `Kurs` (default USD). If Likeo bills in another currency, change the currency in the code (`settings.pricing.currency`) and the kurs.
 - Whether `cancel` and `refill` actions are enabled per service and per account; the `refill`/`cancel` flags from `services` are trusted.
-- The service `type` text for normal services is `Default`.
+- The service `type` text for normal services is `Default` (confirmed by the real services list: `Default`, `Custom Comments`, ...).
 - The maximum batch of 100 order ids for `status`.
 - The statuses listed above are the only ones Likeo uses (anything else is logged and ignored).
 
@@ -86,5 +86,7 @@ Send the real API docs and I will adjust the adapter (paths, field names, error 
 Real `action=services` answer of Likeo (read-only call, 5.225 services; fields `service, name, type, rate, min, max, dripfeed, refill, cancel, category`): Default 5102, Custom Comments 79, Comment Likes 12, Package 9, Web Traffic 6, Custom Comments Package 5, Invites from Groups 4, SEO 3, Mentions Hashtag 2, Poll 2, Mentions Custom List 1.
 
 - Orderable: `Default` (quantity) and `Custom Comments` (one comment per line; the quantity = number of non-empty lines, recomputed in `place_order`; stored in `order_comments`, owner and admins can read).
-- **UNVERIFIED (Likeo docs not available)**: the `add` parameters for Custom Comments. The adapter follows the PerfectPanel convention: `service`, `link`, `comments` (lines joined with a line feed), no `quantity`. Because this is a guess, it is **off in live mode** until `PROVIDER_CUSTOM_COMMENTS=1` is set (the mock always accepts it); while off, those services show "Belum tersedia untuk dipesan" and `placeOrder` refuses before any money moves. Also unverified: whether comments must be unique (the form only warns), the per-comment and total length limits (we use 300 characters and 50.000 characters), and whether `quantity` may be sent together with `comments`.
+- **VERIFIED live on 2026-11-06 with one real order** (our service 5130 = Facebook Custom Comments, provider service 24292; our order 71268, Likeo order id 13539218): Likeo accepted `add` with `service`, `link` and `comments` (the comments separated by a line feed, `
+`) and **without `quantity`**; the 10 comments appeared on the target post exactly as written and the status ended `Completed`. That is all that was verified: the parameter name, the newline format, omitting `quantity`, a 10-comment order, and one service. It may be enabled in production with `PROVIDER_CUSTOM_COMMENTS=1` (together with `PROVIDER_MODE=live` and `PROVIDER_LIVE_APPROVED_REF` = the production ref). The mock accepts Custom Comments always; without the flag the live adapter refuses them and the services show "Belum tersedia untuk dipesan".
+- **Still unverified** for Custom Comments: whether comments must be unique (the form only warns about duplicates), Likeo's per-comment and total length limits (we enforce 300 characters per comment and 50.000 in total, our own guess), behaviour for very large orders (hundreds or thousands of comments), what Likeo does with extra or odd characters, and the cancel / refill status behaviour for custom-comment services (the generic cancel and status mapping is assumed to apply).
 - `add` is never retried (unchanged).

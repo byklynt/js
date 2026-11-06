@@ -151,6 +151,7 @@ Atur di platform hosting **sebelum build** (`NEXT_PUBLIC_*` ikut tertanam saat b
 | `PROVIDER_KEY_ENC_KEY` | **YA** | dari langkah 2 |
 | `PROVIDER_MODE` | tidak | `live` |
 | `PROVIDER_LIVE_APPROVED_REF` | tidak (tetapi menentukan) | **`REF` production**. Tanpa ini aplikasi **tidak pernah** memanggil provider asli: build production di project yang belum disetujui berstatus *off* (tidak ada data palsu, tidak ada belanja). |
+| `PROVIDER_CUSTOM_COMMENTS` | tidak | **`1`** untuk membuka pesanan Custom Comments ke provider asli. Format `comments` (dipisah baris baru, tanpa `quantity`) sudah **terverifikasi** di Likeo pada 2026-11-06 dengan satu order nyata (10 komentar, status Completed). Boleh diaktifkan di production bersama `PROVIDER_MODE=live` dan `PROVIDER_LIVE_APPROVED_REF` = ref production. Tanpa ini layanan Custom Comments tampil "Belum tersedia untuk dipesan". Belum terverifikasi: wajib unik atau tidak, batas panjang, order sangat besar, cancel/refill untuk layanan ini. |
 | `LIKEO_API_URL` | tidak | `https://likeo.net/api/v2` (atau sesuai akunmu) |
 | `LIKEO_API_KEY` | **YA** | hanya perlu untuk `bootstrap` (langkah 8); setelah itu kunci tersimpan terenkripsi di database. Boleh dikosongkan di hosting. |
 | `PAYMENT_WEBHOOK_SECRET` | **YA** | hanya saat payment gateway aktif |

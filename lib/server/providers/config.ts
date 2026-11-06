@@ -61,8 +61,8 @@ export const providerMode = (): ProviderMode => {
 
 /**
  * Whether "Custom Comments" services can be ordered. The mock accepts them (tests, development). Live, they stay OFF until
- * PROVIDER_CUSTOM_COMMENTS=1 is set: the parameter name and newline format Likeo expects for the comments are not verified (see README),
- * so nothing is sent to the real provider on a guess.
+ * PROVIDER_CUSTOM_COMMENTS=1 is set. The format (comments joined by line feeds, no quantity) was verified against the real Likeo on
+ * 2026-11-06 with one 10-comment order (see the README); the flag stays so each environment opts in on purpose.
  */
 export const customCommentsEnabled = (): boolean => {
   const mode = providerMode();

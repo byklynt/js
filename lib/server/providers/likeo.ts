@@ -227,8 +227,8 @@ export function createLikeoAdapter(opts: LikeoOptions): ProviderAdapter {
     async createOrder({ serviceId, link, quantity, comments }) {
       // One attempt only. Any ambiguous failure (timeout, 5xx, dropped connection) is surfaced as such so the caller
       // marks the order for a manual check instead of sending it again.
-      // Custom Comments: PerfectPanel convention (UNVERIFIED for Likeo): service, link, comments = one comment per line (LF); the quantity is
-      // the number of lines, so it is not sent. Off unless explicitly enabled; a refusal here is definite (nothing was sent), never ambiguous.
+      // Custom Comments: service, link, comments = one comment per line (LF); the quantity is the number of lines, so it is not sent.
+      // Verified against the real Likeo on 2026-11-06 (one 10-comment order, see the README). Off unless explicitly enabled; a refusal here is definite (nothing was sent), never ambiguous.
       if (comments && comments.length) {
         if (!(opts.customComments ?? false)) throw new ProviderError("Pesanan Custom Comments belum diaktifkan untuk Likeo.", { kind: "config" });
         const p2 = addBody.safeParse(await once("add", { service: serviceId, link, comments: comments.join(String.fromCharCode(10)) }));

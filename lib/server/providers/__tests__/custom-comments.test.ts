@@ -19,7 +19,7 @@ function fake(answer: unknown) {
 const make = (f: typeof fetch, customComments?: boolean) =>
   createLikeoAdapter({ apiUrl: "https://likeo.example/api/v2", apiKey: KEY, fetchImpl: f, sleep: async () => {}, log: () => {}, customComments });
 
-describe("Likeo adapter: Custom Comments (parameter name and format are UNVERIFIED, flag-gated)", () => {
+describe("Likeo adapter: Custom Comments (format verified live on 2026-11-06; flag-gated)", () => {
   it("is refused (definite, nothing sent) unless the flag is on", async () => {
     const f = fake({ order: 1 });
     await expect(make(f.impl).createOrder({ serviceId: "26500", link: "https://x.com/a", quantity: 2, comments: ["a", "b"] })).rejects.toMatchObject({ kind: "config", ambiguous: false });

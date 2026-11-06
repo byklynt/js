@@ -66,7 +66,8 @@ try {
     const started = Date.now();
     const r = spawnSync(process.execPath, ["--max-old-space-size=1024", vitestBin, "run", "--config", "vitest.db.config.ts", file, "--reporter=default", "--reporter=json", `--outputFile.json=${out}`], {
       stdio: "inherit",
-      env: { ...process.env, RUN_DB_TESTS: "1" },
+      // the tests always use the mock provider, even when .env.local approves the real one
+      env: { ...process.env, RUN_DB_TESTS: "1", PROVIDER_MODE: "mock", PROVIDER_LIVE_APPROVED_REF: "" },
     });
     let counts = { passed: 0, failed: 0, skipped: 0, total: 0 };
     try {

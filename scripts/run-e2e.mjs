@@ -7,7 +7,8 @@ assertDevOnlyWithFile(); // tests create and delete data: dev project only (clea
 const PORT = "3110";
 const win = process.platform === "win32";
 const log = openSync(".e2e-server.log", "w");
-const server = spawn("npx", ["next", "start", "-p", PORT], { shell: win, stdio: ["ignore", log, log], env: { ...process.env, PROVIDER_MODE: "mock" } });
+const server = spawn("npx", ["next", "start", "-p", PORT], { shell: win, stdio: ["ignore", log, log], // PROVIDER_LIVE_APPROVED_REF="" keeps a .env.local that approves the real provider from turning the test server live (or "off")
+env: { ...process.env, PROVIDER_MODE: "mock", PROVIDER_LIVE_APPROVED_REF: "" } });
 
 async function ready() {
   for (let i = 0; i < 60; i++) {
