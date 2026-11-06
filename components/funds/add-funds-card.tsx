@@ -2,11 +2,14 @@
 
 import { useId, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CreditCard, History, Loader2 } from "lucide-react";
 import type { PaymentMethod } from "@/lib/payments-data";
 import type { DepositConfig } from "@/lib/user-actions";
 import { formatIdr } from "@/lib/balance";
 import { createDeposit } from "@/lib/dashboard-actions";
+import { submitGatewayDeposit } from "@/lib/user-actions";
+import { amountLimits, estimateCustomerFee } from "@/lib/server/payments/gateway-rules";
 import { useToast } from "@/components/shared/toast";
 import { cn } from "@/lib/utils";
 import { AmountPresets, type PresetValue } from "./amount-presets";
@@ -20,7 +23,16 @@ function formatDigits(digits: string): string {
 const presetAmounts = [25000, 50000, 100000, 500000] as const;
 
 export function AddFundsCard({ config }: { config: DepositConfig }) {
-  const { minDeposit, methods: paymentMethods } = config;
+  const { minDeposit, gateway } = config;
+  // manual transfer (admin confirms) plus the Paymenku channels the admin enabled
+  const paymentMethods: PaymentMethod[] = [
+    ...gateway.channels.map((c, i): PaymentMethod => ({
+      id: `gw:${c.code}`, name: c.name, kind: c.type, featured: i === 0,
+      detail: c.feeMode === "merchant" ? "otomatis, tanpa biaya tambahan" : "otomatis",
+    })),
+    ...config.methods,
+  ];
+  const router = useRouter();
   const getBonusPercent = (amount: number) => config.bonusTiers.find((t) => amount >= t.min)?.percent ?? 0;
   const toast = useToast();
   const amountId = useId();
@@ -34,13 +46,17 @@ export function AddFundsCard({ config }: { config: DepositConfig }) {
   const [submitting, setSubmitting] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
+  const channel = method?.id.startsWith("gw:") ? (gateway.channels.find((c) => `gw:${c.code}` === method.id) ?? null) : null;
+  const limits = channel ? amountLimits(channel, { minDeposit, maxDeposit: gateway.maxDeposit }) : { min: minDeposit, max: Number.POSITIVE_INFINITY };
   const amount = Number(digits || 0);
   const matchedPreset = presetAmounts.find((p) => p === amount);
   const selectedPreset: PresetValue = matchedPreset ?? (customChosen || digits ? "custom" : null);
-  const belowMin = amount < minDeposit;
-  const error = touched && belowMin ? `Minimal deposit ${formatIdr(minDeposit)}.` : "";
+  const belowMin = amount < limits.min;
+  const aboveMax = amount > limits.max;
+  const error = touched && belowMin ? `Minimal deposit ${formatIdr(limits.min)}.` : touched && aboveMax ? `Maksimal deposit ${formatIdr(limits.max)}.` : "";
+  const customerFee = channel && amount > 0 ? estimateCustomerFee(channel, amount) : 0;
   const bonusPercent = getBonusPercent(amount);
-  const canSubmit = !belowMin && Boolean(method) && !submitting;
+  const canSubmit = !belowMin && !aboveMax && Boolean(method) && !submitting;
 
   function handlePreset(next: number | "custom") {
     if (next === "custom") {
@@ -60,6 +76,12 @@ export function AddFundsCard({ config }: { config: DepositConfig }) {
     if (!canSubmit || !method) return;
     setSubmitting(true);
     try {
+      if (channel) {
+        const res = await submitGatewayDeposit({ amount, channelCode: channel.code });
+        if (res.ok && res.data) router.push(`/deposit/${res.data.id}`);
+        else if (!res.ok) toast(res.error, "error");
+        return;
+      }
       const result = await createDeposit({ amount, method: method.id });
       if (result.success) {
         toast(`Permintaan deposit ${formatIdr(amount)} dibuat. Menunggu konfirmasi admin.`);
@@ -162,8 +184,24 @@ export function AddFundsCard({ config }: { config: DepositConfig }) {
               Petunjuk
             </p>
             <div className="space-y-2 text-center text-[10px] leading-relaxed text-[#5B6B8C] dark:text-slate-400">
-              <p>Pembayaran otomatis (QRIS, bank, e-wallet) belum tersedia.</p>
-              <p>Ajukan deposit di sini, transfer sesuai arahan support, lalu admin menambahkan saldomu setelah pembayaran diterima.</p>
+              {channel ? (
+                <>
+                  <p>Pilih jumlah, lalu bayar di halaman berikutnya. Saldo masuk otomatis begitu pembayaranmu terkonfirmasi.</p>
+                  <p data-testid="fee-info" className="font-medium text-ink dark:text-slate-200">
+                    {amount <= 0
+                      ? channel.feeMode === "merchant" ? "Tanpa biaya tambahan: biaya ditanggung kami." : "Biaya layanan ditanggung kamu dan ditambahkan ke nominal bayar."
+                      : channel.feeMode === "merchant"
+                        ? `Tanpa biaya tambahan. Kamu membayar ${formatIdr(amount)}; saldo masuk ${formatIdr(amount)}.`
+                        : `Biaya layanan ± ${formatIdr(customerFee)} ditanggung kamu. Kamu membayar ± ${formatIdr(amount + customerFee)}; saldo yang masuk tetap ${formatIdr(amount)}.`}
+                  </p>
+                  {gateway.sandbox ? <p className="font-semibold text-amber-600 dark:text-amber-300">Mode uji coba (sandbox): pembayaran tidak memindahkan uang.</p> : null}
+                </>
+              ) : (
+                <>
+                  <p>{gateway.enabled ? "Pilih Transfer manual bila ingin mengajukan deposit tanpa pembayaran otomatis." : "Pembayaran otomatis (QRIS, bank, e-wallet) belum tersedia."}</p>
+                  <p>Ajukan deposit di sini, transfer sesuai arahan support, lalu admin menambahkan saldomu setelah pembayaran diterima.</p>
+                </>
+              )}
               <p className="pt-3">
                 Butuh bantuan pembayaran?{" "}
                 <Link
@@ -197,7 +235,7 @@ export function AddFundsCard({ config }: { config: DepositConfig }) {
             ) : (
               <>
                 <CreditCard className="h-3.5 w-3.5" />
-                Ajukan deposit
+                {channel ? "Bayar sekarang" : "Ajukan deposit"}
               </>
             )}
           </button>

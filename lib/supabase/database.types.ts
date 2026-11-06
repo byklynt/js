@@ -647,11 +647,23 @@ export type Database = {
         Row: {
           amount: number
           bonus: number
+          channel_code: string | null
           created_at: string
+          expires_at: string | null
           external_id: string | null
+          fee_amount: number
+          gateway: string | null
+          gateway_status: string | null
           id: string
+          is_sandbox: boolean | null
           method: string
+          needs_review: boolean
+          paid_at: string | null
+          pay_amount: number | null
+          pay_url: string | null
+          payment_info: Json | null
           proof: string | null
+          review_reason: string | null
           status: string
           updated_at: string
           user_id: string
@@ -659,11 +671,23 @@ export type Database = {
         Insert: {
           amount: number
           bonus?: number
+          channel_code?: string | null
           created_at?: string
+          expires_at?: string | null
           external_id?: string | null
+          fee_amount?: number
+          gateway?: string | null
+          gateway_status?: string | null
           id?: string
+          is_sandbox?: boolean | null
           method: string
+          needs_review?: boolean
+          paid_at?: string | null
+          pay_amount?: number | null
+          pay_url?: string | null
+          payment_info?: Json | null
           proof?: string | null
+          review_reason?: string | null
           status?: string
           updated_at?: string
           user_id: string
@@ -671,11 +695,23 @@ export type Database = {
         Update: {
           amount?: number
           bonus?: number
+          channel_code?: string | null
           created_at?: string
+          expires_at?: string | null
           external_id?: string | null
+          fee_amount?: number
+          gateway?: string | null
+          gateway_status?: string | null
           id?: string
+          is_sandbox?: boolean | null
           method?: string
+          needs_review?: boolean
+          paid_at?: string | null
+          pay_amount?: number | null
+          pay_url?: string | null
+          payment_info?: Json | null
           proof?: string | null
+          review_reason?: string | null
           status?: string
           updated_at?: string
           user_id?: string
@@ -1351,6 +1387,7 @@ export type Database = {
         Row: {
           balance_mismatches: number
           created_at: string
+          deposit_mismatches: number
           discrepancies: number
           id: string
           refund_mismatches: number
@@ -1359,6 +1396,7 @@ export type Database = {
         Insert: {
           balance_mismatches?: number
           created_at?: string
+          deposit_mismatches?: number
           discrepancies?: number
           id?: string
           refund_mismatches?: number
@@ -1367,6 +1405,7 @@ export type Database = {
         Update: {
           balance_mismatches?: number
           created_at?: string
+          deposit_mismatches?: number
           discrepancies?: number
           id?: string
           refund_mismatches?: number
@@ -2192,6 +2231,24 @@ export type Database = {
         }
       }
       parse_comment_lines: { Args: { p_text: string }; Returns: string[] }
+      paymenku_mark_deposit: {
+        Args: { p_by?: string; p_deposit: string; p_gateway_status: string }
+        Returns: Json
+      }
+      paymenku_settle_deposit: {
+        Args: {
+          p_by?: string
+          p_deposit: string
+          p_expect_sandbox: boolean
+          p_fee: number
+          p_is_sandbox: boolean
+          p_paid_at: string
+          p_pay_amount: number
+          p_received: number
+          p_trx: string
+        }
+        Returns: Json
+      }
       place_order: {
         Args: {
           p_accepted_rules_version?: string
@@ -2209,6 +2266,7 @@ export type Database = {
         }[]
       }
       prod_verify: { Args: never; Returns: Json }
+      prod_verify_blog: { Args: never; Returns: Json }
       rate_limit_hit: {
         Args: { p_key: string; p_limit: number; p_window_seconds: number }
         Returns: {
@@ -2274,6 +2332,7 @@ export type Database = {
         Returns: {
           balance_mismatches: number
           created_at: string
+          deposit_mismatches: number
           discrepancies: number
           id: string
           refund_mismatches: number

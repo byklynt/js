@@ -64,7 +64,7 @@ Jalankan di terminal, salin hasilnya langsung ke password manager dan ke hosting
 | --- | --- | --- |
 | `CRON_SECRET` | melindungi `/api/cron/*` (Bearer) | `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` |
 | `PROVIDER_KEY_ENC_KEY` | mengenkripsi API key provider di tabel `providers` (AES-256-GCM, 32 byte base64) | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
-| `PAYMENT_WEBHOOK_SECRET` | tanda tangan webhook pembayaran (isi **hanya** saat payment gateway diaktifkan) | `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` |
+| `PAYMENKU_WEBHOOK_SECRET` | tanda tangan webhook Paymenku. **Bukan dibuat sendiri**: salin webhook secret dari Dashboard Paymenku (langkah 13). Nama lama `PAYMENT_WEBHOOK_SECRET` sudah dihapus. | (dari dashboard Paymenku) |
 | `ADMIN_2FA_ENC_KEY` | **tidak dipakai lagi.** 2FA admin memakai Supabase MFA (TOTP). | Tidak perlu dibuat. Cek sendiri: `git grep -n "ADMIN_2FA_ENC_KEY" -- lib app scripts` hanya menemukan definisi `getEncKey()`; semua pemanggil `encryptSecret`/`decryptSecret` memakai `PROVIDER_KEY_ENC_KEY` secara eksplisit. Jangan diisi di production kecuali kode baru memerlukannya; kalau perlu, buat baru dengan perintah `PROVIDER_KEY_ENC_KEY` di atas. |
 
 Tips (PowerShell): tambahkan `| Set-Clipboard` di ujung perintah agar hasilnya tidak tampil di layar.
@@ -162,7 +162,10 @@ Atur di platform hosting **sebelum build** (`NEXT_PUBLIC_*` ikut tertanam saat b
 | `PROVIDER_CUSTOM_COMMENTS` | tidak | **`1`** untuk membuka pesanan Custom Comments ke provider asli. Format `comments` (dipisah baris baru, tanpa `quantity`) sudah **terverifikasi** di Likeo pada 2026-11-06 dengan satu order nyata (10 komentar, status Completed). Boleh diaktifkan di production bersama `PROVIDER_MODE=live` dan `PROVIDER_LIVE_APPROVED_REF` = ref production. Tanpa ini layanan Custom Comments tampil "Belum tersedia untuk dipesan". Belum terverifikasi: wajib unik atau tidak, batas panjang, order sangat besar, cancel/refill untuk layanan ini. |
 | `LIKEO_API_URL` | tidak | `https://likeo.net/api/v2` (atau sesuai akunmu) |
 | `LIKEO_API_KEY` | **YA** | hanya perlu untuk `bootstrap` (langkah 8); setelah itu kunci tersimpan terenkripsi di database. Boleh dikosongkan di hosting. |
-| `PAYMENT_WEBHOOK_SECRET` | **YA** | hanya saat payment gateway aktif |
+| `PAYMENKU_API_KEY` | **YA** | kunci **live** `sk_live_...` dari Dashboard Paymenku (hanya setelah KYC disetujui). Kunci sandbox `sk_test_` ditolak di production: gateway mati. |
+| `PAYMENKU_WEBHOOK_SECRET` | **YA** | webhook secret dari Dashboard Paymenku (langkah 13) |
+| `PAYMENT_LIVE_APPROVED_REF` | **YA** | **`REF` production** (sama dengan ref di `NEXT_PUBLIC_SUPABASE_URL`). Tanpa ini kunci live ditolak dan gateway mati. |
+| `PAYMENKU_API_BASE` | **JANGAN diisi** | hanya untuk tes dengan gateway palsu |
 
 **Jangan** diatur di hosting: `SUPABASE_DB_PASSWORD`, `SUPABASE_ACCESS_TOKEN`, `SUPABASE_SERVICE_ROLE_KEY` (duplikat; pakai satu nama), `SUPABASE_DEV_PROJECT_REF`, `ADMIN_CREATE_PASSWORD`, `RUN_DB_TESTS`, `RUN_E2E`, `CRON_BASE_URL`, `CRON_INTERVAL_SECONDS`, `ADMIN_2FA_ENC_KEY`.
 
@@ -213,11 +216,39 @@ Periksa (SQL editor): `select jobname, schedule, active from cron.job;` dan sete
 - Cadangan logis manual (password dari session): `npx supabase db dump --db-url "postgresql://postgres.REF:$SUPABASE_DB_PASSWORD@<host-pooler>:5432/postgres" -f cadangan.sql` (host pooler ada di Dashboard → Connect). Simpan file di tempat terenkripsi, jangan di repo.
 - Ledger bersifat append-only dan tidak boleh diedit manual; koreksi lewat penyesuaian saldo admin.
 
+## 13. Payment gateway Paymenku (Tambah Saldo otomatis)
+
+Migrasi **20261106000036** (kolom gateway di `deposits`, fungsi kredit `paymenku_settle_deposit` / `paymenku_mark_deposit`, sanity deposit) dan **20261106000037** (`prod_verify_payments`) harus sudah terdorong (langkah 1). Tidak ada tabel baru: dipakai ulang tabel `deposits`, `balance_ledger` (tipe `deposit`, unik per deposit) dan `webhook_events`.
+
+**Checklist KYC dan kunci live (di Dashboard Paymenku, bukan di kode):**
+1. Selesaikan **KYC** pemilik akun sampai disetujui (kunci `sk_live_` ditolak Paymenku sebelum itu: *Forbidden. KYC verification required*).
+2. Buat **merchant produksi** (merchant khusus sandbox tidak bisa memakai kunci live), aktifkan kanal yang dipakai (mis. QRIS) dan cek batas nominal serta `fee_mode` tiap kanal.
+3. Settings > **API Keys**: salin kunci **live** `sk_live_...` (jangan pernah ke chat, repositori, atau file).
+4. Settings > **Webhook**: isi alamat `https://DOMAIN/api/webhooks/paymenku` (alamat yang sama tertulis di Admin > Pengaturan > Pembayaran > Paymenku, ada tombol Salin) dan salin **webhook secret**.
+5. Di hosting isi `PAYMENKU_API_KEY`, `PAYMENKU_WEBHOOK_SECRET` dan `PAYMENT_LIVE_APPROVED_REF` (tabel di langkah 6), lalu deploy ulang. Cek: `npm run prod:verify -- REF` (baris kunci Paymenku harus LULUS dan tidak ada deposit sandbox yang dikreditkan).
+6. Admin > Pengaturan > Pembayaran > **Paymenku**: banner harus **MODE LIVE** → **Uji koneksi** (kunci valid, saldo dompet tampil) → **Segarkan kanal** → aktifkan kanal → atur maksimal deposit dan **siapa yang menanggung biaya** → Aktifkan → Simpan.
+
+**Cara kerja yang perlu kamu tahu:**
+- Paymenku menetapkan siapa yang menanggung biaya **per kanal** (`fee_mode`: merchant, customer, split); transaksi tidak bisa mengubahnya. Pengaturan "siapa yang menanggung biaya" menyaring kanal yang ditawarkan (Ikuti kanal / hanya kanal biaya-pengguna / hanya kanal biaya-merchant). **Saldo yang masuk selalu sebesar nominal yang disetujui pengguna**, tidak pernah lebih; bonus deposit (Pengaturan > Pembayaran) tetap berlaku seperti sebelumnya bila kamu mengisinya.
+- Saldo hanya bertambah setelah server **mengambil ulang transaksi dari Paymenku** (bukan dari isi webhook) dan semua pemeriksaan lolos: transaksi milik deposit itu, nominal sama dengan yang ditawarkan, mode sandbox/live cocok. Penambahan terjadi di satu transaksi database; webhook ganda atau bersamaan tidak menggandakan saldo.
+- Webhook ditolak (401) bila tanda tangan salah atau timestamp lebih dari 5 menit dari sekarang. Dokumen Paymenku **tidak** menyebut toleransi timestamp atau jadwal kirim ulang; 5 menit adalah pilihan kita.
+- **Kebijakan pembayaran terlambat:** pembayaran yang dikonfirmasi Paymenku **setelah** deposit kedaluwarsa/dibatalkan tetap dikreditkan **satu kali**, hanya setelah diverifikasi ke Paymenku; deposit ditandai **Perlu dicek**, tercatat di log, dan admin mendapat notifikasi.
+- **Refund setelah kredit:** bila Paymenku melaporkan refund untuk deposit yang sudah dikreditkan, saldo **tidak** dikurangi otomatis. Deposit ditandai Perlu dicek (Admin > Deposit > filter Perlu dicek) dan admin mendapat notifikasi; selesaikan manual lewat Atur saldo (ada log audit).
+- Webhook yang hilang ditangani rekonsiliasi di cron `/api/cron/sync-orders` (deposit menunggu lebih dari 5 menit ditanyakan ke Paymenku). Pastikan penjadwal aktif (langkah 10). Pemeriksaan harian `/api/cron/sanity` ikut membandingkan deposit dengan buku besar.
+- Pembatalan: Paymenku hanya membatalkan sebagian transaksi QRIS. Bila ditolak, deposit ditutup di sistem kita dan pembayaran terlambat tetap dikreditkan sesuai kebijakan di atas.
+
+**Smoke test dengan nominal terkecil (setelah MODE LIVE):**
+1. Tambah Saldo → pilih QRIS → jumlah **Rp 10.000** (atau minimal kanal) → Bayar sekarang → halaman `/deposit/ID` menampilkan QR, nominal, hitung mundur.
+2. Bayar dengan aplikasi bank/e-wallet. Dalam beberapa detik status berubah **Pembayaran diterima**, saldo bertambah **tepat Rp 10.000**, dan baris Mutasi Saldo "Deposit" muncul **satu kali**.
+3. Admin > Deposit: deposit tampil Berhasil; buka **Detail** (trx_id, nominal bayar, biaya) dan **Cek status ke Paymenku** (jawabannya "sudah dikreditkan"). Di Dashboard Paymenku webhook terkirim 200.
+4. Jalankan lagi `npm run prod:verify -- REF`: semua LULUS.
+5. Tes sandbox lokal (DEV saja): `node scripts/paymenku-smoke.mjs --cancel` (menolak kunci `sk_live_`).
+
 ## 12. Smoke test setelah deploy
 
 Urutan singkat; semuanya harus berhasil.
 
-1. `npm run prod:verify -- REF` → semua **LULUS**.
+1. `npm run prod:verify -- REF` → semua **LULUS**. Pembayaran otomatis diuji terpisah di langkah 13.
 2. Penjadwal terlindungi: tanpa token harus 401, dengan token 200.
    ```bash
    curl -s -o /dev/null -w "%{http_code}\n" -X POST https://DOMAIN/api/cron/sync-orders

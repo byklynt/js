@@ -10,7 +10,7 @@ if (existsSync(".env.local")) {
     if (i > 0 && !line.trim().startsWith("#")) env[line.slice(0, i).trim()] = line.slice(i + 1).trim().replace(/^["']|["']$/g, "");
   }
 }
-const SECRET_NAMES = ["SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "PROVIDER_KEY_ENC_KEY", "LIKEO_API_KEY", "CRON_SECRET", "PAYMENT_WEBHOOK_SECRET"];
+const SECRET_NAMES = ["SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "PROVIDER_KEY_ENC_KEY", "LIKEO_API_KEY", "CRON_SECRET", "PAYMENKU_API_KEY", "PAYMENKU_WEBHOOK_SECRET"];
 const secrets = SECRET_NAMES.filter((k) => env[k] && env[k].length >= 12).map((k) => [k, env[k]]);
 
 function* walk(dir) {

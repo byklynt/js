@@ -23,6 +23,7 @@ const ALL = [
   "lib/server/__tests__/refund-flows.test.ts",
   "lib/server/__tests__/blog-flows.test.ts",
   "lib/server/__tests__/bulk-services-flows.test.ts",
+  "lib/server/__tests__/paymenku-flows.test.ts",
   "lib/server/__tests__/service-search-flows.test.ts",
   "lib/server/__tests__/service-types-flows.test.ts",
 ];
@@ -70,7 +71,7 @@ try {
     const r = spawnSync(process.execPath, ["--max-old-space-size=1024", vitestBin, "run", "--config", "vitest.db.config.ts", file, "--reporter=default", "--reporter=json", `--outputFile.json=${out}`], {
       stdio: "inherit",
       // the tests always use the mock provider, even when .env.local approves the real one
-      env: { ...process.env, RUN_DB_TESTS: "1", PROVIDER_MODE: "mock", PROVIDER_LIVE_APPROVED_REF: "" },
+      env: { ...process.env, RUN_DB_TESTS: "1", PROVIDER_MODE: "mock", PROVIDER_LIVE_APPROVED_REF: "", PAYMENKU_API_KEY: "", PAYMENKU_API_BASE: "", PAYMENKU_WEBHOOK_SECRET: "" },
     });
     let counts = { passed: 0, failed: 0, skipped: 0, total: 0 };
     try {

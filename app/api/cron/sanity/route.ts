@@ -11,7 +11,7 @@ async function handle(request: Request) {
     run: async () => {
       const { data, error } = await supabaseAdmin().rpc("run_sanity_check");
       if (error) throw new Error(error.message);
-      return { balanceMismatches: data.balance_mismatches, refundMismatches: data.refund_mismatches, stuck: data.stuck };
+      return { balanceMismatches: data.balance_mismatches, refundMismatches: data.refund_mismatches, depositMismatches: data.deposit_mismatches, stuck: data.stuck };
     },
   });
 }

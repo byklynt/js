@@ -10,7 +10,7 @@ export function AddFundsPage({ config }: { config: DepositConfig }) {
   return (
     <div>
       <HeaderZone />
-      <PageHeading align="center" title="Tambah Saldo" subtitle="Ajukan deposit, lalu admin menambahkan saldo setelah pembayaran diterima." />
+      <PageHeading align="center" title="Tambah Saldo" subtitle={config.gateway.enabled ? "Pilih jumlah dan metode pembayaran. Saldo masuk otomatis setelah pembayaran diterima." : "Ajukan deposit, lalu admin menambahkan saldo setelah pembayaran diterima."} />
 
       <div className="relative mt-[42px]">
         <HeaderLine top={50} />
