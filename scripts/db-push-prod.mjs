@@ -5,13 +5,15 @@
 // What it does, in this order:
 //   1. refuses a malformed ref and the DEV project (SUPABASE_DEV_PROJECT_REF);
 //   2. needs SUPABASE_DB_PASSWORD in the TERMINAL SESSION environment (it never reads a file, never takes the password as an argument);
-//   3. prints the target project (name, ref, region), links a throw-away copy of supabase/ to it (the dev link of this repo is not touched),
-//      lists the pending migrations and runs `supabase db push --dry-run`;
-//   4. applies them only after you type the project ref again.
+//   3. prints the target project (name, ref, region), links a throw-away copy of supabase/ to it (the dev link of this repo is not touched)
+//      and checks the link is exactly the typed ref;
+//   4. runs `supabase db push --dry-run --remote=REF` (CLI v3 targets the LOCAL stack unless --remote is given) and aborts unless its
+//      "Target:" line names exactly that project (local stack, another ref or an unreadable line all abort);
+//   5. applies the pending migrations (`db push --remote=REF --yes`) only after you type the project ref again.
 // Nothing is applied by this script on its own: it is meant to be run by you, on purpose. See docs/production-setup.md.
 import { spawnSync } from "node:child_process";
 import readline from "node:readline";
-import { checkProdTarget, makeWorkdir, parsePendingMigrations, readDevRef } from "./lib/prod-guard.mjs";
+import { buildLinkArgs, buildPushArgs, checkProdTarget, checkPushTarget, formatCommand, makeWorkdir, maskSecrets, parsePendingMigrations, readDevRef, readWorkdirLinkedRef } from "./lib/prod-guard.mjs";
 
 const args = process.argv.slice(2);
 const dryRunOnly = args.includes("--dry-run");
@@ -37,8 +39,9 @@ if (!password) {
   );
 }
 
-/** Runs the Supabase CLI. The password travels only in the child's environment. */
+/** Runs the Supabase CLI. The password travels only in the child's environment; an echoed command (DB_PUSH_ECHO=1) is masked. */
 function cli(cliArgs, opts = {}) {
+  if (process.env.DB_PUSH_ECHO) console.log(`  $ ${formatCommand(cliArgs, [password])}`);
   return spawnSync("npx", ["supabase", ...cliArgs], { encoding: "utf8", shell: win, env: process.env, ...opts });
 }
 
@@ -65,11 +68,16 @@ const work = makeWorkdir();
 let exitCode = 0;
 const fatal = (m) => { throw new Error(m); };
 try {
-  const link = cli(["link", "--project-ref", ref, "--workdir", work.dir]);
-  if (link.status !== 0) fatal(`Gagal menautkan ke project ${ref}:\n${(link.stderr || link.stdout || "").slice(-600)}`);
+  const link = cli(buildLinkArgs(ref, work.dir));
+  if (link.status !== 0) fatal(maskSecrets(`Gagal menautkan ke project ${ref}:\n${(link.stderr || link.stdout || "").slice(-600)}`, [password]));
+  const linked = readWorkdirLinkedRef(work.dir);
+  if (linked !== ref) fatal(`DIBATALKAN: salinan sementara supabase/ tertaut ke "${linked || "(tidak ada)"}", bukan ${ref}. Tidak ada yang diterapkan.`);
 
-  const dry = cli(["db", "push", "--dry-run", "--workdir", work.dir]);
-  const dryOut = `${dry.stdout ?? ""}${dry.stderr ?? ""}`;
+  const dry = cli(buildPushArgs({ ref, workdir: work.dir, dryRun: true }));
+  const dryOut = maskSecrets(`${dry.stdout ?? ""}${dry.stderr ?? ""}`, [password]);
+  // the target is verified first, even when the CLI failed (a failure against the local stack must say so)
+  const target = checkPushTarget(dryOut, ref);
+  if (!target.ok) fatal(`${target.error}\n${dryOut.slice(-600)}`);
   if (dry.status !== 0) fatal(`Dry run gagal, tidak ada yang diterapkan:\n${dryOut.slice(-1200)}`);
   const pending = parsePendingMigrations(dryOut);
   console.log("DRY RUN (belum ada yang diterapkan):");
@@ -91,7 +99,8 @@ try {
         console.log("Konfirmasi tidak cocok. Dibatalkan, tidak ada yang diterapkan.");
         exitCode = 2;
       } else {
-        const push = cli(["db", "push", "--workdir", work.dir, "--yes"], { stdio: "inherit", encoding: undefined });
+        const push = cli(buildPushArgs({ ref, workdir: work.dir, dryRun: false }));
+        console.log(maskSecrets(`${push.stdout ?? ""}${push.stderr ?? ""}`, [password]).trim());
         if (push.status !== 0) {
           console.error("db push gagal. Periksa pesan di atas; migrasi yang sudah berhasil tercatat di supabase_migrations.schema_migrations.");
           exitCode = 1;
@@ -102,7 +111,7 @@ try {
     }
   }
 } catch (e) {
-  console.error(e instanceof Error ? e.message : String(e));
+  console.error(maskSecrets(e instanceof Error ? e.message : String(e), [password]));
   exitCode = 1;
 } finally {
   work.cleanup();

@@ -173,3 +173,69 @@ export function assertDevOnlyWithFile({ linked = false, file = ".env.local" } = 
   }
   return assertDevOnly({ linked });
 }
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// db:push:prod helpers (pure, unit-tested). Supabase CLI v3: `db push` targets the LOCAL stack unless --remote is given, so every push
+// call is built here and ALWAYS carries --remote=<ref> (the typed production ref), and its output is checked before anything is applied.
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+/** `supabase link` arguments for the throw-away workdir. */
+export function buildLinkArgs(ref, workdir) {
+  if (!isValidRef(ref)) throw new Error(`ref tidak valid: ${ref}`);
+  return ["link", "--project-ref", ref, "--workdir", workdir];
+}
+
+/**
+ * `supabase db push` arguments. Always `--remote=<ref>` (never the local default, never --local / --db-url), for the dry run AND the real push.
+ * `--yes` is added only to the real push (the caller does that after you typed the ref again).
+ */
+export function buildPushArgs({ ref, workdir, dryRun }) {
+  if (!isValidRef(ref)) throw new Error(`ref tidak valid: ${ref}`);
+  if (!workdir) throw new Error("workdir wajib");
+  return ["db", "push", ...(dryRun ? ["--dry-run"] : []), `--remote=${ref}`, "--workdir", workdir, ...(dryRun ? [] : ["--yes"])];
+}
+
+const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
+
+/**
+ * What the CLI says it will talk to, from its "Target:" line.
+ *   "Target: local stack (127.0.0.1:54322) · default; pass --remote ..."  -> { kind: "local" }
+ *   "Target: project NAME (abcdefghijklmnopqrst) · production"           -> { kind: "project", ref }
+ *   anything else / no Target line                                       -> { kind: "unknown" }
+ * Any mention of "local stack" anywhere in the output counts as local.
+ */
+export function parseCliTarget(output) {
+  const text = String(output ?? "").replace(ANSI, "");
+  if (/local stack/i.test(text)) return { kind: "local" };
+  const line = /^\s*Target:\s*(.+?)\s*$/im.exec(text)?.[1];
+  if (!line) return { kind: "unknown" };
+  if (/\b(127\.0\.0\.1|localhost)\b/i.test(line)) return { kind: "local" };
+  const ref = /\(([a-z]{20})\)/.exec(line)?.[1];
+  return ref ? { kind: "project", ref } : { kind: "unknown", line };
+}
+
+/** The dry-run output must name exactly the project that was typed. Anything else (local, another ref, unreadable) aborts. */
+export function checkPushTarget(output, ref) {
+  const t = parseCliTarget(output);
+  if (t.kind === "local") return { ok: false, error: "DIBATALKAN: CLI memilih stack LOKAL (127.0.0.1), bukan project production. Tidak ada yang diterapkan." };
+  if (t.kind === "project" && t.ref !== ref) return { ok: false, error: `DIBATALKAN: CLI menargetkan project ${t.ref}, bukan ${ref} yang kamu ketik. Tidak ada yang diterapkan.` };
+  if (t.kind !== "project") return { ok: false, error: "DIBATALKAN: target CLI tidak bisa dipastikan dari keluarannya (tidak ada baris \"Target: project ...\"). Tidak ada yang diterapkan." };
+  return { ok: true };
+}
+
+/** The ref the temporary workdir is linked to (supabase/.temp/project-ref inside it), or "". */
+export function readWorkdirLinkedRef(workdir) {
+  return linkedRef(workdir);
+}
+
+/** Replaces every occurrence of a secret (and nothing else) so a password never reaches the screen, an error or a log. */
+export function maskSecrets(text, secrets) {
+  let out = String(text ?? "");
+  for (const s of secrets ?? []) if (typeof s === "string" && s.length >= 3) out = out.split(s).join("***");
+  return out;
+}
+
+/** A command line for display, with secrets masked. */
+export function formatCommand(args, secrets = []) {
+  return maskSecrets(["supabase", ...args].join(" "), secrets);
+}

@@ -46,10 +46,11 @@ Skrip ini:
 1. menolak ref yang salah ketik, ref yang sama dengan project DEV, dan password yang tidak ada di session;
 2. menampilkan **nama, ref dan region** project target;
 3. menautkan salinan sementara folder `supabase/` ke project itu (link DEV di repo ini tidak berubah);
-4. menampilkan **daftar migrasi yang tertunda** dan menjalankan `db push --dry-run`;
-5. baru menerapkan setelah kamu **mengetik ulang ref** project. Salah ketik = batal, tidak ada yang diterapkan.
+4. memastikan tautan sementara tepat ke ref yang diketik, lalu menjalankan `db push --dry-run --remote=REF` (CLI v3 memilih stack LOKAL kalau `--remote` tidak ada). Jika keluaran CLI menyebut "local stack", ref lain, atau baris `Target:` tidak terbaca, skrip **berhenti** sebelum menerapkan apa pun;
+5. menampilkan **daftar migrasi yang tertunda**;
+6. baru menerapkan setelah kamu **mengetik ulang ref** project. Salah ketik = batal, tidak ada yang diterapkan.
 
-Tambahkan `--dry-run` untuk berhenti setelah langkah 4. Periksa bahwa region dan nama project adalah yang kamu maksud sebelum mengetik konfirmasi.
+Tambahkan `--dry-run` untuk berhenti setelah langkah 5. Periksa bahwa region dan nama project adalah yang kamu maksud sebelum mengetik konfirmasi.
 
 Setelah selesai, pastikan semua migrasi terpasang (Dashboard → Database → Migrations) dan jalankan langkah 3.
 
