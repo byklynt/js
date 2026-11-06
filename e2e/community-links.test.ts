@@ -32,7 +32,7 @@ describe.skipIf(!enabled)("community links: admin-controlled sidebar and footers
   const password = `Com-${run}-Pass12`;
   const uName = `zt_cu_${run}`;
   const aName = `zt_ca_${run}`;
-  const WA = `https://whatsapp.com/channel/zt${run}`;
+  const WA = `https://whatsapp.com/channel/zt${run}Ab`;
   const TG = `https://t.me/zt${run}`;
   const BOT = `https://t.me/zt${run}_bot`;
   const email = (n: string) => `${n}@jagoansosmed-test.invalid`;
@@ -188,15 +188,28 @@ describe.skipIf(!enabled)("community links: admin-controlled sidebar and footers
     expect(await footerLinks(user)).toEqual([]);
   }, 300_000);
 
-  it("a malicious URL is rejected with an Indonesian message and is not saved", async () => {
+  it("the www. form is accepted and stored normalized (no www, no fragment, no trailing slash); the path keeps its case", async () => {
+    const id10 = `Zt${run}Cd`;
+    await setLinks({ wa: `https://WWW.whatsapp.com/channel/${id10}/#anchor`, tg: `https://www.t.me/Zt${run}/`, bot: `https://www.telegram.me/zt${run}_bot` });
+    await expect.poll(stored, { timeout: 30_000 }).toEqual({ whatsappChannel: `https://whatsapp.com/channel/${id10}`, telegramChannel: `https://t.me/Zt${run}`, telegramBot: `https://telegram.me/zt${run}_bot` });
+    // the form shows what was stored
+    const form = admin.getByTestId("community-links-form");
+    await expect.poll(async () => form.getByLabel("URL Saluran WhatsApp").inputValue(), { timeout: 20_000 }).toBe(`https://whatsapp.com/channel/${id10}`);
+  }, 300_000);
+
+  it("a bad URL is rejected with a message under its field (with an example) and is not saved", async () => {
     await setLinks({ wa: WA, tg: TG, bot: BOT });
     await expect.poll(async () => (await stored()).telegramBot, { timeout: 30_000 }).toBe(BOT);
-    const attempts: [string, string, string][] = [
-      ["bot", "javascript:alert(1)", "URL Bot Telegram: Tautan harus memakai https://."],
-      ["bot", "https://t.me@evil.com/x", "URL Bot Telegram: Tautan tidak boleh berisi nama pengguna atau password."],
-      ["tg", "https://t.me.evil.com/x", "URL Saluran Telegram: Alamat harus berasal dari t.me atau telegram.me."],
-      ["wa", "http://wa.me/c", "URL Saluran WhatsApp: Tautan harus memakai https://."],
-      ["wa", "https://t.me/abc", "URL Saluran WhatsApp: Alamat harus berasal dari wa.me, whatsapp.com atau chat.whatsapp.com."],
+    const attempts: [string, string, RegExp][] = [
+      ["bot", "javascript:alert(1)", /Tautan harus memakai https:\/\/\. Contoh: https:\/\/t\.me\/nama_bot/],
+      ["bot", "https://t.me@evil.com/x", /Tautan tidak boleh berisi nama pengguna atau password\. Contoh: https:\/\/t\.me\/nama_bot/],
+      ["tg", "https://t.me.evil.com/abcd", /Alamat harus berasal dari t\.me atau telegram\.me \(boleh diawali www\.\)\. Contoh: https:\/\/t\.me\/namasaluran/],
+      ["tg", "https://www.t.me.evil.com/abcd", /Alamat harus berasal dari t\.me atau telegram\.me/],
+      ["wa", "http://wa.me/6281234567890", /Tautan harus memakai https:\/\/\. Contoh: https:\/\/whatsapp\.com\/channel\/0029Va\.\.\./],
+      ["wa", "https://t.me/abcd", /Alamat harus berasal dari wa\.me, whatsapp\.com atau chat\.whatsapp\.com/],
+      ["wa", "https://evilwhatsapp.com/channel/0029VaAbCdEfGh12", /Alamat harus berasal dari wa\.me, whatsapp\.com atau chat\.whatsapp\.com/],
+      ["wa", "https://whatsapp.com/channel/0029VaAbCdEfGh12/100", /Ada tambahan yang tidak dikenali di akhir tautan\. Hapus bagian setelah kode saluran\./],
+      ["tg", "https://t.me/namasaluran/100", /Ada tambahan yang tidak dikenali di akhir tautan\. Hapus bagian setelah kode saluran\./],
     ];
     for (const [field, value, message] of attempts) {
       await admin.goto("/admin/settings");
@@ -205,10 +218,19 @@ describe.skipIf(!enabled)("community links: admin-controlled sidebar and footers
       const label = field === "wa" ? "URL Saluran WhatsApp" : field === "tg" ? "URL Saluran Telegram" : "URL Bot Telegram";
       await form.getByLabel(label).fill(value);
       await form.getByRole("button", { name: "Simpan tautan" }).click();
-      await admin.getByTestId("community-links-error").waitFor({ timeout: 20_000 });
-      expect((await admin.getByTestId("community-links-error").innerText()).trim()).toBe(message);
+      // the message sits under the wrong field (aria-invalid + described by it), the cursor is in that field, nothing was sent
+      const input = form.getByLabel(label);
+      await expect.poll(async () => input.getAttribute("aria-invalid"), { timeout: 20_000 }).toBe("true");
+      await form.getByText(message).waitFor({ timeout: 20_000 });
+      await expect.poll(async () => input.evaluate((el) => el === document.activeElement), { timeout: 10_000 }).toBe(true);
       expect(await stored()).toEqual({ whatsappChannel: WA, telegramChannel: TG, telegramBot: BOT }); // unchanged
     }
+    // a bot link whose name does not end with "bot" is saved, with a friendly hint
+    await admin.goto("/admin/settings");
+    const form = admin.getByTestId("community-links-form");
+    await form.waitFor({ timeout: 40_000 });
+    await form.getByLabel("URL Bot Telegram").fill(`https://t.me/zt${run}x`);
+    await form.getByText(/Nama bot biasanya diakhiri "bot"/).waitFor({ timeout: 20_000 });
     // a rejected attempt is not in the audit log as a change
     const changes = (await sb().from("audit_logs").select("after").eq("action", "settings.community").eq("admin_id", id.a)).data ?? [];
     for (const c of changes) {

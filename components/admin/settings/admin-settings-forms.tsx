@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Bell, CreditCard, Crown, KeyRound, Link2, Plus, Settings, Gauge, ListChecks, ShieldCheck, Trash2, Wallet } from "lucide-react";
 import type { SiteSettings } from "@/lib/admin-data";
-import { COMMUNITY_FIELDS } from "@/lib/community-links";
+import { COMMUNITY_FIELDS, validateCommunityUrl, type CommunityKey } from "@/lib/community-links";
 import {
   changeAdminPassword,
   saveCommunityLinks,
@@ -94,6 +94,15 @@ export function CommunityLinksForm({ settings }: { settings: SiteSettings["commu
   const [form, setForm] = useState(settings);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // field-level messages: an error under the field that is wrong (not only a message at the bottom), and a friendly hint for a valid but unusual link
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<CommunityKey, string>>>({});
+  const [warnings, setWarnings] = useState<Partial<Record<CommunityKey, string>>>({});
+
+  /** The same validator the server runs: a message for this field (or undefined) and the normalized value. */
+  function check(key: CommunityKey, value: string) {
+    const f = COMMUNITY_FIELDS.find((x) => x.key === key)!;
+    return validateCommunityUrl(value, f.kind, f.key);
+  }
 
   return (
     <SettingsSection icon={Link2} title="Tautan Komunitas">
@@ -101,11 +110,26 @@ export function CommunityLinksForm({ settings }: { settings: SiteSettings["commu
         noValidate
         onSubmit={async (e) => {
           e.preventDefault();
-          setBusy(true);
+          const formEl = e.currentTarget; // React clears currentTarget after the handler's first await/return
           setError("");
-          const result = await run(saveCommunityLinks(form));
+          const errors: Partial<Record<CommunityKey, string>> = {};
+          const normalized = { ...form };
+          for (const f of COMMUNITY_FIELDS) {
+            const r = check(f.key, form[f.key]);
+            if (r.ok) normalized[f.key] = r.value;
+            else errors[f.key] = r.message;
+          }
+          setFieldErrors(errors);
+          if (Object.keys(errors).length > 0) {
+            // nothing is sent; the first wrong field gets the cursor
+            requestAnimationFrame(() => formEl.querySelector<HTMLInputElement>('input[aria-invalid="true"]')?.focus());
+            return;
+          }
+          setBusy(true);
+          const result = await run(saveCommunityLinks(normalized));
           setBusy(false);
           if (!result.ok) setError(result.error);
+          else setForm(normalized); // what is shown is what was stored
         }}
         className="max-w-[720px] space-y-4"
         data-testid="community-links-form"
@@ -117,10 +141,24 @@ export function CommunityLinksForm({ settings }: { settings: SiteSettings["commu
             type="url"
             inputMode="url"
             autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
             value={form[f.key]}
-            onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+            onChange={(e) => {
+              const value = e.target.value;
+              setForm({ ...form, [f.key]: value });
+              setFieldErrors((cur) => ({ ...cur, [f.key]: undefined }));
+              const r = check(f.key, value);
+              setWarnings((cur) => ({ ...cur, [f.key]: r.ok ? r.warning : undefined }));
+            }}
+            onBlur={() => {
+              const r = check(f.key, form[f.key]);
+              setFieldErrors((cur) => ({ ...cur, [f.key]: r.ok ? undefined : r.message }));
+              setWarnings((cur) => ({ ...cur, [f.key]: r.ok ? r.warning : undefined }));
+            }}
             placeholder={f.placeholder}
-            hint={f.kind === "whatsapp" ? "Hanya wa.me, whatsapp.com, atau chat.whatsapp.com (https). Kosongkan untuk menonaktifkan." : "Hanya t.me atau telegram.me (https). Kosongkan untuk menonaktifkan."}
+            error={fieldErrors[f.key]}
+            hint={warnings[f.key] ?? (f.kind === "whatsapp" ? `Boleh memakai www. Hanya wa.me, whatsapp.com, atau chat.whatsapp.com (https), contoh: ${f.example}. Kosongkan untuk menonaktifkan.` : `Boleh memakai www. Hanya t.me atau telegram.me (https), contoh: ${f.example}. Kosongkan untuk menonaktifkan.`)}
           />
         ))}
         {error ? <p role="alert" className="text-[9.5px] font-medium text-red-500" data-testid="community-links-error">{error}</p> : null}
