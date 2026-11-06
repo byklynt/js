@@ -37,6 +37,8 @@ read -rs NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY && export NEXT_PUBLIC_SUPABASE_PUB
 
 ## 1. Migrasi database
 
+> Migrasi baru sejak panduan ini ditulis (dorong dengan `npm run db:push:prod -- REF`, berurutan): **20261105000030** (layanan Custom Comments), **20261106000031** (pencarian layanan admin), **20261106000032** (aksi massal layanan), **20261106000033** (blog: tabel, RLS, bucket `blog-images`), **20261106000034** dan **20261106000035** (pembersihan tes dan `prod_verify_blog()`). Semuanya hanya menambah; tidak ada yang menghapus data.
+
 ```bash
 npm run db:push:prod -- REF
 ```
@@ -77,11 +79,12 @@ npm run prod:verify -- REF
 
 Butuh di session: `NEXT_PUBLIC_SUPABASE_URL` (persis `https://REF.supabase.co`), `SUPABASE_SECRET_KEY`, dan (disarankan) `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` untuk probe anon. Tidak membaca file dan tidak menulis apa pun. Tabel hasil memeriksa:
 
-- semua tabel `public` memakai RLS, dan **role anon tidak punya akses ke tabel/view mana pun** (juga diuji lewat REST dengan kunci anon);
-- tidak ada policy untuk `anon`/`public`;
+- semua tabel `public` memakai RLS, dan **role anon tidak punya akses ke tabel/view mana pun** kecuali baca-saja pada 4 tabel blog (`blog_posts`, `blog_categories`, `blog_tags`, `blog_post_tags`; juga diuji lewat REST dengan kunci anon);
+- tidak ada policy untuk `anon`/`public` selain 4 policy baca blog (hanya artikel yang sudah terbit);
+- **blog**: tabel blog memakai RLS, anon tidak punya hak tulis, anon **tidak bisa membaca draf maupun artikel terjadwal**, bucket `blog-images` publik untuk dibaca, maksimal 2 MB, hanya png/jpeg/webp, dan policy tulis (insert/update/delete) hanya untuk admin;
 - batasan uang ada: `balance_ledger_idempotent` (unik `type, ref_type, ref_id`), `balance_ledger_math`, trigger append-only ledger, `orders_refund_le_charge`, `refunds_one_per_reason_idx`, saldo tidak negatif, indeks permintaan refill/batal terbuka;
 - tabel `cron_leases` dan `rate_limits` ada;
-- bucket `ticket-attachments` **privat**, `avatars` ada, tidak ada bucket publik lain;
+- bucket `ticket-attachments` **privat**, `avatars` ada, tidak ada bucket publik selain `avatars` dan `blog-images`;
 - Realtime aktif untuk `notifications` dan `ticket_messages`;
 - **tidak ada baris uji/demo**: akun `@jagoansosmed-test.invalid`, layanan `ZT-`, pesanan `MK-` (pesanan mock), dll.
 
@@ -96,6 +99,11 @@ Dibuat oleh migrasi; yang perlu kamu pastikan:
   select policyname, cmd, roles from pg_policies where schemaname = 'storage' and tablename = 'objects' order by policyname;
   ```
   Harus ada policy baca/tulis per folder pengguna untuk `avatars` dan `ticket-attachments`. `prod:verify` memeriksa status privat/publik bucket.
+- **Blog**: bucket `blog-images` (migrasi 33) harus *Public*, batas 2 MB, tipe png/jpeg/webp. Policy tulisnya hanya untuk admin:
+  ```sql
+  select policyname, cmd, roles from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname like 'blog_images%' order by policyname;
+  ```
+  Harus ada `blog_images_read` (select) dan tiga policy tulis (insert, update, delete) untuk `authenticated` saja. `prod:verify` memeriksa semuanya.
 - **Realtime** untuk lonceng notifikasi dan balasan tiket:
   ```sql
   select tablename from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public';
@@ -215,7 +223,8 @@ Urutan singkat; semuanya harus berhasil.
    curl -s -o /dev/null -w "%{http_code}\n" -X POST https://DOMAIN/api/cron/sync-orders
    curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer $CRON_SECRET" https://DOMAIN/api/cron/sync-orders
    ```
-3. Halaman publik: `/`, `/services`, `/syarat-ketentuan`, `/kebijakan-refund`, `/kebijakan-privasi`, `/blog` tampil; footer berisi tautan hukum.
+3. Halaman publik: `/`, `/services`, `/syarat-ketentuan`, `/kebijakan-refund`, `/kebijakan-privasi`, `/blog` tampil; footer berisi tautan hukum. `/status` sudah dihapus: alamat lama dialihkan permanen (308) ke `/`.
+3b. Blog: di **/admin/blog** buat satu artikel uji, terbitkan, buka `https://DOMAIN/blog/SLUG` (judul, kanonik memakai `NEXT_PUBLIC_SITE_URL`, gambar sampul tampil), cek `https://DOMAIN/blog/rss.xml` dan `https://DOMAIN/sitemap.xml` memuatnya; tarik kembali ke draf → alamatnya harus **404**; lalu hapus artikel uji (gambar yang sudah diunggah tetap di bucket; hapus lewat Dashboard → Storage → blog-images bila perlu).
 4. Daftar akun uji dengan email asli → email konfirmasi tiba (SMTP) → masuk → dasbor tampil. Cek bahwa `profiles.terms_version` terisi.
 5. Admin: masuk dengan TOTP, buka Dasbor, Provider (saldo nyata, mode **live**), Layanan, Pesanan.
 6. Satu pesanan kecil sungguhan (layanan termurah, jumlah minimum): saldo terpotong sekali, `provider_order_id` terisi (bukan `MK-...`), status berubah lewat sinkronisasi dalam beberapa menit, "Sinkronisasi terakhir" di Pesanan terisi.

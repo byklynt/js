@@ -15,7 +15,6 @@ const FALLBACK_H = 675;
 
 /** A link target that is safe to render, or null. Site paths ("/x") and http(s) URLs only. */
 export function safeHref(raw: string): string | null {
-  // eslint-disable-next-line no-control-regex
   const url = raw.replace(/[\u0000-\u001f\u007f\s]+/g, "");
   if (/^\/(?!\/)/.test(url)) return url;
   if (/^https?:\/\/[^/]+/i.test(url)) return url;

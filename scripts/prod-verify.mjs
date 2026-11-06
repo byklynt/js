@@ -5,7 +5,9 @@
 //   NEXT_PUBLIC_SUPABASE_URL          must be exactly https://PROJECT_REF.supabase.co
 //   SUPABASE_SECRET_KEY               (or SUPABASE_SERVICE_ROLE_KEY) the service role / secret key of THAT project
 //   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (or ..._ANON_KEY)   optional: enables the live "anon cannot read" probe
-// It calls public.prod_verify() (migration 28, service role only) and, with the anon key, probes every table over REST. It writes nothing.
+// It calls public.prod_verify() (migration 28) and public.prod_verify_blog() (migration 34), service role only, and, with the anon key, probes every table
+// over REST. The ONLY public data are the published blog posts (and the categories / tags / links of those posts): everything else must stay closed.
+// It writes nothing.
 // Prints a pass/fail table and exits 1 when anything fails.
 import { checkProdTarget, readDevRef, urlMatchesRef } from "./lib/prod-guard.mjs";
 
@@ -25,6 +27,10 @@ if (!urlMatchesRef(url, ref)) die(`NEXT_PUBLIC_SUPABASE_URL di session harus per
 const serviceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 if (!serviceKey) die("SUPABASE_SECRET_KEY (atau SUPABASE_SERVICE_ROLE_KEY) belum ada di session terminal ini.");
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+
+/** The one thing anon may read: blog data of PUBLISHED posts (RLS decides). Nothing else, and never a write. */
+const BLOG_TABLES = ["blog_categories", "blog_post_tags", "blog_posts", "blog_tags"];
+const BLOG_ANON_POLICIES = ["blog_categories.blog_categories_public", "blog_post_tags.blog_post_tags_public", "blog_posts.blog_posts_public", "blog_tags.blog_tags_public"];
 
 const rows = [];
 const add = (name, ok, detail) => rows.push({ name, ok, detail });
@@ -50,19 +56,21 @@ if (report) {
   const list = (a) => (a.length ? a.join(", ") : "-");
 
   add("Semua tabel public memakai RLS", report.rlsDisabled.length === 0, report.rlsDisabled.length ? `RLS mati: ${list(report.rlsDisabled)}` : `${report.tables.length} tabel`);
-  add("Role anon tidak punya akses ke tabel/view mana pun", report.anonAccess.length === 0, report.anonAccess.length ? `anon bisa akses: ${list(report.anonAccess)}` : "tidak ada hak akses");
-  add("Tidak ada policy untuk anon / public", report.anonPolicies.length === 0, report.anonPolicies.length ? list(report.anonPolicies) : "tidak ada policy");
+  const anonExtra = report.anonAccess.filter((t) => !BLOG_TABLES.includes(t));
+  add("Role anon tidak punya akses ke tabel/view mana pun (selain 4 tabel blog, hanya baca)", anonExtra.length === 0, anonExtra.length ? `anon bisa akses: ${list(anonExtra)}` : "hanya tabel blog");
+  const policyExtra = report.anonPolicies.filter((p) => !BLOG_ANON_POLICIES.includes(p));
+  add("Tidak ada policy untuk anon / public (selain baca artikel blog yang terbit)", policyExtra.length === 0, policyExtra.length ? list(policyExtra) : "hanya policy baca blog");
 
   if (anonKey) {
     const readable = [];
-    for (const t of report.tables) {
+    for (const t of report.tables.filter((x) => !BLOG_TABLES.includes(x))) {
       const r = await rest(`/rest/v1/${encodeURIComponent(t)}?select=*&limit=1`, anonKey);
       if (r.ok) {
         const body = await r.json().catch(() => []);
         if (Array.isArray(body) && body.length > 0) readable.push(t);
       }
     }
-    add("Probe REST dengan kunci anon: tidak ada baris yang terbaca", readable.length === 0, readable.length ? `terbaca: ${list(readable)}` : `${report.tables.length} tabel diperiksa`);
+    add("Probe REST dengan kunci anon: tidak ada baris yang terbaca", readable.length === 0, readable.length ? `terbaca: ${list(readable)}` : `${report.tables.length - BLOG_TABLES.length} tabel diperiksa (tabel blog diperiksa terpisah)`);
   } else {
     add("Probe REST dengan kunci anon", false, "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY tidak ada di session: pemeriksaan ini dilewati (dianggap gagal)");
   }
@@ -76,8 +84,8 @@ if (report) {
   add("Bucket ticket-attachments ada dan PRIVAT", Boolean(att) && att.public === false, att ? (att.public ? "PUBLIK" : "privat") : "tidak ada");
   const av = bucket("avatars");
   add("Bucket avatars ada (publik untuk dibaca)", Boolean(av), av ? (av.public ? "publik" : "privat") : "tidak ada");
-  const publicOthers = report.buckets.filter((b) => b.public && b.id !== "avatars").map((b) => b.id);
-  add("Tidak ada bucket publik selain avatars", publicOthers.length === 0, publicOthers.length ? list(publicOthers) : "-");
+  const publicOthers = report.buckets.filter((b) => b.public && b.id !== "avatars" && b.id !== "blog-images").map((b) => b.id);
+  add("Tidak ada bucket publik selain avatars dan blog-images", publicOthers.length === 0, publicOthers.length ? list(publicOthers) : "-");
   add("Realtime aktif untuk notifications dan ticket_messages", ["notifications", "ticket_messages"].every((t) => report.realtime.includes(t)), `publikasi: ${list(report.realtime)}`);
 
   const flags = report.devFlags ?? [];
@@ -86,6 +94,42 @@ if (report) {
   const tr = report.testRows;
   const dirty = Object.entries(tr).filter(([, n]) => Number(n) > 0).map(([k, n]) => `${k}=${n}`);
   add("Tidak ada baris uji / demo (akun uji, layanan ZT-, pesanan MK-, dll.)", dirty.length === 0, dirty.length ? dirty.join(", ") : "bersih");
+}
+
+// --- blog: RLS on the tables, anon sees no draft, "blog-images" is public-read / admin-write only ---
+let blog = null;
+if (report) {
+  try {
+    const res = await rest("/rest/v1/rpc/prod_verify_blog", serviceKey, { method: "POST", body: "{}" });
+    if (res.ok) blog = await res.json();
+    else add("Fungsi prod_verify_blog() bisa dipanggil", false, `HTTP ${res.status}: migrasi 34 (blog) belum diterapkan`);
+  } catch (e) {
+    add("Fungsi prod_verify_blog() bisa dipanggil", false, e instanceof Error ? e.message : String(e));
+  }
+}
+if (blog) {
+  const missing = BLOG_TABLES.filter((t) => !(t in blog.tables));
+  const noRls = BLOG_TABLES.filter((t) => blog.tables[t] === false);
+  add("Tabel blog ada dan memakai RLS", missing.length === 0 && noRls.length === 0, missing.length ? `tidak ada: ${missing.join(", ")}` : noRls.length ? `RLS mati: ${noRls.join(", ")}` : `${BLOG_TABLES.length} tabel`);
+  add("Role anon tidak punya hak tulis di tabel blog", blog.anonWriteGrants.length === 0, blog.anonWriteGrants.length ? blog.anonWriteGrants.join(", ") : "tidak ada");
+  if (anonKey) {
+    // a post that is not public (draft, or a date in the future) must be invisible to anon: ask for everything that is NOT published
+    const r = await rest("/rest/v1/blog_posts?select=id,slug,status,published_at&status=eq.draf&limit=5", anonKey);
+    const drafts = r.ok ? await r.json().catch(() => []) : [];
+    const future = await rest(`/rest/v1/blog_posts?select=id&published_at=gt.${encodeURIComponent(new Date().toISOString())}&limit=5`, anonKey);
+    const scheduled = future.ok ? await future.json().catch(() => []) : [];
+    add("Anon tidak bisa membaca draf maupun artikel terjadwal", r.ok && drafts.length === 0 && scheduled.length === 0,
+      drafts.length || scheduled.length ? `TERBACA: ${drafts.length} draf, ${scheduled.length} terjadwal` : `${blog.draftPosts} artikel non-publik di database, tidak ada yang terbaca anon`);
+  } else add("Anon tidak bisa membaca draf maupun artikel terjadwal", false, "kunci anon tidak ada di session: pemeriksaan dilewati (dianggap gagal)");
+  const b = blog.bucket;
+  add("Bucket blog-images ada dan publik untuk dibaca", Boolean(b) && b.public === true, b ? (b.public ? "publik" : "PRIVAT") : "tidak ada");
+  add("Bucket blog-images: maks 2 MB, hanya png / jpeg / webp", Boolean(b) && b.sizeLimit === 2097152 && JSON.stringify([...(b.mimeTypes ?? [])].sort()) === JSON.stringify(["image/jpeg", "image/png", "image/webp"]),
+    b ? `batas ${b.sizeLimit} byte; tipe: ${(b.mimeTypes ?? []).join(", ") || "semua"}` : "tidak ada");
+  const sp = blog.storagePolicies ?? [];
+  const writes = sp.filter((p) => ["INSERT", "UPDATE", "DELETE", "ALL"].includes(p.cmd));
+  const badWrites = writes.filter((p) => !(p.roles.length === 1 && p.roles[0] === "authenticated" && p.admin));
+  add("Tulis ke blog-images hanya untuk admin (insert / update / delete)", ["INSERT", "UPDATE", "DELETE"].every((c) => writes.some((p) => p.cmd === c)) && badWrites.length === 0,
+    badWrites.length ? `policy tulis yang tidak dibatasi admin: ${badWrites.map((p) => p.name).join(", ")}` : `${writes.length} policy tulis, semuanya admin`);
 }
 
 const w = Math.max(...rows.map((r) => r.name.length));
