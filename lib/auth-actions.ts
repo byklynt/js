@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getClientIp, loadIdentity } from "@/lib/auth-server";
 import { features } from "@/lib/features";
-import { hitRateLimit, LOGIN_LIMIT, minutes, resetRateLimit } from "@/lib/rate-limit";
+import { hitRateLimit, isDevBuild, LOGIN_LIMIT, minutes, resetRateLimit, type RateLimitResult } from "@/lib/rate-limit";
 import { siteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import { LEGAL_VERSION } from "@/lib/legal-content";
@@ -63,13 +63,22 @@ export async function register(payload: RegisterPayload): Promise<AuthResult> {
   return { success: true };
 }
 
+/** Development only: say WHY the limiter refused (a failed limiter looks identical to "too many attempts" to the user otherwise). */
+function limiterMessage(limit: RateLimitResult): string {
+  if (isDevBuild() && limit.failure) {
+    return `[DEV] Limiter GAGAL (bukan terlalu banyak percobaan): ${limit.failure.message} (kode ${limit.failure.code}, HTTP ${limit.failure.status ?? "?"}). Biasanya key Supabase di .env.local bukan milik project NEXT_PUBLIC_SUPABASE_URL.`;
+  }
+  if (isDevBuild()) return `[DEV] Dibatasi limiter, coba lagi dalam ${limit.retryAfterSeconds} detik. Hapus dengan: npm run dev:reset-limits`;
+  return `Terlalu banyak percobaan. Coba lagi dalam ${minutes(limit.retryAfterSeconds)} menit.`;
+}
+
 export async function login(payload: LoginPayload): Promise<AuthResult> {
   const parsed = loginSchema.safeParse(payload);
   if (!parsed.success) return { success: false, message: GENERIC };
   const { username, password, rememberMe } = parsed.data;
   const key = `login:${await getClientIp()}:${username.toLowerCase()}`;
   const limit = await hitRateLimit(key, LOGIN_LIMIT.limit, LOGIN_LIMIT.windowSeconds);
-  if (!limit.allowed) return { success: false, message: `Terlalu banyak percobaan. Coba lagi dalam ${minutes(limit.retryAfterSeconds)} menit.` };
+  if (!limit.allowed) return { success: false, message: limiterMessage(limit) };
 
   const email = await resolveLoginEmail(username);
   // "Ingat saya": persistent (30 day) session cookies when ticked, browser-session cookies otherwise (see lib/supabase/remember.ts).
@@ -77,6 +86,11 @@ export async function login(payload: LoginPayload): Promise<AuthResult> {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error || !data.user) {
     if (error?.code === "email_not_confirmed") return { success: false, message: "Email belum dikonfirmasi. Buka link konfirmasi di emailmu." };
+    if (isDevBuild() && error) {
+      console.warn(`[login] Supabase Auth refused: code=${error.code ?? "-"} status=${error.status ?? "-"} message=${error.message}`);
+      if (error.status === 429 || error.code === "over_request_rate_limit") return { success: false, message: "[DEV] Supabase Auth menolak dengan 429 (over_request_rate_limit): batas Auth di sisi Supabase, bukan limiter kita. Tunggu atau longgarkan Auth > Rate Limits." };
+      if (error.code !== "invalid_credentials") return { success: false, message: `[DEV] Auth error ${error.code ?? "?"} (HTTP ${error.status ?? "?"}): ${error.message}` };
+    }
     return { success: false, message: GENERIC };
   }
   const { data: profile } = await supabaseAdmin().from("profiles").select("status").eq("id", data.user.id).maybeSingle();

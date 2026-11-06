@@ -29,6 +29,7 @@
     "security:scan": "node scripts/bundle-scan.mjs",
     "test:e2e": "node scripts/run-e2e.mjs",
     "dev:cron": "node scripts/dev-cron.mjs",
+    "dev:reset-limits": "node scripts/dev-reset-limits.mjs",
     "cron:enable": "node scripts/cron-admin.mjs enable",
     "cron:disable": "node scripts/cron-admin.mjs disable",
     "dev:simulate": "tsx scripts/dev-simulate.ts",

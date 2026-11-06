@@ -18,7 +18,8 @@ const DUMMY_EMAIL = "no-such-user@jagoansosmed-login.invalid";
 export async function resolveLoginEmail(identifier: string): Promise<string> {
   const id = identifier.trim();
   if (id.includes("@")) return id.toLowerCase();
-  const { data } = await supabaseAdmin().from("profiles").select("email").eq("username", id).maybeSingle();
+  const { data, error } = await supabaseAdmin().from("profiles").select("email").eq("username", id).maybeSingle();
+  if (error && process.env.NODE_ENV !== "production") console.warn(`[login] username lookup failed: code=${error.code} message=${error.message}`);
   return data?.email ?? DUMMY_EMAIL;
 }
 
