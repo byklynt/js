@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, WalletCards, X } from "lucide-react";
+import { Check, Eye, RefreshCw, WalletCards, X } from "lucide-react";
 import type { AdminDeposit, DepositStatus } from "@/lib/admin-data";
-import { confirmDeposit, rejectDeposit } from "@/lib/admin-actions";
+import { cancelDepositGateway, checkDepositWithPaymenku, confirmDeposit, rejectDeposit } from "@/lib/admin-actions";
 import { formatDateTime, formatIdr } from "@/lib/balance";
 import { PageHeader } from "@/components/shell/page-header";
 import { DataToolbar } from "@/components/ui/data-toolbar";
@@ -20,16 +20,20 @@ import { useListState, useParamFilter } from "@/lib/use-list-state";
 import { useAdminRunner } from "../use-admin-runner";
 import { DepositStatusChip } from "../admin-chips";
 
-type Filter = DepositStatus | "semua";
+type Filter = DepositStatus | "semua" | "perlu_dicek";
 const filters: { id: Filter; label: string }[] = [
   { id: "semua", label: "Semua" },
   { id: "menunggu", label: "Menunggu" },
   { id: "berhasil", label: "Berhasil" },
   { id: "gagal", label: "Gagal" },
   { id: "kedaluwarsa", label: "Kedaluwarsa" },
+  { id: "dibatalkan", label: "Dibatalkan" },
+  { id: "perlu_dicek", label: "Perlu dicek" },
 ];
 
 type Dialogs =
+  | { kind: "detail"; deposit: AdminDeposit }
+  | { kind: "cancel"; deposit: AdminDeposit }
   | { kind: "confirm"; deposit: AdminDeposit }
   | { kind: "reject"; deposit: AdminDeposit };
 
@@ -62,6 +66,40 @@ function RejectDialog({ deposit, onClose, onSubmit }: { deposit: AdminDeposit | 
   );
 }
 
+function DepositDetail({ deposit: d, onClose }: { deposit: AdminDeposit | null; onClose: () => void }) {
+  const row = (k: string, v: React.ReactNode) => (
+    <div className="flex justify-between gap-3 border-b border-slate-200/60 py-1.5 last:border-0 dark:border-slate-800">
+      <dt className="text-[#5B6B8C] dark:text-slate-400">{k}</dt>
+      <dd className="min-w-0 break-all text-right font-medium text-ink dark:text-white">{v}</dd>
+    </div>
+  );
+  return (
+    <Dialog open={Boolean(d)} onClose={onClose} title={`Deposit #${d?.id.slice(0, 8) ?? ""}`} description="Status dan data dari Paymenku." maxWidth="max-w-lg">
+      {d ? (
+        <div data-testid="deposit-detail">
+          <dl className="text-[10px]">
+            {row("Pengguna", d.username)}
+            {row("Status kami", <DepositStatusChip status={d.status} />)}
+            {row("Status Paymenku", d.gatewayStatus ?? "-")}
+            {row("Mode", d.isSandbox ? "SANDBOX (tanpa uang nyata)" : "Live")}
+            {row("Kanal", `${d.method} (${d.channelCode ?? "-"})`)}
+            {row("ID transaksi (trx_id)", d.externalId ?? "-")}
+            {row("Saldo yang masuk", formatIdr(d.amount))}
+            {row("Dibayar pelanggan", d.payAmount ? formatIdr(d.payAmount) : "-")}
+            {row("Biaya", formatIdr(d.feeAmount ?? 0))}
+            {row("Dibuat", formatDateTime(d.createdAt))}
+            {row("Kedaluwarsa", d.expiresAt ? formatDateTime(d.expiresAt) : "-")}
+            {row("Dibayar", d.paidAt ? formatDateTime(d.paidAt) : "-")}
+            {d.needsReview ? row("Perlu dicek", d.reviewReason ?? "Ya") : null}
+          </dl>
+          <p className="mt-3 text-[10px] font-semibold text-ink dark:text-white">Data pembayaran (sudah disaring)</p>
+          <pre className="thin-scroll mt-1 max-h-48 overflow-auto rounded-xl bg-[#F1F6FB] p-3 text-[9.5px] dark:bg-[#161b20]">{JSON.stringify(d.paymentInfo ?? {}, null, 2)}</pre>
+        </div>
+      ) : null}
+    </Dialog>
+  );
+}
+
 export function DepositsView({ deposits }: { deposits: AdminDeposit[] }) {
   const run = useAdminRunner();
   const list = useListState<Filter>(useParamFilter<Filter>(filters.map((f) => f.id), "semua"));
@@ -70,9 +108,12 @@ export function DepositsView({ deposits }: { deposits: AdminDeposit[] }) {
   const filtered = useMemo(
     () =>
       deposits.filter((d) => {
-        if (list.filter !== "semua" && d.status !== list.filter) return false;
+        if (list.filter === "perlu_dicek" ? !d.needsReview : list.filter !== "semua" && d.status !== list.filter) return false;
         if (!list.debounced) return true;
-        return d.id.includes(list.debounced) || d.username.toLowerCase().includes(list.debounced) || d.method.toLowerCase().includes(list.debounced);
+        return (
+          d.id.includes(list.debounced) || d.username.toLowerCase().includes(list.debounced) || d.method.toLowerCase().includes(list.debounced) ||
+          (d.externalId ?? "").toLowerCase().includes(list.debounced) || String(d.amount) === list.debounced.replace(/[^0-9]/g, "")
+        );
       }),
     [deposits, list.filter, list.debounced]
   );
@@ -80,19 +121,32 @@ export function DepositsView({ deposits }: { deposits: AdminDeposit[] }) {
 
   function menuFor(d: AdminDeposit) {
     const pending = d.status === "menunggu";
-    return (
-      <ActionMenu
-        label={`Aksi untuk deposit ${d.id}`}
-        items={[
+    // Paymenku deposits are never confirmed by hand: only a status Paymenku itself reports can credit them
+    const items = d.gateway
+      ? [
+          { label: "Detail", icon: Eye, onSelect: () => setDialog({ kind: "detail", deposit: d }) },
+          { label: "Cek status ke Paymenku", icon: RefreshCw, disabled: d.status === "gagal", onSelect: () => void run(checkDepositWithPaymenku({ id: d.id })) },
+          { label: "Batalkan", icon: X, tone: "danger" as const, disabled: !pending, onSelect: () => setDialog({ kind: "cancel", deposit: d }) },
+        ]
+      : [
           { label: "Konfirmasi manual", icon: Check, disabled: !pending, onSelect: () => setDialog({ kind: "confirm", deposit: d }) },
-          { label: "Tolak", icon: X, tone: "danger", disabled: !pending, onSelect: () => setDialog({ kind: "reject", deposit: d }) },
-        ]}
-      />
-    );
+          { label: "Tolak", icon: X, tone: "danger" as const, disabled: !pending, onSelect: () => setDialog({ kind: "reject", deposit: d }) },
+        ];
+    return <ActionMenu label={`Aksi untuk deposit ${d.id}`} items={items} />;
   }
 
   const columns: Column<AdminDeposit>[] = [
-    { key: "id", header: "ID", cell: (d) => <span className="font-semibold text-primary-accent">#{d.id}</span> },
+    {
+      key: "id",
+      header: "ID",
+      cell: (d) => (
+        <span className="font-semibold text-primary-accent">
+          #{d.id.slice(0, 8)}
+          {d.needsReview ? <span data-testid="review-flag" className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-[9px] font-semibold text-red-600 dark:bg-red-500/15 dark:text-red-300">Perlu dicek</span> : null}
+          {d.gateway && d.isSandbox ? <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">Sandbox</span> : null}
+        </span>
+      ),
+    },
     { key: "user", header: "Pengguna", cell: (d) => d.username },
     { key: "method", header: "Metode", cell: (d) => d.method, hideBelowLg: true },
     { key: "amount", header: "Jumlah", cell: (d) => <span className="font-semibold">{formatIdr(d.amount)}</span>, className: "whitespace-nowrap" },
@@ -145,6 +199,21 @@ export function DepositsView({ deposits }: { deposits: AdminDeposit[] }) {
         )}
       </section>
 
+      <DepositDetail deposit={dialog?.kind === "detail" ? dialog.deposit : null} onClose={() => setDialog(null)} />
+      <ConfirmDialog
+        open={dialog?.kind === "cancel"}
+        onClose={() => setDialog(null)}
+        title="Batalkan deposit Paymenku?"
+        description="Deposit ditutup. Bila pelanggan sudah membayar, saldo tetap masuk setelah pembayaran terkonfirmasi di Paymenku (dikreditkan satu kali dan ditandai Perlu dicek)."
+        confirmLabel="Batalkan deposit"
+        tone="danger"
+        onConfirm={async () => {
+          if (dialog?.kind !== "cancel") return;
+          const result = await run(cancelDepositGateway({ id: dialog.deposit.id }));
+          if (result.ok) setDialog(null);
+          return result.ok;
+        }}
+      />
       <ConfirmDialog
         open={dialog?.kind === "confirm"}
         onClose={() => setDialog(null)}

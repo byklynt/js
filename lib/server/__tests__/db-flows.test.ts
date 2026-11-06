@@ -3,7 +3,6 @@
  * against the linked DEV Supabase project, with the mock provider. Run with: npm run test:db
  * Temp users (@jagoansosmed-test.invalid) and ZT- fixtures are removed afterwards by scripts/db-cleanup-test-data.sql.
  */
-import { createHmac } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanupOrFail } from "../../../scripts/lib/test-cleanup.mjs";
@@ -173,26 +172,6 @@ describe.skipIf(!enabled)("server flows on Supabase (mock provider)", () => {
     expect(order.submitAttempts).toBe(3);
     expect(order.refundedAmount).toBe(1500);
     expect(await balance(user)).toBe(before);
-  }, 90_000);
-
-  it("payment webhook: bad signature rejected, valid one credits (with bonus tiers if configured), a replay credits nothing", async () => {
-    const secret = `zt-secret-${run}`;
-    const dep = await m.deposits.createDepositRequest({ userId: user, amount: 20_000, methodId: "manual" });
-    const body = JSON.stringify({ transactionId: `zt-tx-${run}`, reference: dep.id, amount: 20_000, status: "paid" });
-    const sig = createHmac("sha256", secret).update(body).digest("hex");
-    expect((await m.deposits.handlePaymentWebhook(body, "bad", secret)).status).toBe(401);
-    const before = await balance(user);
-    const first = await m.deposits.handlePaymentWebhook(body, sig, secret);
-    expect(first).toMatchObject({ status: 200, body: { ok: true, message: "Saldo ditambahkan." } });
-    const afterFirst = await balance(user);
-    expect(afterFirst).toBeGreaterThanOrEqual(before + 20_000);
-    const replay = await m.deposits.handlePaymentWebhook(body, sig, secret);
-    expect(replay.body.message).toBe("Duplikat diabaikan.");
-    expect(await balance(user)).toBe(afterFirst);
-    // a webhook for another amount is refused
-    const other = await m.deposits.createDepositRequest({ userId: user, amount: 20_000, methodId: "manual" });
-    const wrong = JSON.stringify({ transactionId: `zt-tx2-${run}`, reference: other.id, amount: 99, status: "paid" });
-    expect((await m.deposits.handlePaymentWebhook(wrong, createHmac("sha256", secret).update(wrong).digest("hex"), secret)).status).toBe(422);
   }, 90_000);
 
   it("tickets: create with an attachment (private bucket, signed URL), internal note hidden, other users see nothing", async () => {

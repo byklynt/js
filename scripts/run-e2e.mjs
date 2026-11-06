@@ -7,8 +7,11 @@ assertDevOnlyWithFile(); // tests create and delete data: dev project only (clea
 const PORT = "3110";
 const win = process.platform === "win32";
 const log = openSync(".e2e-server.log", "w");
+// The Paymenku e2e talks to a FAKE gateway the test starts itself (port 3199): the sandbox key, the base URL and the webhook secret exist only for that run.
+const paymenkuE2E = process.argv.slice(2).some((a) => a.includes("paymenku"));
+const paymenkuEnv = paymenkuE2E ? { PAYMENKU_API_KEY: "sk_test_e2e_fake", PAYMENKU_API_BASE: "http://localhost:3199", PAYMENKU_WEBHOOK_SECRET: "e2e-whsec-fake" } : { PAYMENKU_API_KEY: "", PAYMENKU_API_BASE: "", PAYMENKU_WEBHOOK_SECRET: "" };
 const server = spawn("npx", ["next", "start", "-p", PORT], { shell: win, stdio: ["ignore", log, log], // PROVIDER_LIVE_APPROVED_REF="" keeps a .env.local that approves the real provider from turning the test server live (or "off")
-env: { ...process.env, PROVIDER_MODE: "mock", PROVIDER_LIVE_APPROVED_REF: "" } });
+env: { ...process.env, PROVIDER_MODE: "mock", PROVIDER_LIVE_APPROVED_REF: "", ...paymenkuEnv } });
 
 async function ready() {
   for (let i = 0; i < 60; i++) {
@@ -29,7 +32,7 @@ try {
   const r = spawnSync("npx", ["vitest", "run", "--config", "vitest.e2e.config.ts", ...process.argv.slice(2)], {
     stdio: "inherit",
     shell: win,
-    env: { ...process.env, RUN_E2E: "1", E2E_BASE: `http://localhost:${PORT}` },
+    env: { ...process.env, RUN_E2E: "1", E2E_BASE: `http://localhost:${PORT}`, ...(paymenkuE2E ? { E2E_PAYMENKU: "1" } : {}) },
   });
   code = r.status ?? 1;
 } finally {

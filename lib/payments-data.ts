@@ -1,4 +1,4 @@
-export type PaymentStatus = "berhasil" | "menunggu" | "gagal";
+export type PaymentStatus = "berhasil" | "menunggu" | "gagal" | "kedaluwarsa" | "dibatalkan";
 
 export type Payment = {
   id: string;
@@ -15,6 +15,8 @@ export type PaymentMethod = {
   name: string;
   detail?: string;
   featured?: boolean;
+  /** Gateway channel type (qris, va, ewallet, cstore): picks the icon. */
+  kind?: string;
   /** Needs a payment gateway + signed webhook (not available yet). */
   needsGateway?: boolean;
 };

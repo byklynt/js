@@ -9,11 +9,12 @@ const methodIcons: Record<string, React.ComponentType<{ className?: string }>> =
   bank: Building2,
   ewallet: Smartphone,
   va: CreditCard,
+  cstore: Building2,
   crypto: Bitcoin,
 };
 
 function MethodLabel({ method }: { method: PaymentMethod }) {
-  const Icon = methodIcons[method.id] ?? CreditCard;
+  const Icon = methodIcons[method.kind ?? method.id] ?? methodIcons[method.id] ?? CreditCard;
   return (
     <span className="flex min-w-0 items-center gap-2">
       <Icon className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />

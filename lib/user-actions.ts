@@ -15,6 +15,9 @@ import { createDepositRequest, methodLabel } from "@/lib/server/deposits";
 import { MIN_PASSWORD, EMAIL_RE, verifyPasswordFor } from "@/lib/server/user-auth";
 import { notifyAdmins } from "@/lib/server/repo/notify";
 import { listUserOrders } from "@/lib/server/repo/orders";
+import { getClientIp } from "@/lib/auth-server";
+import { cancelGatewayDeposit, createGatewayDeposit, getGatewayConfig, verifyDeposit } from "@/lib/server/payments/deposits-gateway";
+import { hitRateLimit } from "@/lib/rate-limit";
 import { getOrderComments } from "@/lib/server/repo/order-comments";
 import { loadSettings } from "@/lib/server/repo/settings";
 import { requestCancel, requestRefill } from "@/lib/server/requests";
@@ -210,24 +213,31 @@ export async function getOrderRulesAction(): Promise<{ rules: Record<RuleKey, Or
 // Deposits (manual requests until a payment gateway exists)
 // ---------------------------------------------------------------------------
 
-export type DepositConfig = { minDeposit: number; methods: { id: string; name: string; detail?: string }[]; bonusTiers: { min: number; percent: number }[]; gateway: boolean };
-export type MyDeposit = { id: string; method: string; amount: number; status: "berhasil" | "menunggu" | "gagal"; createdAt: string };
+export type GatewayChannelOption = { code: string; name: string; type?: string; feeMode: "merchant" | "customer" | "split"; feeFlat: number; feePercent: number; minAmount: number; maxAmount: number };
+export type DepositConfig = {
+  minDeposit: number;
+  methods: { id: string; name: string; detail?: string }[];
+  bonusTiers: { min: number; percent: number }[];
+  /** Paymenku: channels the admin enabled (already filtered by the fee policy); `sandbox` = test mode (no real money). */
+  gateway: { enabled: boolean; sandbox: boolean; maxDeposit: number; channels: GatewayChannelOption[] };
+};
+export type MyDeposit = { id: string; method: string; amount: number; status: "berhasil" | "menunggu" | "gagal" | "kedaluwarsa" | "dibatalkan"; createdAt: string; gateway?: boolean };
 
 export async function getDepositConfig(): Promise<DepositConfig> {
-  const { payments } = await loadSettings();
+  const [{ payments }, gw] = await Promise.all([loadSettings(), getGatewayConfig()]);
   return {
     minDeposit: payments.minDeposit,
     methods: payments.activeMethods.filter((id) => id === "manual").map((id) => ({ id, name: methodLabel(id), detail: "dikonfirmasi admin setelah pembayaran diterima" })),
     bonusTiers: [...payments.bonusTiers].sort((a, b) => b.min - a.min),
-    gateway: false,
+    gateway: { enabled: gw.enabled, sandbox: gw.mode === "sandbox", maxDeposit: gw.maxDeposit, channels: gw.channels },
   };
 }
 
 export async function getMyDeposits(): Promise<MyDeposit[]> {
   const userId = await currentUserId();
   if (!userId) return [];
-  const { data } = await supabaseAdmin().from("deposits").select("id,method,amount,status,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(200);
-  return (data ?? []).map((d) => ({ id: d.id, method: d.method, amount: Number(d.amount), status: d.status === "berhasil" ? "berhasil" : d.status === "menunggu" ? "menunggu" : "gagal", createdAt: d.created_at }) as MyDeposit);
+  const { data } = await supabaseAdmin().from("deposits").select("id,method,amount,status,created_at,gateway").eq("user_id", userId).order("created_at", { ascending: false }).limit(200);
+  return (data ?? []).map((d) => ({ id: d.id, method: d.method, amount: Number(d.amount), status: (["berhasil", "menunggu", "kedaluwarsa", "dibatalkan"].includes(d.status) ? d.status : "gagal"), createdAt: d.created_at, gateway: d.gateway === "paymenku" }) as MyDeposit);
 }
 
 const depositSchema = z.object({ amount: z.coerce.number().int("Jumlah harus bilangan bulat."), methodId: z.string().trim().min(1).max(30) });
@@ -322,4 +332,70 @@ export async function getMyOrderComments(orderId: unknown): Promise<{ ok: true; 
   if (!owned) return { ok: false, error: "Pesanan tidak ditemukan." };
   const comments = await getOrderComments(id.data);
   return comments ? { ok: true, comments } : { ok: false, error: "Pesanan ini tidak memiliki komentar." };
+}
+
+// --- Paymenku top-up ---------------------------------------------------------------------------------------------------------------
+
+const gatewayDepositSchema = z.object({ amount: z.coerce.number().int("Jumlah harus bilangan bulat.").positive("Jumlah harus lebih dari 0."), channelCode: z.string().trim().regex(/^[a-z0-9_]{1,40}$/, "Kanal tidak valid.") });
+
+/** Creates the deposit and the Paymenku transaction; the page then opens /deposit/<id>. Amount, channel and limits are checked again on the server. */
+export async function submitGatewayDeposit(input: unknown) {
+  const parsed = gatewayDepositSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Data tidak valid." } as const;
+  const ip = await getClientIp();
+  return guard(async (userId) => {
+    const dep = await createGatewayDeposit({ userId, ip, amount: parsed.data.amount, channelCode: parsed.data.channelCode });
+    return { ok: true, data: { id: dep.id } };
+  });
+}
+
+/** What the payment page shows. Only the owner's own row (RLS on the user session) and only display-safe fields. */
+export type DepositView = {
+  id: string;
+  status: "menunggu" | "berhasil" | "gagal" | "kedaluwarsa" | "dibatalkan";
+  amount: number;
+  payAmount: number;
+  fee: number;
+  method: string;
+  channelCode: string | null;
+  payUrl: string | null;
+  info: Record<string, string | boolean>;
+  expiresAt: string | null;
+  createdAt: string;
+  paidAt: string | null;
+  sandbox: boolean;
+  gateway: boolean;
+};
+
+export async function getMyDepositView(id: unknown): Promise<DepositView | null> {
+  const parsed = z.string().uuid().safeParse(id);
+  if (!parsed.success) return null;
+  const supabase = await createSupabase();
+  const { data: row } = await supabase.from("deposits")
+    .select("id,status,amount,pay_amount,fee_amount,method,channel_code,pay_url,payment_info,expires_at,created_at,paid_at,is_sandbox,gateway,user_id")
+    .eq("id", parsed.data).maybeSingle();
+  if (!row) return null;
+  // The page polls this. A pending payment is also looked up at Paymenku (at most every 15 s per deposit): the credit still happens ONLY after the server verified it there.
+  if (row.status === "menunggu" && row.gateway === "paymenku" && Date.now() - new Date(row.created_at).getTime() > 20_000) {
+    const gate = await hitRateLimit(`deposit-poll:${row.id}`, 1, 15);
+    if (gate.allowed) {
+      await verifyDeposit(row.id, "poll");
+      const { data: again } = await supabase.from("deposits").select("status,paid_at,pay_amount").eq("id", row.id).maybeSingle();
+      if (again) Object.assign(row, again);
+    }
+  }
+  return {
+    id: row.id, status: row.status as DepositView["status"], amount: Number(row.amount), payAmount: Number(row.pay_amount ?? row.amount), fee: Number(row.fee_amount ?? 0), method: row.method,
+    channelCode: row.channel_code, payUrl: row.pay_url, info: (row.payment_info ?? {}) as Record<string, string | boolean>, expiresAt: row.expires_at, createdAt: row.created_at,
+    paidAt: row.paid_at, sandbox: Boolean(row.is_sandbox), gateway: row.gateway === "paymenku",
+  };
+}
+
+export async function cancelMyDeposit(id: unknown): Promise<UserResult> {
+  const parsed = z.string().uuid().safeParse(id);
+  if (!parsed.success) return { ok: false, error: "Deposit tidak valid." };
+  return guard(async (userId) => {
+    const r = await cancelGatewayDeposit(parsed.data, { userId });
+    return r.ok ? { ok: true, message: r.message } : { ok: false, error: r.message };
+  });
 }

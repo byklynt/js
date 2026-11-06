@@ -43,8 +43,8 @@ export function RankChip({ rank }: { rank: UserRank }) {
   );
 }
 
-const depositTone: Record<DepositStatus, ChipTone> = { menunggu: "amber", berhasil: "emerald", gagal: "red", kedaluwarsa: "slate" };
-const depositLabel: Record<DepositStatus, string> = { menunggu: "Menunggu", berhasil: "Berhasil", gagal: "Gagal", kedaluwarsa: "Kedaluwarsa" };
+const depositTone: Record<DepositStatus, ChipTone> = { menunggu: "amber", berhasil: "emerald", gagal: "red", kedaluwarsa: "slate", dibatalkan: "slate" };
+const depositLabel: Record<DepositStatus, string> = { menunggu: "Menunggu", berhasil: "Berhasil", gagal: "Gagal", kedaluwarsa: "Kedaluwarsa", dibatalkan: "Dibatalkan" };
 
 export function DepositStatusChip({ status }: { status: DepositStatus }) {
   const Icon = status === "berhasil" ? Check : status === "gagal" ? X : status === "menunggu" ? Clock : Hourglass;

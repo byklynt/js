@@ -130,7 +130,7 @@ export function CommunityLinksForm({ settings }: { settings: SiteSettings["commu
   );
 }
 
-export function PaymentSettingsForm({ settings }: { settings: SiteSettings["payments"] }) {
+export function PaymentSettingsForm({ settings, children }: { settings: SiteSettings["payments"]; children?: React.ReactNode }) {
   const run = useAdminRunner();
   const [active, setActive] = useState(settings.activeMethods);
   const [minDeposit, setMinDeposit] = useState(String(settings.minDeposit));
@@ -203,6 +203,7 @@ export function PaymentSettingsForm({ settings }: { settings: SiteSettings["paym
           <Button type="submit" loading={busy}>Simpan pengaturan pembayaran</Button>
         </div>
       </form>
+      {children}
     </>
   );
 }

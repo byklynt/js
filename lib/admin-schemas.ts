@@ -131,6 +131,7 @@ export const csvImportSchema = z.object({ csv: z.string().min(1, "File CSV koson
 
 export const providerIdSchema = z.object({ id });
 
+export const depositGatewaySchema = z.object({ id: z.string().uuid("ID deposit tidak valid.") });
 export const depositConfirmSchema = z.object({ id, password });
 export const depositRejectSchema = z.object({ id, reason: z.string().trim().min(3, "Alasan minimal 3 karakter.").max(200) });
 
@@ -215,6 +216,13 @@ export const settingsPaymentsSchema = z.object({
   bonusTiers: z
     .array(z.object({ min: z.coerce.number().int().min(0), percent: z.coerce.number().min(0).max(50) }))
     .max(10),
+});
+export const emptySchema = z.object({});
+export const settingsGatewaySchema = z.object({
+  enabled: z.boolean(),
+  maxDeposit: z.coerce.number().int("Harus bilangan bulat.").min(10_000, "Minimal Rp 10.000.").max(100_000_000, "Maksimal Rp 100.000.000."),
+  feePolicy: z.enum(["ikuti", "pengguna", "kami"]),
+  channels: z.array(z.string().trim().regex(/^[a-z0-9_]{1,40}$/, "Kode kanal tidak valid.")).max(60),
 });
 export const settingsRanksSchema = z.object({
   ranks: z.array(

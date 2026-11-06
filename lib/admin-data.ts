@@ -149,7 +149,7 @@ export type AdminService = {
   estimateOverride?: string | null;
 };
 
-export type DepositStatus = "menunggu" | "berhasil" | "gagal" | "kedaluwarsa";
+export type DepositStatus = "menunggu" | "berhasil" | "gagal" | "kedaluwarsa" | "dibatalkan";
 
 export type AdminDeposit = {
   id: string;
@@ -162,6 +162,19 @@ export type AdminDeposit = {
   proof: string;
   /** Payment gateway transaction ID; UNIQUE so a webhook can never credit twice. */
   externalId: string | null;
+  /** Paymenku deposits only (gateway = true). The rest are manual deposits. */
+  gateway?: boolean;
+  channelCode?: string | null;
+  payAmount?: number | null;
+  feeAmount?: number;
+  gatewayStatus?: string | null;
+  isSandbox?: boolean | null;
+  expiresAt?: string | null;
+  paidAt?: string | null;
+  needsReview?: boolean;
+  reviewReason?: string | null;
+  /** Display-safe payment_info saved at creation (no keys, no customer data). */
+  paymentInfo?: Record<string, unknown> | null;
 };
 
 export type AdminRefill = RefillRequest & { userId: string; username: string };
@@ -194,6 +207,16 @@ export type SiteSettings = {
     activeMethods: string[];
     minDeposit: number;
     bonusTiers: { min: number; percent: number }[];
+    /** Paymenku top-ups (QRIS, VA, e-wallet). The API key and the webhook secret are environment variables, never settings. */
+    gateway: {
+      enabled: boolean;
+      /** Largest top-up through the gateway (Rp). The smallest is minDeposit above. */
+      maxDeposit: number;
+      /** Who bears the channel fee: filters the channels offered (see lib/server/payments/gateway-rules.ts). */
+      feePolicy: "ikuti" | "pengguna" | "kami";
+      /** Channel codes (from Paymenku) the admin enabled. */
+      channels: string[];
+    };
   };
   ranks: { name: UserRank; minSpent: number; discountPercent: number }[];
   security: { requireAdmin2fa: boolean; /** Empty = off. IPv4 or IPv4/CIDR. */ ipAllowlist: string[] };
@@ -313,6 +336,7 @@ export function defaultSettings(): SiteSettings {
       activeMethods: ["manual"],
       minDeposit: 10_000,
       bonusTiers: [],
+      gateway: { enabled: false, maxDeposit: 5_000_000, feePolicy: "ikuti", channels: [] },
     },
     ranks: [
       { name: "Starter", minSpent: 0, discountPercent: 0 },

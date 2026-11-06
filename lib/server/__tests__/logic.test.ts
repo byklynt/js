@@ -2,7 +2,6 @@ import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { type AdminDb } from "@/lib/admin-data";
 import { seedDemoDb as seedAdminDb } from "@/lib/dev/demo-seed";
-import { creditDeposit, handlePaymentWebhook } from "../deposits";
 import { reconcileBalances } from "../ledger";
 import { placeOrder, resubmitFailedOrder } from "../orders";
 import { createMockProviderClient } from "../provider-client";

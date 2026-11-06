@@ -8,6 +8,8 @@ import { requireAdmin } from "@/lib/auth-server";
 import type { SessionPayload } from "@/lib/session";
 import { actionDb as getDb, withActionDb } from "@/lib/server/action-context";
 import { logAdminAction } from "@/lib/admin-audit";
+import { cancelGatewayDeposit, listChannels as listGatewayChannels, verifyDeposit } from "@/lib/server/payments/deposits-gateway";
+import { getPaymenkuClient, paymenkuMode, PaymenkuError } from "@/lib/server/payments/paymenku";
 import { verifyAdminPassword } from "@/lib/admin-password";
 import { revokeAdminSession as revokeSession, revokeOtherAdminSessions as revokeOthers } from "@/lib/server/admin-sessions";
 import { createClient as createSupabase } from "@/lib/supabase/server";
@@ -660,8 +662,10 @@ export async function setProviderStatus(input: unknown) {
 export async function confirmDeposit(input: unknown) {
   return run(S.depositConfirmSchema, input, async (d, admin) => {
     if (!(await reauth(admin, d.password))) return fail("Password salah.");
-    const { data: deposit } = await supabaseAdmin().from("deposits").select("id,status,amount,external_id,user_id,profiles(username,balance)").eq("id", d.id).maybeSingle();
+    const { data: deposit } = await supabaseAdmin().from("deposits").select("id,status,amount,external_id,user_id,gateway,profiles(username,balance)").eq("id", d.id).maybeSingle();
     if (!deposit) return fail("Deposit tidak ditemukan.");
+    // a gateway deposit is credited ONLY after Paymenku confirmed the payment to the server ("Cek status ke Paymenku"); a manual credit goes through "Atur saldo"
+    if (deposit.gateway) return fail("Deposit Paymenku tidak bisa dikonfirmasi manual. Pakai \"Cek status ke Paymenku\".");
     if (deposit.status !== "menunggu") return fail("Hanya deposit berstatus Menunggu yang bisa dikonfirmasi.");
     const owner = deposit.profiles as unknown as { username: string; balance: number } | null;
     const before = { status: deposit.status, userBalance: owner ? Number(owner.balance) : undefined };
@@ -673,10 +677,32 @@ export async function confirmDeposit(input: unknown) {
   });
 }
 
+/** Ask Paymenku about a deposit and apply the answer: credits only when Paymenku itself reports it paid (and every amount / sandbox check passes). */
+export async function checkDepositWithPaymenku(input: unknown) {
+  return run(S.depositGatewaySchema, input, async (d, admin) => {
+    const { data: dep } = await supabaseAdmin().from("deposits").select("id,status,gateway").eq("id", d.id).maybeSingle();
+    if (!dep || dep.gateway !== "paymenku") return fail("Deposit Paymenku tidak ditemukan.");
+    const res = await verifyDeposit(dep.id, `admin:${admin.username}`);
+    await audit(admin, "deposit.paymenku_check", "deposit", dep.id, { status: dep.status }, { outcome: res.outcome });
+    if (res.outcome === "error" || res.outcome === "rejected") return fail(res.message);
+    return ok(res.outcome === "credited" || res.outcome === "late_credited" ? "Pembayaran terkonfirmasi di Paymenku. Saldo ditambahkan." : res.outcome === "duplicate" ? "Deposit sudah dikreditkan sebelumnya." : "Status diperbarui dari Paymenku.");
+  });
+}
+
+export async function cancelDepositGateway(input: unknown) {
+  return run(S.depositGatewaySchema, input, async (d, admin) => {
+    const res = await cancelGatewayDeposit(d.id, { adminId: admin.sub });
+    if (!res.ok) return fail(res.message);
+    await audit(admin, "deposit.paymenku_cancel", "deposit", d.id, { status: "menunggu" }, { status: "dibatalkan" });
+    return ok(res.message);
+  });
+}
+
 export async function rejectDeposit(input: unknown) {
   return run(S.depositRejectSchema, input, async (d, admin) => {
-    const { data: deposit } = await supabaseAdmin().from("deposits").select("id,status,amount,user_id").eq("id", d.id).maybeSingle();
+    const { data: deposit } = await supabaseAdmin().from("deposits").select("id,status,amount,user_id,gateway").eq("id", d.id).maybeSingle();
     if (!deposit) return fail("Deposit tidak ditemukan.");
+    if (deposit.gateway) return fail("Deposit Paymenku ditutup lewat Paymenku (batalkan, atau tunggu kedaluwarsa).");
     if (deposit.status !== "menunggu") return fail("Hanya deposit berstatus Menunggu yang bisa ditolak.");
     const { data: updated } = await supabaseAdmin().from("deposits").update({ status: "gagal" }).eq("id", deposit.id).eq("status", "menunggu").select("id");
     if (!updated?.length) return fail("Deposit ini sudah diproses.");
@@ -905,9 +931,52 @@ export async function savePaymentSettings(input: unknown) {
   return run(S.settingsPaymentsSchema, input, async (d, admin) => {
     const db = getDb();
     const before = { ...db.settings.payments };
-    db.settings.payments = { ...d, bonusTiers: [...d.bonusTiers].sort((a, b) => a.min - b.min) };
+    // keep the gateway block: it has its own form and action
+    db.settings.payments = { ...db.settings.payments, ...d, bonusTiers: [...d.bonusTiers].sort((a, b) => a.min - b.min) };
     await audit(admin, "settings.update", "settings", "payments", before, db.settings.payments);
     return ok("Pengaturan pembayaran disimpan.");
+  });
+}
+
+/** Paymenku settings (gateway on / off, largest top-up, who bears the fee, enabled channels). The API key and the webhook secret are environment variables, never stored here. */
+export async function savePaymenkuSettings(input: unknown) {
+  return run(S.settingsGatewaySchema, input, async (d, admin) => {
+    const db = getDb();
+    const before = { ...db.settings.payments.gateway };
+    if (d.enabled && paymenkuMode().state === "off") return fail(`Gateway belum bisa diaktifkan: ${(paymenkuMode() as { reason: string }).reason}`);
+    if (d.enabled && d.channels.length === 0) return fail("Pilih minimal satu kanal pembayaran.");
+    db.settings.payments.gateway = { enabled: d.enabled, maxDeposit: d.maxDeposit, feePolicy: d.feePolicy, channels: [...new Set(d.channels)] };
+    await audit(admin, "settings.update", "settings", "paymenku", before, db.settings.payments.gateway);
+    return ok("Pengaturan Paymenku disimpan.");
+  });
+}
+
+/** "Uji koneksi": checks the key against Paymenku and reports the mode and the wallet balance. Never returns or logs the key. */
+export async function testPaymenkuConnection() {
+  return run(S.emptySchema, {}, async () => {
+    const mode = paymenkuMode();
+    if (mode.state === "off") return fail(mode.reason);
+    const gw = getPaymenkuClient();
+    if (!gw) return fail("Gateway nonaktif.");
+    try {
+      const [channels, balance] = await Promise.all([gw.client.listChannels(), gw.client.walletBalance().catch(() => null)]);
+      return ok(`Terhubung ke Paymenku (${gw.mode === "sandbox" ? "SANDBOX" : "LIVE"}). ${channels.length} kanal aktif${balance === null ? "" : `, saldo dompet ${rupiah(balance)}`}.`, { mode: gw.mode, channels: channels.length, balance });
+    } catch (e) {
+      return fail(e instanceof PaymenkuError ? `Paymenku menjawab: ${e.message}` : "Tidak bisa terhubung ke Paymenku.");
+    }
+  });
+}
+
+/** The channels Paymenku reports for this merchant (fresh, not cached), for the settings screen. */
+export async function refreshPaymenkuChannels() {
+  return run(S.emptySchema, {}, async () => {
+    if (paymenkuMode().state === "off") return fail((paymenkuMode() as { reason: string }).reason);
+    try {
+      const channels = await listGatewayChannels({ force: true });
+      return ok(`${channels.length} kanal diambil dari Paymenku.`, channels);
+    } catch (e) {
+      return fail(e instanceof PaymenkuError ? `Paymenku menjawab: ${e.message}` : "Tidak bisa terhubung ke Paymenku.");
+    }
   });
 }
 
