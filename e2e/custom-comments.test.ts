@@ -142,7 +142,7 @@ describe.skipIf(!enabled)("custom comments: order form, user order list, admin",
     await list.waitFor({ timeout: 20_000 });
     expect((await list.innerText()).split("\n").filter(Boolean)).toEqual(COMMENTS);
     expect(await list.locator("b, i").count()).toBe(0); // the markup is text, not elements
-    expect(await user.getByRole("button", { name: "Salin" }).isVisible()).toBe(true);
+    expect(await user.getByRole("button", { name: "Salin", exact: true }).isVisible()).toBe(true);
   }, 120_000);
 
   it("the admin sees the same comments", async () => {
@@ -152,7 +152,9 @@ describe.skipIf(!enabled)("custom comments: order form, user order list, admin",
     await toggle.waitFor({ timeout: 40_000 });
     await toggle.click();
     const list = admin.getByTestId(`order-comments-list-${orderId}`);
-    await list.waitFor({ timeout: 20_000 });
+    await list.waitFor({ timeout: 20_000 }).catch(async (e) => {
+      throw new Error(`panel text: ${await admin.locator(`#order-comments-${orderId}`).innerText().catch(() => "(no panel)")} :: ${e}`);
+    });
     expect((await list.innerText()).split("\n").filter(Boolean)).toEqual(COMMENTS);
     expect(await list.locator("b, i").count()).toBe(0);
   }, 120_000);

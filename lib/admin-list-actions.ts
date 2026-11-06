@@ -56,7 +56,7 @@ export async function loadOrderCommentsAction(orderId: unknown): Promise<{ ok: t
   } catch {
     return { ok: false, error: "Kamu tidak punya akses untuk tindakan ini." };
   }
-  const id = z.string().regex(/^d{1,12}$/).safeParse(orderId);
+  const id = z.string().regex(/^\d{1,12}$/).safeParse(orderId);
   if (!id.success) return { ok: false, error: "Pesanan tidak valid." };
   const comments = await getOrderComments(id.data);
   return comments ? { ok: true, comments } : { ok: false, error: "Pesanan ini tidak memiliki komentar." };
