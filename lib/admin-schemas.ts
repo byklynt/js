@@ -204,7 +204,7 @@ export const communityLinksSchema = z
   .transform((d, ctx): CommunityLinks => {
     const out: CommunityLinks = { whatsappChannel: "", telegramChannel: "", telegramBot: "" };
     for (const f of COMMUNITY_FIELDS) {
-      const r = validateCommunityUrl(d[f.key], f.kind);
+      const r = validateCommunityUrl(d[f.key], f.kind, f.key);
       if (!r.ok) ctx.addIssue({ code: "custom", path: [f.key], message: `${f.label}: ${r.message}` });
       else out[f.key] = r.value;
     }
