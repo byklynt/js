@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { Filter, LayoutGrid } from "lucide-react";
-import { platforms, allPlatformsId, type Platform, type IconComponent } from "@/lib/dashboard-data";
+import { platforms, promotedPlatforms, allPlatformsId, type Platform, type IconComponent } from "@/lib/dashboard-data";
 import { useCategories } from "@/lib/services-client";
 import { cn } from "@/lib/utils";
 
@@ -16,11 +16,12 @@ export function PlatformFilter({
   onChange: (platformId: string) => void;
 }) {
   const { categories } = useCategories();
-  // "Lainnya" only shows when the catalogue actually has categories that match no known platform.
-  const list = useMemo<Platform[]>(
-    () => (categories.some((c) => c.platformId === "lainnya") ? [...platforms, OTHER] : platforms),
-    [categories]
-  );
+  // The fixed platforms always show. Promoted ones (WhatsApp, Shopee, Snapchat, LinkedIn, Kick) get a chip only when the catalogue has categories for them,
+  // and "Lainnya" only when some category matches no chip. Everything is driven by the categories that actually have active services.
+  const list = useMemo<Platform[]>(() => {
+    const present = new Set(categories.map((c) => c.platformId));
+    return [...platforms, ...promotedPlatforms.filter((p) => present.has(p.id)), ...(present.has("lainnya") ? [OTHER] : [])];
+  }, [categories]);
   return (
     <div
       role="tablist"

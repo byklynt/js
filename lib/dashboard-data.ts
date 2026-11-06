@@ -22,6 +22,9 @@ import {
   SiReddit,
 } from "react-icons/si";
 
+import { PLATFORM_RULES } from "@/lib/platform-detect";
+import { iconForCategory, iconForPlatform } from "@/lib/platform-icons";
+
 export type IconComponent = ComponentType<{ className?: string }>;
 
 export const dashboardCopy = {
@@ -84,10 +87,15 @@ export type Category = {
   icon?: IconComponent;
 };
 
-export function getCategoryIcon(category: { platformId: string; icon?: IconComponent }): IconComponent {
+/** Platforms that get their own chip when the catalogue has services for them (the rest stay under "Lainnya"). */
+export const promotedPlatforms: Platform[] = PLATFORM_RULES.filter((r) => r.promoted).map((r) => ({ id: r.id, label: r.label, icon: iconForPlatform(r.id) }));
+
+/** Every platform with a chip, for lookups by id. */
+export const knownPlatforms: Platform[] = [...platforms, ...promotedPlatforms];
+
+export function getCategoryIcon(category: { platformId: string; label?: string; icon?: IconComponent }): IconComponent {
   if (category.icon) return category.icon;
-  const platform = platforms.find((p) => p.id === category.platformId);
-  return platform?.icon ?? (LayoutGrid as unknown as IconComponent);
+  return iconForCategory(category);
 }
 
 export type Service = {

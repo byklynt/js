@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { createElement, useRef, useState, type ComponentType } from "react";
 import { Check, ChevronDown, Funnel } from "lucide-react";
 
 /** Options mounted at once; a long list is reached through the search box. */
 const RENDER_LIMIT = 60;
 import { useClickOutside } from "@/lib/use-click-outside";
+import { useVisualViewportMaxHeight } from "@/lib/use-touch";
 import { cn } from "@/lib/utils";
 
-export type FilterOption<T extends string> = { id: T; label: string };
+export type FilterOption<T extends string> = { id: T; label: string; /** Optional glyph before the label (platform / category icon). */ icon?: ComponentType<{ className?: string }> };
 
 /** Rounded-full pill with a tinted funnel circle that opens a single-select popover. */
 export function FilterPill<T extends string>({
@@ -32,10 +33,13 @@ export function FilterPill<T extends string>({
   const shown = matching.slice(0, RENDER_LIMIT);
   const ref = useClickOutside<HTMLDivElement>(() => setOpen(false));
   const current = options.find((o) => o.id === value);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listMaxHeight = useVisualViewportMaxHeight(open, triggerRef, 320);
 
   return (
     <div ref={ref} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -45,6 +49,7 @@ export function FilterPill<T extends string>({
         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-50 text-primary-accent dark:bg-primary-soft">
           <Funnel className="h-3.5 w-3.5" />
         </span>
+        {current?.icon ? createElement(current.icon, { className: "h-3.5 w-3.5 shrink-0" }) : null}
         {current?.label}
         <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
       </button>
@@ -52,9 +57,10 @@ export function FilterPill<T extends string>({
         <ul
           role="listbox"
           aria-label={ariaLabel}
+          style={{ maxHeight: listMaxHeight }}
           className={cn(
-            "absolute left-0 z-30 mt-2 w-52 rounded-xl border border-slate-200/70 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900",
-            options.length > RENDER_LIMIT && "max-h-80 w-72 overflow-auto"
+            "absolute left-0 z-30 mt-2 w-52 max-w-[calc(100vw-2rem)] overflow-auto overscroll-contain rounded-xl border border-slate-200/70 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900",
+            options.length > RENDER_LIMIT && "w-72"
           )}
         >
           {searchable ? (
@@ -84,8 +90,11 @@ export function FilterPill<T extends string>({
                     : "text-ink hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
                 )}
               >
-                {o.label}
-                {o.id === value ? <Check className="h-3.5 w-3.5" /> : null}
+                <span className="flex min-w-0 items-center gap-2">
+                  {o.icon ? createElement(o.icon, { className: "h-3.5 w-3.5 shrink-0" }) : null}
+                  <span className="truncate">{o.label}</span>
+                </span>
+                {o.id === value ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
               </button>
             </li>
           ))}

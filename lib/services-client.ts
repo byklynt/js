@@ -3,6 +3,7 @@
 import { chooseEstimate } from "@/lib/service-estimate";
 import { useEffect, useState } from "react";
 import type { Service } from "@/lib/dashboard-data";
+import { groupPlatformId } from "@/lib/platform-detect";
 import type { CategoryRow, ServiceDetailData, ServiceRow, ServicesPage, ServicesQuery } from "@/lib/services-types";
 
 /** Browser side of the services API (/api/services). Every call accepts an AbortSignal so stale requests can be cancelled. */
@@ -35,8 +36,12 @@ async function get<T>(url: string, signal?: AbortSignal): Promise<T> {
 }
 
 export const fetchServices = (q: ServicesQuery, signal?: AbortSignal) => get<ServicesPage>(`/api/services?${queryString(q)}`, signal);
-export const fetchCategoryList = (q: ServicesQuery = {}, signal?: AbortSignal) =>
-  get<{ categories: CategoryRow[]; totalServices: number }>(`/api/services/categories?${queryString(q)}`, signal);
+/** A category stored under the catch-all "lainnya" is grouped by its name when that is a platform with its own chip (WhatsApp, Shopee, ...). */
+const groupCategory = (c: CategoryRow): CategoryRow => ({ ...c, platformId: groupPlatformId(c.platformId, c.label) });
+export const fetchCategoryList = async (q: ServicesQuery = {}, signal?: AbortSignal) => {
+  const r = await get<{ categories: CategoryRow[]; totalServices: number }>(`/api/services/categories?${queryString(q)}`, signal);
+  return { ...r, categories: r.categories.map(groupCategory) };
+};
 export const fetchServiceDetail = (id: string, signal?: AbortSignal) => get<ServiceDetailData>(`/api/services/${encodeURIComponent(id)}`, signal);
 export const fetchServicesByIds = async (ids: string[], signal?: AbortSignal) =>
   (await get<{ items: ServiceRow[] }>(`/api/services/by-ids?ids=${encodeURIComponent(ids.join(","))}`, signal)).items;

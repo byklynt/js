@@ -1,8 +1,9 @@
 "use client";
 
+import { createElement } from "react";
 import { CalendarDays, TriangleAlert } from "lucide-react";
 import { motion } from "framer-motion";
-import { platforms } from "@/lib/dashboard-data";
+import { iconForCategory } from "@/lib/platform-icons";
 import { formatDateTime } from "@/lib/balance";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +40,7 @@ export function RecordCard({
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const platformInfo = platforms.find((p) => p.id === platform);
+  // The service name decides when the stored platform is the catch-all ("lainnya"): WhatsApp, Shopee, ... get their own glyph, anything else the neutral one.
 
   return (
     <motion.li
@@ -55,7 +56,7 @@ export function RecordCard({
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 md:flex-nowrap">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-50 text-ink dark:bg-slate-800 dark:text-white">
-          {platformInfo ? <platformInfo.icon className="h-[18px] w-[18px]" /> : null}
+          {createElement(iconForCategory({ platformId: platform, label: name }), { className: "h-[18px] w-[18px]" })}
         </span>
 
         <input

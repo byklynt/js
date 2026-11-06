@@ -3,6 +3,7 @@
  * Pure over `db` and the list the adapter returned, so it is testable without any network.
  */
 import { createHash } from "node:crypto";
+import { groupPlatformId } from "@/lib/platform-detect";
 import { reviewReasons, type ReviewReason } from "@/lib/service-review";
 import { finalPrice, type AdminDb, type AdminService, type MarkupType } from "@/lib/admin-data";
 import type { Category, Service } from "@/lib/dashboard-data";
@@ -18,21 +19,7 @@ import type { ProviderServiceInfo } from "./types";
 
 /** Platform id (the ones in dashboard-data) guessed from the category text; "lainnya" when nothing matches. */
 export function platformFromCategory(text: string): string {
-  const t = text.toLowerCase();
-  const rules: [RegExp, string][] = [
-    [/instagram|\big\b|\binsta\b/, "instagram"],
-    [/youtube|\byt\b/, "youtube"],
-    [/tiktok|tik tok/, "tiktok"],
-    [/facebook|\bfb\b/, "facebook"],
-    [/twitter|\btweet|\bx\b|x\.com|x \(/, "twitter"],
-    [/telegram/, "telegram"],
-    [/spotify/, "spotify"],
-    [/twitch/, "twitch"],
-    [/reddit/, "reddit"],
-    [/website traffic|web traffic|\btraffic\b/, "website-traffic"],
-    [/\bseo\b|backlink/, "seo-backlink"],
-  ];
-  return rules.find(([re]) => re.test(t))?.[1] ?? "lainnya";
+  return groupPlatformId(null, text); // the shared rules (lib/platform-detect): only platforms with their own chip are stored, the rest are "lainnya"
 }
 
 /** Drops emoji and decorative symbols, collapses spaces. The original stays in `providerName`. */

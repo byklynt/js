@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { canAutoFocusSearch, useVisualViewportMaxHeight } from "@/lib/use-touch";
 
 export function CustomSelect<T>({
   label,
@@ -58,8 +59,16 @@ export function CustomSelect<T>({
   const shownOptions = filteredOptions.slice(0, maxRendered);
   const hiddenCount = filteredOptions.length - shownOptions.length;
   const rootRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listMaxHeight = useVisualViewportMaxHeight(open, triggerRef, 256);
   const buttonId = useId();
   const listId = useId();
+
+  // Desktop: the search field takes focus when the list opens. Touch: no, the keyboard would cover the list (tap the field to type).
+  useEffect(() => {
+    if (open && searchable && canAutoFocusSearch()) searchRef.current?.focus();
+  }, [open, searchable]);
 
   useEffect(() => {
     if (!open) return;
@@ -91,6 +100,7 @@ export function CustomSelect<T>({
       </label>
       <button
         id={buttonId}
+        ref={triggerRef}
         type="button"
         disabled={disabled}
         aria-haspopup="listbox"
@@ -130,14 +140,15 @@ export function CustomSelect<T>({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className="absolute z-30 mt-2 max-h-64 w-full overflow-auto rounded-xl border border-primary-100 bg-white p-1.5 shadow-xl shadow-primary-100/70 dark:border-slate-700 dark:bg-slate-900 dark:shadow-none"
+            style={{ maxHeight: listMaxHeight }}
+            className="absolute z-30 mt-2 w-full overflow-auto overscroll-contain rounded-xl border border-primary-100 bg-white p-1.5 shadow-xl shadow-primary-100/70 dark:border-slate-700 dark:bg-slate-900 dark:shadow-none"
           >
             {searchable ? (
               <li role="presentation" className="sticky top-0 z-10 bg-white p-1 dark:bg-slate-900">
                 <input
                   type="text"
+                  ref={searchRef}
                   value={query}
-                  autoFocus
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Cari..."
                   aria-label={`Cari ${label}`}

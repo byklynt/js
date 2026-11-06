@@ -1,6 +1,8 @@
 "use client";
 
+import { createElement } from "react";
 import { Search, X } from "lucide-react";
+import { getCategoryIcon, type IconComponent } from "@/lib/dashboard-data";
 import type { CategoryRow } from "@/lib/services-types";
 import { CategoryFilter } from "./category-filter";
 import {
@@ -22,9 +24,10 @@ const guaranteeLabels: Record<AdvancedFilterValues["guarantee"], string> = {
   "tanpa-garansi": "Tanpa Garansi",
 };
 
-function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
+function Chip({ label, onRemove, icon }: { label: string; onRemove: () => void; icon?: IconComponent }) {
   return (
     <span className="flex items-center gap-1.5 rounded-full border border-primary-200 bg-primary-50 py-1 pl-3 pr-1.5 text-[10.5px] font-semibold text-primary-accent dark:border-primary-900 dark:bg-primary-950/40 dark:text-primary-300">
+      {icon ? createElement(icon, { className: "h-3 w-3 shrink-0" }) : null}
       {label}
       <button
         type="button"
@@ -70,7 +73,7 @@ export function ServicesToolbar({
     advancedFilters.guarantee !== defaultAdvancedFilters.guarantee ||
     favoritesOnly;
 
-  const chips: { key: string; label: string; onRemove: () => void }[] = [];
+  const chips: { key: string; label: string; onRemove: () => void; icon?: IconComponent }[] = [];
 
   for (const id of selectedCategoryIds) {
     const category = categories.find((c) => c.id === id);
@@ -78,6 +81,7 @@ export function ServicesToolbar({
     chips.push({
       key: `cat-${id}`,
       label: category.label,
+      icon: getCategoryIcon(category),
       onRemove: () => onCategoryChange(selectedCategoryIds.filter((i) => i !== id)),
     });
   }
@@ -160,7 +164,7 @@ export function ServicesToolbar({
       {chips.length > 0 ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {chips.map((chip) => (
-            <Chip key={chip.key} label={chip.label} onRemove={chip.onRemove} />
+            <Chip key={chip.key} label={chip.label} icon={chip.icon} onRemove={chip.onRemove} />
           ))}
           <button
             type="button"

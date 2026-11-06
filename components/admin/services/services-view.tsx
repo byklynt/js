@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useEffect, useMemo, useRef, useState } from "react";
 import { Download, LayoutGrid, ListChecks, Pencil, Plus, RefreshCw, SlidersHorizontal, Upload } from "lucide-react";
 import { finalPrice, type AdminService, type PublicProvider } from "@/lib/admin-data";
 import { bulkSetServicesActive, importServicesCsv, setServiceActive, updateService, type BulkServicesCounts } from "@/lib/admin-actions";
@@ -9,6 +9,7 @@ import { BulkConfirm, BulkScopeDialog, type BulkRequest } from "./bulk-actions";
 import { reviewReasons } from "@/lib/service-review";
 import { ReviewBadge } from "./review-badge";
 import { formatIdr } from "@/lib/balance";
+import { iconForCategory } from "@/lib/platform-icons";
 import { PageHeader } from "@/components/shell/page-header";
 import { DataToolbar } from "@/components/ui/data-toolbar";
 import { DataTable, type Column } from "@/components/ui/data-table";
@@ -300,7 +301,7 @@ export function ServicesView({ initial, meta, providers, minMargin = 5, reviewTh
 
       <DataToolbar
         filter={{
-          options: [{ id: "semua", label: "Semua kategori" }, { id: "margin", label: "Margin tipis" }, ...categories.map((c) => ({ id: c.id, label: c.label }))],
+          options: [{ id: "semua", label: "Semua kategori" }, { id: "margin", label: "Margin tipis" }, ...categories.map((c) => ({ id: c.id, label: c.label, icon: iconForCategory({ label: c.label }) }))],
           value: list.filter,
           onChange: list.setFilter,
           ariaLabel: "Filter kategori layanan",
@@ -350,6 +351,7 @@ export function ServicesView({ initial, meta, providers, minMargin = 5, reviewTh
             {groups.map((g) => (
               <div key={g.categoryId}>
                 <h2 className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-ink dark:text-white">
+                  {createElement(iconForCategory({ platformId: g.items[0].platform, label: g.label }), { className: "h-3.5 w-3.5 shrink-0 text-primary-accent" })}
                   {g.label}
                   <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[9px] font-semibold text-primary-accent">
                     {g.items.length}

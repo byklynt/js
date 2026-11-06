@@ -1,8 +1,10 @@
 "use client";
 
-import { createElement, useMemo, useState } from "react";
+import { createElement, useMemo, useRef, useState } from "react";
 import { Filter, ChevronDown, Check, Search } from "lucide-react";
-import { getCategoryIcon, platforms } from "@/lib/dashboard-data";
+import { getCategoryIcon, knownPlatforms } from "@/lib/dashboard-data";
+import { iconForPlatform } from "@/lib/platform-icons";
+import { useVisualViewportMaxHeight } from "@/lib/use-touch";
 import type { CategoryRow } from "@/lib/services-types";
 import { useClickOutside } from "@/lib/use-click-outside";
 import { cn } from "@/lib/utils";
@@ -11,7 +13,7 @@ import { cn } from "@/lib/utils";
 const ROW_LIMIT = 50;
 
 function platformLabel(id: string): string {
-  return platforms.find((p) => p.id === id)?.label ?? "Lainnya";
+  return knownPlatforms.find((p) => p.id === id)?.label ?? "Lainnya";
 }
 
 function Row({ category, checked, onToggle }: { category: CategoryRow; checked: boolean; onToggle: (id: string) => void }) {
@@ -56,6 +58,8 @@ export function CategoryFilter({
   const [query, setQuery] = useState("");
   const [openPlatform, setOpenPlatform] = useState<string | null>(null);
   const ref = useClickOutside<HTMLDivElement>(() => setOpen(false));
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listMaxHeight = useVisualViewportMaxHeight(open, triggerRef, 384);
 
   const allSelected = selectedIds.length === 0;
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
@@ -76,6 +80,7 @@ export function CategoryFilter({
   return (
     <div ref={ref} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="true"
         aria-expanded={open}
@@ -96,9 +101,10 @@ export function CategoryFilter({
         <div
           role="menu"
           aria-label="Filter kategori"
-          className="fade-in absolute left-0 z-30 mt-2 max-h-96 w-72 overflow-auto rounded-xl border border-primary-100 bg-white p-1.5 shadow-xl shadow-primary-100/70 dark:border-slate-700 dark:bg-slate-900 dark:shadow-none"
+          style={{ maxHeight: listMaxHeight }}
+          className="fade-in absolute left-0 z-30 mt-2 w-72 max-w-[calc(100vw-2rem)] overflow-auto overscroll-contain rounded-xl border border-primary-100 bg-white p-1.5 shadow-xl shadow-primary-100/70 dark:border-slate-700 dark:bg-slate-900 dark:shadow-none"
         >
-          <div className="relative p-1">
+          <div className="sticky top-0 z-10 bg-white p-1 dark:bg-slate-900">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden />
             <input
               type="text"
@@ -159,6 +165,7 @@ export function CategoryFilter({
                   onClick={() => setOpenPlatform((cur) => (cur === p.id ? null : p.id))}
                   className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[10.5px] font-semibold text-ink hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
                 >
+                  {createElement(iconForPlatform(p.id), { className: "h-4 w-4 shrink-0 text-primary-accent" })}
                   <span className="flex-1 truncate">{p.label}</span>
                   <span className="text-[9.5px] font-medium text-slate-400">
                     {p.list.length.toLocaleString("id-ID")} kategori

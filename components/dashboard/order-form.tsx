@@ -1,7 +1,7 @@
 "use client";
 
 import { chooseEstimate } from "@/lib/service-estimate";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createElement, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
   Loader2,
@@ -10,7 +10,8 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import {
-  platforms,
+  knownPlatforms,
+  getCategoryIcon,
   formatRupiah,
   getServiceFullName,
   allPlatformsId,
@@ -33,7 +34,7 @@ import { analyzeComments, commentsError, commentsPrice, MAX_COMMENT_LENGTH } fro
 
 function platformForCategory(category: CategoryRow | null): Platform | undefined {
   if (!category) return undefined;
-  return platforms.find((p) => p.id === category.platformId);
+  return knownPlatforms.find((p) => p.id === category.platformId);
 }
 
 function IdBadge({ id }: { id: string }) {
@@ -57,15 +58,14 @@ function ServiceLabel({ service }: { service: Service }) {
 }
 
 function CategoryLabel({ category }: { category: CategoryRow }) {
-  const platform = platformForCategory(category);
   return (
     <span className="flex items-center gap-2">
       <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-orange-50 text-[11px] leading-none text-primary-accent dark:bg-slate-800">
         {category.id === "cat-new" ? (
           <span aria-hidden>🔥</span>
-        ) : platform ? (
-          <platform.icon className="h-3 w-3" />
-        ) : null}
+        ) : (
+          createElement(getCategoryIcon(category), { className: "h-3 w-3" })
+        )}
       </span>
       {category.label}
     </span>
@@ -598,6 +598,9 @@ export function OrderForm({
                     onClick={() => selectServiceFromSearch(s)}
                     className="flex w-full items-center gap-2.5 rounded-xl border border-slate-100 px-3 py-2.5 text-left text-[10.5px] transition hover:border-primary-200 hover:bg-primary-50 dark:border-slate-800 dark:hover:border-primary-800 dark:hover:bg-slate-800"
                   >
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-orange-50 text-primary-accent dark:bg-slate-800">
+                      {createElement(getCategoryIcon(catalog.categories.find((c) => c.id === s.categoryId) ?? { platformId: "lainnya", label: s.name }), { className: "h-3 w-3" })}
+                    </span>
                     <span className="shrink-0 rounded-full bg-primary-50 px-2 py-0.5 text-[9.5px] font-bold text-primary-accent dark:bg-primary-950/60 dark:text-primary-300">
                       {s.id}
                     </span>

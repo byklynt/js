@@ -6,7 +6,7 @@ import {
   statCardsFor,
   emptyUserStats,
   type UserStats,
-  platforms,
+  knownPlatforms,
   allPlatformsId,
   type Platform,
   type Service,
@@ -37,7 +37,7 @@ export function DashboardHome({
 }) {
   const preselected = useMemo(() => {
     if (!preselect) return null;
-    const platform = preselect.category ? platforms.find((p) => p.id === preselect.category?.platformId) : undefined;
+    const platform = preselect.category ? knownPlatforms.find((p) => p.id === preselect.category?.platformId) : undefined;
     return { service: rowToService(preselect.service), category: preselect.category, platform };
   }, [preselect]);
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { canAutoFocusSearch } from "./use-touch";
 
 const focusableSelector =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -24,7 +25,15 @@ export function useDialogA11y<T extends HTMLElement>(open: boolean, onClose: () 
     const getFocusable = () =>
       Array.from(node?.querySelectorAll<HTMLElement>(focusableSelector) ?? []);
 
-    (getFocusable()[0] ?? node)?.focus();
+    // Initial focus: the first control, except that on touch devices a text field is not focused automatically (it would raise the keyboard over the dialog): the dialog itself takes focus.
+    const first = getFocusable()[0];
+    const isTextEntry = Boolean(first) && (first.tagName === "TEXTAREA" || first.isContentEditable || (first.tagName === "INPUT" && !/^(checkbox|radio|button|submit|reset|range|file|color|image)$/.test((first as HTMLInputElement).type)));
+    if (node && first && isTextEntry && !canAutoFocusSearch()) {
+      if (!node.hasAttribute("tabindex")) node.setAttribute("tabindex", "-1");
+      node.focus();
+    } else {
+      (first ?? node)?.focus();
+    }
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {

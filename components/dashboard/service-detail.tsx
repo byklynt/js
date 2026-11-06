@@ -2,7 +2,8 @@
 
 import { Activity, Shapes, ShieldCheck, PackageSearch } from "lucide-react";
 import type { Platform, Service } from "@/lib/dashboard-data";
-import { getServiceTitle, platforms } from "@/lib/dashboard-data";
+import { getServiceTitle, knownPlatforms } from "@/lib/dashboard-data";
+import { detectPlatform } from "@/lib/platform-detect";
 import { ruleKeyFor } from "@/lib/order-rules";
 import { formatQtyRange, isNoLimit } from "@/lib/service-format";
 import { useOrderRules } from "@/lib/order-rules-client";
@@ -80,7 +81,8 @@ export function ServiceDetail({
   // Categories such as "Layanan Baru" have no platform; infer it from the service name.
   const platform =
     platformProp ??
-    platforms.find((p) => service.name.toLowerCase().includes(p.label.toLowerCase()));
+    knownPlatforms.find((p) => p.id === detectPlatform(service.name)) ??
+    knownPlatforms.find((p) => service.name.toLowerCase().includes(p.label.toLowerCase()));
   const perDay = service.badges.find((b) => /\/hari/i.test(b));
   const speed = service.speedPerHour <= 0 ? "Bervariasi" : `${formatCompact(service.speedPerHour)}/jam${perDay ? ` (${perDay.replace(/\/Hari/i, "/hari")})` : ""}`;
   const { items, pinned } = buildDescription(service, platform);

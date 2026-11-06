@@ -218,7 +218,9 @@ describe("catalogue sync", () => {
     expect(s.categoryLabel).toBe("Instagram Followers");
     expect(s.providerPrice).toBe(13_600);
     expect(platformFromCategory("Reddit Upvotes")).toBe("reddit");
-    expect(platformFromCategory("Snapchat Views")).toBe("lainnya");
+    expect(platformFromCategory("Snapchat Views")).toBe("snapchat"); // has its own chip now
+    expect(platformFromCategory("Google Maps Reviews")).toBe("lainnya"); // has an icon, but no chip
+    expect(platformFromCategory("Clubhouse Members")).toBe("lainnya");
     expect(cleanServiceName("  ⚡ TikTok   Views ✅ ")).toBe("TikTok Views");
   });
   it("is idempotent: a second run with the same catalogue changes nothing", () => {

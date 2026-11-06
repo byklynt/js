@@ -50,7 +50,7 @@ describe("zero-price import is blocked", () => {
 describe("categories always map to a platform", () => {
   it("an unknown or empty category falls back to 'Lainnya' and still shows under Semua", () => {
     const odd: ProviderServiceInfo[] = [
-      { id: "1", name: "Mystery boost", category: "Snapchat Spotlight", rate: 1, min: 10, max: 100, refill: false, cancel: false, type: "Default" },
+      { id: "1", name: "Mystery boost", category: "Clubhouse Spotlight", rate: 1, min: 10, max: 100, refill: false, cancel: false, type: "Default" },
       { id: "2", name: "No category", category: "", rate: 1, min: 10, max: 100, refill: false, cancel: false, type: "Default" },
     ];
     applyCatalog(db, LIKEO_ID, odd);
