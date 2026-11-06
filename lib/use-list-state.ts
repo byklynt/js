@@ -11,7 +11,7 @@ import { useSearchParams } from "next/navigation";
  */
 export function useListState<F extends string>(
   initialFilter: F,
-  { pageSize = 10, initialQuery = "" }: { pageSize?: number; initialQuery?: string } = {}
+  { pageSize = 10, initialQuery = "", debounceMs = 200 }: { pageSize?: number; initialQuery?: string; debounceMs?: number } = {}
 ) {
   const [filter, setFilterState] = useState<F>(initialFilter);
   const [query, setQuery] = useState(initialQuery);
@@ -21,9 +21,9 @@ export function useListState<F extends string>(
   const loading = false;
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(query.trim().toLowerCase()), 200);
+    const timer = window.setTimeout(() => setDebounced(query.trim().toLowerCase()), debounceMs);
     return () => window.clearTimeout(timer);
-  }, [query]);
+  }, [query, debounceMs]);
 
   return {
     filter,

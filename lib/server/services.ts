@@ -1,5 +1,6 @@
 import "server-only";
 import { cleanServiceName } from "@/lib/service-format";
+import { normalizeServiceSearch } from "@/lib/search-text";
 import { chooseEstimate, statsFromColumns } from "@/lib/service-estimate";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import { customCommentsEnabled } from "@/lib/server/providers/config";
@@ -41,7 +42,7 @@ function orderKind(kind: string | null | undefined): { kind?: "comments" | "unsu
 }
 
 function filterArgs(q: ServicesQuery) {
-  const text = (q.search ?? "").trim();
+  const text = normalizeServiceSearch(q.search);
   const ids = q.favoritesOnly ? (q.favoriteIds ?? []) : undefined;
   return {
     p_platform: q.platform && q.platform !== "semua" ? q.platform : undefined,

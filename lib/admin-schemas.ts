@@ -72,6 +72,7 @@ const serviceFields = {
   sort: z.coerce.number().int().min(0).max(10_000),
 };
 
+export const serviceActiveSchema = z.object({ id, active: z.boolean() });
 export const serviceUpdateSchema = z
   .object({ id, ...serviceFields })
   .refine((v) => v.min <= v.max, { message: "Minimal tidak boleh lebih besar dari maksimal.", path: ["max"] });
@@ -212,6 +213,8 @@ export const settingsOperationsSchema = z.object({
   riskMinOrders: z.coerce.number().int().min(1).max(1000),
   minMarginPercent: z.coerce.number().min(0, "Tidak boleh negatif.").max(90),
   autoAdjustPrice: z.boolean(),
+  reviewPriceThreshold: z.coerce.number().int("Harus bilangan bulat.").min(1000, "Minimal Rp 1.000.").max(1_000_000_000_000),
+  newServicesInactive: z.boolean(),
   ordersPerMinute: z.coerce.number().int().min(1).max(600),
   ticketsPerHour: z.coerce.number().int().min(1).max(200),
   estimateMinSamples: z.coerce.number().int("Harus bilangan bulat.").min(1, "Minimal 1 pesanan.").max(50, "Maksimal 50 pesanan."),

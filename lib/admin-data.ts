@@ -213,6 +213,10 @@ export type SiteSettings = {
     rateIdr: number;
     /** Selling prices are rounded UP to this many Rupiah (1, 10, 100, ...). */
     roundTo: number;
+    /** A synced service whose selling price per 1000 is above this (or whose name / category is under 3 characters) is imported INACTIVE and flagged "Perlu dicek". */
+    reviewPriceThreshold: number;
+    /** When true EVERY newly imported service starts inactive until an admin enables it. Off = new services start active (unless flagged). */
+    newServicesInactive: boolean;
     /** Markup given to NEW imported services: category first, then provider, then the default. */
     defaultMarkup: { markupType: MarkupType; markup: number };
     providerMarkups: Record<string, { markupType: MarkupType; markup: number }>;
@@ -328,7 +332,7 @@ export function defaultSettings(): SiteSettings {
     },
     risk: { ratioPercent: 50, minOrders: 5 },
     pricing: {
-      minMarginPercent: 5, autoAdjust: false, currency: "USD", rateIdr: 16_000, roundTo: 1,
+      minMarginPercent: 5, autoAdjust: false, currency: "USD", rateIdr: 16_000, roundTo: 1, reviewPriceThreshold: 5_000_000, newServicesInactive: false,
       defaultMarkup: { markupType: "persen", markup: 40 }, providerMarkups: {}, categoryMarkups: {},
     },
     limits: { ordersPerMinute: 10, ticketsPerHour: 5 },

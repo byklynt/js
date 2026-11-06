@@ -34,6 +34,8 @@ export function OperationsSettingsForm({ operations, risk, pricing, limits, ops,
     riskMinOrders: String(risk.minOrders),
     minMarginPercent: String(pricing.minMarginPercent),
     autoAdjustPrice: pricing.autoAdjust,
+    reviewPriceThreshold: String(pricing.reviewPriceThreshold),
+    newServicesInactive: pricing.newServicesInactive,
     ordersPerMinute: String(limits.ordersPerMinute),
     ticketsPerHour: String(limits.ticketsPerHour),
     estimateMinSamples: String(estimates.minSamples),
@@ -87,6 +89,10 @@ export function OperationsSettingsForm({ operations, risk, pricing, limits, ops,
             <TextField label="Margin minimum (%)" inputMode="decimal" value={form.minMarginPercent} onChange={set("minMarginPercent")} hint="Layanan di bawah batas ini ditandai Margin tipis." />
             <Row label="Sesuaikan harga jual otomatis" hint="Saat harga provider naik dan margin turun di bawah minimum, harga jual dinaikkan sampai margin minimum tercapai.">
               <ToggleSwitch checked={form.autoAdjustPrice} label="Sesuaikan harga jual otomatis" onChange={(v) => setForm({ ...form, autoAdjustPrice: v })} />
+            </Row>
+            <TextField label="Batas harga perlu dicek (Rp per 1000)" inputMode="numeric" value={form.reviewPriceThreshold} onChange={set("reviewPriceThreshold")} hint="Layanan hasil sinkronisasi dengan harga jual di atas batas ini, atau nama / kategori kurang dari 3 karakter, masuk nonaktif dan ditandai Perlu dicek." />
+            <Row label="Layanan baru mulai nonaktif" hint="Aktif: semua layanan baru hasil sinkronisasi nonaktif sampai kamu mengaktifkannya. Nonaktif: layanan baru langsung aktif (kecuali yang Perlu dicek).">
+              <ToggleSwitch checked={form.newServicesInactive} label="Layanan baru mulai nonaktif" onChange={(v) => setForm({ ...form, newServicesInactive: v })} />
             </Row>
             {error ? <p role="alert" className="text-[9.5px] font-medium text-red-500">{error}</p> : null}
             <Button type="submit" loading={busy}>Simpan</Button>

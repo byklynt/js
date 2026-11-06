@@ -74,7 +74,7 @@ export async function previewCatalogSync(items: ProviderServiceInfo[], providerI
 export async function applyCatalogSync(items: ProviderServiceInfo[], providerId = LIKEO_ID): Promise<{ result: SyncResult; fingerprint: string; blocked: string | null }> {
   const db = await unitDb(providerId);
   const preview = buildSyncPreview(db, providerId, items);
-  if (preview.blocked) return { result: { created: 0, raised: 0, lowered: 0, deactivated: 0, restored: 0, thinMargin: 0 }, fingerprint: preview.fingerprint, blocked: preview.blocked };
+  if (preview.blocked) return { result: { created: 0, raised: 0, lowered: 0, deactivated: 0, restored: 0, thinMargin: 0, flagged: 0 }, fingerprint: preview.fingerprint, blocked: preview.blocked };
   const result = applyCatalog(db, providerId, items);
   const changed = db.services.filter((s) => s.providerId === providerId && s.imported);
   await saveServices(changed);

@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, LayoutGrid, Pencil, Plus, RefreshCw, SlidersHorizontal, Upload } from "lucide-react";
 import { finalPrice, type AdminService, type PublicProvider } from "@/lib/admin-data";
-import { importServicesCsv, updateService } from "@/lib/admin-actions";
+import { importServicesCsv, setServiceActive, updateService } from "@/lib/admin-actions";
+import { reviewReasons } from "@/lib/service-review";
+import { ReviewBadge } from "./review-badge";
 import { formatIdr } from "@/lib/balance";
 import { PageHeader } from "@/components/shell/page-header";
 import { DataToolbar } from "@/components/ui/data-toolbar";
@@ -29,12 +31,12 @@ type FormTarget = { service: AdminService | null; categoryId: string };
 /** Rows loaded at most per list; beyond that the admin narrows by category or search. */
 const MAX_ROWS = 100;
 
-export function ServicesView({ initial, meta, providers, minMargin = 5 }: { initial: AdminServicesPage; meta: AdminServicesMeta; providers: PublicProvider[]; minMargin?: number }) {
+export function ServicesView({ initial, meta, providers, minMargin = 5, reviewThreshold }: { initial: AdminServicesPage; meta: AdminServicesMeta; providers: PublicProvider[]; minMargin?: number; reviewThreshold?: number }) {
   const run = useAdminRunner();
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const marginParam = ["thin", "low"].includes(useSearchParams().get("margin") ?? "");
-  const list = useListState<string>(marginParam ? "margin" : "semua", { pageSize: 15 });
+  const list = useListState<string>(marginParam ? "margin" : "semua", { pageSize: 15, debounceMs: 300 });
   const [fixOpen, setFixOpen] = useState(false);
   const thinCount = meta.thinCount;
   const categories = meta.categories;
@@ -44,6 +46,15 @@ export function ServicesView({ initial, meta, providers, minMargin = 5 }: { init
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const firstLoad = useRef(true);
+  // A switch the admin flipped a moment ago wins over a list response that was requested BEFORE the save finished (a late refetch must not flip it back).
+  const recentSwitch = useRef(new Map<string, { active: boolean; at: number }>());
+  const withRecent = (items: AdminService[]) => {
+    const now = Date.now();
+    return items.map((x) => {
+      const r = recentSwitch.current.get(x.id);
+      return r && now - r.at < 15_000 ? { ...x, active: r.active } : x;
+    });
+  };
   const key = `${list.filter}|${list.debounced}`;
   const defaultKey = `${marginParam ? "margin" : "semua"}|`;
   useEffect(() => {
@@ -59,7 +70,7 @@ export function ServicesView({ initial, meta, providers, minMargin = 5 }: { init
     fetch(`/api/admin/services?${qs}`, { signal: ctrl.signal })
       .then((r) => (r.ok ? (r.json() as Promise<AdminServicesPage>) : Promise.reject(new Error("fail"))))
       .then((page) => {
-        setData(page);
+        setData({ ...page, items: withRecent(page.items) });
         setLoading(false);
       })
       .catch((e) => {
@@ -78,7 +89,7 @@ export function ServicesView({ initial, meta, providers, minMargin = 5 }: { init
       const r = await fetch(`/api/admin/services?${qs}`);
       if (r.ok) {
         const page = (await r.json()) as AdminServicesPage;
-        setData((d) => ({ ...page, items: [...d.items, ...page.items] }));
+        setData((d) => ({ ...page, items: [...d.items, ...withRecent(page.items)] }));
       }
     } finally {
       setLoadingMore(false);
@@ -96,6 +107,30 @@ export function ServicesView({ initial, meta, providers, minMargin = 5 }: { init
   }, [data.items]);
 
   const providerName = (id: string) => providers.find((p) => p.id === id)?.name ?? id;
+
+  // The Aktif switch: flips at once (optimistic), the request runs ONCE, the switch is disabled while it is in flight, and a failure puts it back.
+  const [pendingActive, setPendingActive] = useState<Record<string, boolean>>({});
+  const inFlight = useRef(new Set<string>());
+  async function toggleActive(s: AdminService, next: boolean) {
+    if (inFlight.current.has(s.id)) return;
+    inFlight.current.add(s.id);
+    setPendingActive((p) => ({ ...p, [s.id]: next }));
+    try {
+      const result = await run(setServiceActive({ id: s.id, active: next }));
+      if (result.ok) {
+        recentSwitch.current.set(s.id, { active: next, at: Date.now() });
+        setData((d) => ({ ...d, items: d.items.map((x) => (x.id === s.id ? { ...x, active: next } : x)) }));
+      }
+      // on failure run() already showed the error toast; dropping the pending value puts the switch back to the saved state
+    } finally {
+      inFlight.current.delete(s.id);
+      setPendingActive((p) => Object.fromEntries(Object.entries(p).filter(([k]) => k !== s.id)));
+    }
+  }
+  const activeSwitch = (s: AdminService) => (
+    <ToggleSwitch checked={pendingActive[s.id] ?? s.active} disabled={s.id in pendingActive} label={`Aktifkan layanan ${s.id}`} onChange={(v) => void toggleActive(s, v)} />
+  );
+  const reviewOf = (s: AdminService) => reviewReasons({ name: s.name, category: s.categoryLabel, price: finalPrice(s), threshold: reviewThreshold });
 
   function save(s: AdminService, patch: Partial<AdminService>) {
     const next = { ...s, ...patch };
@@ -138,7 +173,7 @@ export function ServicesView({ initial, meta, providers, minMargin = 5 }: { init
   function columns(): Column<AdminService>[] {
     return [
       { key: "id", header: "ID", cell: (s) => <span className="font-semibold text-primary-accent">{s.id}</span>, className: "w-16" },
-      { key: "name", header: "Nama", cell: (s) => <span className="block max-w-[260px] truncate" title={s.name}>{s.name}</span> },
+      { key: "name", header: "Nama", cell: (s) => <span className="block max-w-[260px] truncate" title={s.name}>{s.name}{reviewOf(s).length ? <ReviewBadge reasons={reviewOf(s)} threshold={reviewThreshold} /> : null}</span> },
       { key: "provider", header: "Provider", cell: (s) => <span className="whitespace-nowrap">{providerName(s.providerId)} <span className="text-[#5B6B8C] dark:text-slate-400">#{s.providerServiceId}</span></span>, hideBelowLg: true },
       { key: "pprice", header: "Harga provider", cell: (s) => formatIdr(s.providerPrice), className: "whitespace-nowrap", hideBelowLg: true },
       { key: "markup", header: "Markup", cell: (s) => (s.markupType === "persen" ? `${s.markup}%` : formatIdr(s.markup)), className: "whitespace-nowrap", hideBelowLg: true },
@@ -169,7 +204,7 @@ export function ServicesView({ initial, meta, providers, minMargin = 5 }: { init
             className="h-8 w-16 rounded-lg border border-slate-200 bg-white px-2 text-[10px] text-ink outline-none focus:border-primary dark:border-slate-700 dark:bg-slate-900 dark:text-white"
           />
         ), hideBelowLg: true },
-      { key: "active", header: "Aktif", cell: (s) => <ToggleSwitch checked={s.active} label={`Aktifkan layanan ${s.id}`} onChange={(v) => void save(s, { active: v })} /> },
+      { key: "active", header: "Aktif", cell: (s) => activeSwitch(s) },
       { key: "edit", header: "Ubah", cell: (s) => (
           <button type="button" aria-label={`Ubah layanan ${s.id}`} onClick={() => setForm({ service: s, categoryId: s.categoryId })} className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/70 text-ink transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800">
             <Pencil className="h-3.5 w-3.5" />
@@ -234,7 +269,7 @@ export function ServicesView({ initial, meta, providers, minMargin = 5 }: { init
         {loading && data.items.length === 0 ? (
           <ListSkeleton label="Memuat layanan" />
         ) : data.items.length === 0 ? (
-          <EmptyState icon={LayoutGrid} title="Layanan tidak ditemukan" />
+          <EmptyState icon={LayoutGrid} title={list.debounced ? "Tidak ada hasil" : "Layanan tidak ditemukan"} />
         ) : (
           <>
             {groups.map((g) => (
@@ -255,8 +290,9 @@ export function ServicesView({ initial, meta, providers, minMargin = 5 }: { init
                       <div className="flex items-start justify-between gap-2">
                         <p className="min-w-0 text-[11px] font-medium text-ink dark:text-white">
                           <span className="font-semibold text-primary-accent">{s.id}</span> - {s.name}
+                          {reviewOf(s).length ? <ReviewBadge reasons={reviewOf(s)} threshold={reviewThreshold} /> : null}
                         </p>
-                        <ToggleSwitch checked={s.active} label={`Aktifkan layanan ${s.id}`} onChange={(v) => void save(s, { active: v })} />
+                        {activeSwitch(s)}
                       </div>
                       <p className="text-[10px] text-[#5B6B8C] dark:text-slate-400">
                         {providerName(s.providerId)} #{s.providerServiceId} - Harga akhir{" "}

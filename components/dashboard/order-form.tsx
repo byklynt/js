@@ -28,6 +28,7 @@ import { CustomSelect } from "@/components/ui/select";
 import { FormAlert, type AlertState } from "@/components/shared/form-alert";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/provider";
+import { MIN_SERVICE_SEARCH, normalizeServiceSearch } from "@/lib/search-text";
 import { analyzeComments, commentsError, commentsPrice, MAX_COMMENT_LENGTH } from "@/lib/comments";
 
 function platformForCategory(category: CategoryRow | null): Platform | undefined {
@@ -214,6 +215,7 @@ export function OrderForm({
   const notOrderable = service?.kind === "unsupported";
   // Custom Comments: the quantity is the number of non-empty lines (computed here for the form; place_order recomputes it).
   const commentsInfo = useMemo(() => analyzeComments(comments), [comments]);
+  const searchTerm = normalizeServiceSearch(searchQuery);
   const quantityNumber = isComments ? commentsInfo.count : Number(quantity.replace(/[^\d]/g, ""));
   // Delivery estimate for the chosen quantity bucket (service-wide until a quantity is typed or while the bucket has too few samples).
   const estimate = chooseEstimate(service?.est, quantityNumber > 0 ? quantityNumber : null);
@@ -277,8 +279,8 @@ export function OrderForm({
 
   // "Cari" tab: server-side search, debounced 300 ms, stale requests cancelled, at least 2 characters.
   useEffect(() => {
-    const query = searchQuery.trim();
-    if (tab !== "cari" || query.length < 2) {
+    const query = normalizeServiceSearch(searchQuery);
+    if (tab !== "cari" || query.length < MIN_SERVICE_SEARCH) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSearchResults([]);
       setSearching(false);
@@ -287,7 +289,8 @@ export function OrderForm({
     setSearching(true);
     const ctrl = new AbortController();
     const t = setTimeout(() => {
-      fetchServices({ search: query, platform: platformFilter, sort: "id-asc", limit: 20 }, ctrl.signal)
+      // Typed text searches ALL platforms and categories (our service ID or the name), not only the platform chip that is selected above.
+      fetchServices({ search: query, sort: "id-asc", limit: 20 }, ctrl.signal)
         .then((page) => {
           setSearchResults(page.items);
           setSearching(false);
@@ -300,7 +303,7 @@ export function OrderForm({
       clearTimeout(t);
       ctrl.abort();
     };
-  }, [searchQuery, platformFilter, tab]);
+  }, [searchQuery, tab]);
 
   // No service at all (for example live mode before the first provider sync): say so instead of an empty dropdown.
   if (!hasServices && catalog.loaded && catalog.total === 0) {
@@ -564,22 +567,22 @@ export function OrderForm({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari nama layanan..."
-              aria-label="Cari layanan"
+              placeholder="Cari ID atau nama layanan..."
+              aria-label="Cari layanan berdasarkan ID atau nama"
               className="h-[34px] w-full rounded-[10px] border border-slate-200 bg-white pl-9 pr-3 text-[10px] text-ink outline-none transition placeholder:text-slate-400 focus:border-primary-400 focus:ring-4 focus:ring-primary-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-primary-900/40"
             />
           </div>
 
           <ul className="mt-3 max-h-80 space-y-1.5 overflow-y-auto">
-            {searchQuery.trim().length >= 2 && searching && searchResults.length === 0 ? (
+            {searchTerm.length >= MIN_SERVICE_SEARCH && searching && searchResults.length === 0 ? (
               <li role="status" className="px-2 py-6 text-center text-[10.5px] text-slate-400">
                 Mencari...
               </li>
-            ) : searchQuery.trim().length >= 2 && searchResults.length === 0 ? (
-              <li className="px-2 py-6 text-center text-[10.5px] text-slate-400">
-                Layanan tidak ditemukan.
+            ) : searchTerm.length >= MIN_SERVICE_SEARCH && searchResults.length === 0 ? (
+              <li data-testid="search-empty" className="px-2 py-6 text-center text-[10.5px] text-slate-400">
+                Tidak ada hasil
               </li>
-            ) : searchQuery.trim().length < 2 && searchQuery.trim() ? (
+            ) : searchTerm.length < MIN_SERVICE_SEARCH && searchTerm ? (
               <li className="px-2 py-6 text-center text-[10.5px] text-slate-400">
                 Ketik minimal 2 karakter.
               </li>

@@ -410,6 +410,31 @@ export async function updateService(input: unknown) {
   }, { services: true });
 }
 
+/**
+ * The "Aktif" switch of one service. Touches ONE row (no catalogue snapshot: updateService loads every service of every provider, which took
+ * seconds and made the switch look dead), is idempotent (asking for the state the service already has changes nothing and writes no log entry),
+ * and logs one audit row. The compare-and-set on `active` keeps two racing requests from both logging.
+ */
+export async function setServiceActive(input: unknown) {
+  return run(S.serviceActiveSchema, input, async (d, admin) => {
+    const db = supabaseAdmin();
+    const { data: row } = await db.from("services").select("id,name,platform,active").eq("id", d.id).maybeSingle();
+    if (!row) return fail("Layanan tidak ditemukan.");
+    if (row.active === d.active) return ok(`Layanan ${row.id} sudah ${d.active ? "aktif" : "nonaktif"}.`);
+    const { data: changed, error } = await db.from("services").update({ active: d.active }).eq("id", d.id).eq("active", !d.active).select("id");
+    if (error) throw new Error(`services: ${error.message}`);
+    if (!changed?.length) return ok(`Layanan ${row.id} sudah ${d.active ? "aktif" : "nonaktif"}.`); // someone else flipped it first
+    if (!d.active) {
+      getDb().priceUpdates.unshift({
+        id: `pu_off_${row.id}`, serviceId: row.id, platform: row.platform, name: row.name,
+        type: "nonaktif", date: todayIso(), detail: "Layanan dinonaktifkan sementara.",
+      });
+    }
+    await audit(admin, "service.update", "service", row.id, { active: row.active }, { active: d.active });
+    return ok(`Layanan ${row.id} ${d.active ? "diaktifkan" : "dinonaktifkan"}.`);
+  });
+}
+
 export async function createService(input: unknown) {
   return run(S.serviceCreateSchema, input, async (d, admin) => {
     const db = getDb();
@@ -860,7 +885,7 @@ export async function saveOperationsSettings(input: unknown) {
     const before = { operations: { ...db.settings.operations }, risk: { ...db.settings.risk }, pricing: { ...db.settings.pricing }, limits: { ...db.settings.limits } };
     db.settings.operations = { stuckHours: d.stuckHours, lowBalanceThreshold: d.lowBalanceThreshold, autoDisableLowBalance: d.autoDisableLowBalance };
     db.settings.risk = { ratioPercent: d.riskRatioPercent, minOrders: d.riskMinOrders };
-    db.settings.pricing = { ...db.settings.pricing, minMarginPercent: d.minMarginPercent, autoAdjust: d.autoAdjustPrice };
+    db.settings.pricing = { ...db.settings.pricing, minMarginPercent: d.minMarginPercent, autoAdjust: d.autoAdjustPrice, reviewPriceThreshold: d.reviewPriceThreshold, newServicesInactive: d.newServicesInactive };
     db.settings.limits = { ordersPerMinute: d.ordersPerMinute, ticketsPerHour: d.ticketsPerHour };
     const estimatesBefore = { ...db.settings.estimates };
     db.settings.estimates = { minSamples: d.estimateMinSamples, window: d.estimateWindow };

@@ -14,7 +14,7 @@ export default function Page() {
       {async () => {
         // Only the first page and the category list with counts: the catalogue itself is fetched page by page.
         const [initial, meta, providers, settings] = await Promise.all([adminServicesPage(), adminServicesMeta(), loadProviders(), loadSettings()]);
-        return <ServicesView initial={initial} meta={meta} providers={providers.map(toPublicProvider)} minMargin={settings.pricing.minMarginPercent} />;
+        return <ServicesView initial={initial} meta={meta} providers={providers.map(toPublicProvider)} minMargin={settings.pricing.minMarginPercent} reviewThreshold={settings.pricing.reviewPriceThreshold} />;
       }}
     </AdminData>
   );

@@ -4,6 +4,7 @@ import { loadSettings } from "@/lib/server/repo/settings";
 import { toAdminService } from "@/lib/server/repo/services-repo";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import { statsFromColumns } from "@/lib/service-estimate";
+import { normalizeServiceSearch } from "@/lib/search-text";
 
 /**
  * Admin service list: filtered, searched and paginated in Postgres (admin_services_page / admin_services_meta). The admin page never
@@ -29,7 +30,7 @@ export async function adminServicesPage(q: AdminServicesQuery = {}): Promise<Adm
   const offset = Number.isInteger(Number(q.cursor)) && Number(q.cursor) > 0 ? Number(q.cursor) : 0;
   const minMargin = (await loadSettings()).pricing.minMarginPercent;
   const { data, error } = await supabaseAdmin().rpc("admin_services_page", {
-    p_category: q.category, p_thin: Boolean(q.thinMargin), p_search: q.search?.trim() || undefined, p_min_margin: minMargin, p_offset: offset, p_limit: limit,
+    p_category: q.category, p_thin: Boolean(q.thinMargin), p_search: normalizeServiceSearch(q.search) || undefined, p_min_margin: minMargin, p_offset: offset, p_limit: limit,
   });
   if (error) throw new Error(`admin_services_page: ${error.message}`);
   const rows = (data ?? []) as { service: Record<string, unknown>; total: number }[];

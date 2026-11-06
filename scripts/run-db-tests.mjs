@@ -21,6 +21,7 @@ const ALL = [
   "lib/server/__tests__/db-flows.test.ts",
   "lib/server/__tests__/estimate-flows.test.ts",
   "lib/server/__tests__/refund-flows.test.ts",
+  "lib/server/__tests__/service-search-flows.test.ts",
   "lib/server/__tests__/service-types-flows.test.ts",
 ];
 const words = process.argv.slice(2).filter((a) => !a.startsWith("--"));

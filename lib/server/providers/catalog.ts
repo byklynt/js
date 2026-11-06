@@ -3,6 +3,7 @@
  * Pure over `db` and the list the adapter returned, so it is testable without any network.
  */
 import { createHash } from "node:crypto";
+import { reviewReasons, type ReviewReason } from "@/lib/service-review";
 import { finalPrice, type AdminDb, type AdminService, type MarkupType } from "@/lib/admin-data";
 import type { Category, Service } from "@/lib/dashboard-data";
 import { isThinMargin, marginPercent, afterProviderPriceChange, markupForMargin } from "../pricing";
@@ -99,6 +100,10 @@ export type SyncChange = {
   thinMargin: boolean;
   /** A service that had been switched off because the provider dropped it, and is listed again. */
   restored?: boolean;
+  /** Why the service needs checking ("Perlu dicek"): price over the threshold, or a name / category under 3 characters. Empty / absent = nothing odd. */
+  review?: ReviewReason[];
+  /** New services only: whether the apply step will import it switched OFF (flagged, or "layanan baru mulai nonaktif" is on). */
+  startsInactive?: boolean;
 };
 
 export type UnsupportedService = { providerServiceId: string; name: string; type: string };
@@ -112,6 +117,8 @@ export type SyncPreview = {
   fingerprint: string;
   rate: { currency: string; rateIdr: number };
   roundTo: number;
+  /** The "Perlu dicek" price threshold that was used (Rp per 1000). */
+  reviewThreshold: number;
   /** Set while pricing is not configured: the modal shows it and does not offer "Terapkan". */
   blocked: string | null;
 };
@@ -135,7 +142,7 @@ const localFor = (db: AdminDb, providerId: string, providerServiceId: string) =>
   db.services.find((s) => s.providerId === providerId && s.providerServiceId === providerServiceId);
 
 export function buildSyncPreview(db: AdminDb, providerId: string, items: ProviderServiceInfo[]): SyncPreview {
-  const { rateIdr, currency, minMarginPercent, roundTo } = db.settings.pricing;
+  const { rateIdr, currency, minMarginPercent, roundTo, reviewPriceThreshold, newServicesInactive } = db.settings.pricing;
   const { supported, unsupported } = supportedCandidates(items, rateIdr);
   const changes: SyncChange[] = [];
   let unchanged = 0;
@@ -146,9 +153,12 @@ export function buildSyncPreview(db: AdminDb, providerId: string, items: Provide
     if (!local) {
       const m = resolveMarkup(db, providerId, category);
       const candidate = { providerPrice: cost, ...m };
+      const name = cleanServiceName(info.name);
+      const review = reviewReasons({ name, category, price: finalPrice(candidate), threshold: reviewPriceThreshold });
       changes.push({
-        kind: "baru", providerServiceId: info.id, localId: null, name: cleanServiceName(info.name), category, platform: platformFromCategory(`${info.category} ${info.name}`),
+        kind: "baru", providerServiceId: info.id, localId: null, name, category, platform: platformFromCategory(`${info.category} ${info.name}`),
         oldCost: 0, newCost: cost, oldPrice: 0, newPrice: finalPrice(candidate), margin: marginPercent(candidate), thinMargin: isThinMargin(candidate, minMarginPercent),
+        ...(review.length ? { review } : {}), startsInactive: review.length > 0 || Boolean(newServicesInactive),
       });
       continue;
     }
@@ -173,17 +183,17 @@ export function buildSyncPreview(db: AdminDb, providerId: string, items: Provide
   }
 
   const fingerprint = createHash("sha256")
-    .update(JSON.stringify({ rateIdr, roundTo, c: changes.map((c) => [c.kind, c.providerServiceId, c.newCost, c.restored ?? false]) }))
+    .update(JSON.stringify({ rateIdr, roundTo, reviewPriceThreshold, newServicesInactive, c: changes.map((c) => [c.kind, c.providerServiceId, c.newCost, c.restored ?? false]) }))
     .digest("hex")
     .slice(0, 16);
-  return { providerId, total: items.length, unchanged, changes, unsupported, fingerprint, rate: { currency, rateIdr }, roundTo, blocked: pricingProblem(db) };
+  return { providerId, total: items.length, unchanged, changes, unsupported, fingerprint, rate: { currency, rateIdr }, roundTo, reviewThreshold: reviewPriceThreshold, blocked: pricingProblem(db) };
 }
 
 // ---------------------------------------------------------------------------
 // Apply
 // ---------------------------------------------------------------------------
 
-export type SyncResult = { created: number; raised: number; lowered: number; deactivated: number; restored: number; thinMargin: number };
+export type SyncResult = { created: number; raised: number; lowered: number; deactivated: number; restored: number; thinMargin: number; /** New services imported inactive because they need checking. */ flagged: number };
 
 /** Applies the catalogue to db.services. Idempotent: a second run with the same list changes nothing. */
 export function applyCatalog(db: AdminDb, providerId: string, items: ProviderServiceInfo[], now = new Date()): SyncResult {
@@ -191,7 +201,7 @@ export function applyCatalog(db: AdminDb, providerId: string, items: ProviderSer
   if (blocked) throw new ServiceError(blocked, "pricing_not_configured");
   const { rateIdr, minMarginPercent } = db.settings.pricing;
   const { supported } = supportedCandidates(items, rateIdr);
-  const result: SyncResult = { created: 0, raised: 0, lowered: 0, deactivated: 0, restored: 0, thinMargin: 0 };
+  const result: SyncResult = { created: 0, raised: 0, lowered: 0, deactivated: 0, restored: 0, thinMargin: 0, flagged: 0 };
   const at = now.toISOString();
   let nextId = Math.max(0, ...db.services.map((s) => Number(s.id) || 0)) + 1;
   let nextSort = Math.max(0, ...db.services.map((s) => s.sort)) + 1;
@@ -207,8 +217,10 @@ export function applyCatalog(db: AdminDb, providerId: string, items: ProviderSer
         min: info.min, max: info.max, refill: info.refill, refillDays: info.refill ? 30 : null, cancel: info.cancel, active: true, sort: nextSort++,
         providerName: info.name, providerType: info.type, providerRate: info.rate, syncedAt: at, imported: true,
       };
-      // Never switch on a service that would sell for nothing.
-      created.active = finalPrice(created) > 0 && created.providerPrice > 0;
+      // Never switch on a service that would sell for nothing, nor one that looks wrong ("Perlu dicek"); optionally keep every new service off until an admin enables it.
+      const review = reviewReasons({ name: created.name, category, price: finalPrice(created), threshold: db.settings.pricing.reviewPriceThreshold });
+      created.active = finalPrice(created) > 0 && created.providerPrice > 0 && review.length === 0 && !db.settings.pricing.newServicesInactive;
+      if (review.length) result.flagged++;
       if (db.settings.pricing.autoAdjust && isThinMargin(created, minMarginPercent)) {
         const lifted = markupForMargin(created.providerPrice, minMarginPercent);
         created.markupType = lifted.markupType;

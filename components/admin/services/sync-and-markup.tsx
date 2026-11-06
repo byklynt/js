@@ -14,6 +14,7 @@ import { StatusChip, type ChipTone } from "@/components/ui/status-chip";
 import { useToast } from "@/components/shared/toast";
 import { useAdminRunner } from "../use-admin-runner";
 import type { SyncChange, SyncPreview } from "@/lib/server/providers/catalog";
+import { ReviewBadge } from "./review-badge";
 
 type Change = SyncChange;
 
@@ -102,6 +103,8 @@ export function SyncModal({ open, onClose }: { open: boolean; onClose: () => voi
                           <div className="min-w-0">
                             <p className="truncate text-[10.5px] font-medium text-ink dark:text-white" title={c.name}>
                               {c.name}
+                              {c.review?.length ? <ReviewBadge reasons={c.review} threshold={preview?.reviewThreshold} /> : null}
+                              {c.kind === "baru" && c.startsInactive ? <span className="ml-2 text-[9px] font-semibold text-slate-500 dark:text-slate-400">masuk nonaktif</span> : null}
                             </p>
                             <p className="text-[9.5px] text-[#5B6B8C] dark:text-slate-400">
                               {c.category} &middot; ID provider {c.providerServiceId}
