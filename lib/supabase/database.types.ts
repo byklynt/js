@@ -652,6 +652,7 @@ export type Database = {
           expires_at: string | null
           external_id: string | null
           fee_amount: number
+          fee_passthrough: boolean
           gateway: string | null
           gateway_status: string | null
           id: string
@@ -676,6 +677,7 @@ export type Database = {
           expires_at?: string | null
           external_id?: string | null
           fee_amount?: number
+          fee_passthrough?: boolean
           gateway?: string | null
           gateway_status?: string | null
           id?: string
@@ -700,6 +702,7 @@ export type Database = {
           expires_at?: string | null
           external_id?: string | null
           fee_amount?: number
+          fee_passthrough?: boolean
           gateway?: string | null
           gateway_status?: string | null
           id?: string
@@ -2231,6 +2234,10 @@ export type Database = {
         }
       }
       parse_comment_lines: { Args: { p_text: string }; Returns: string[] }
+      paymenku_flag_deposit: {
+        Args: { p_by?: string; p_deposit: string; p_reason: string }
+        Returns: Json
+      }
       paymenku_mark_deposit: {
         Args: { p_by?: string; p_deposit: string; p_gateway_status: string }
         Returns: Json

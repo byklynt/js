@@ -86,7 +86,7 @@ function DepositDetail({ deposit: d, onClose }: { deposit: AdminDeposit | null; 
             {row("ID transaksi (trx_id)", d.externalId ?? "-")}
             {row("Saldo yang masuk", formatIdr(d.amount))}
             {row("Dibayar pelanggan", d.payAmount ? formatIdr(d.payAmount) : "-")}
-            {row("Biaya", formatIdr(d.feeAmount ?? 0))}
+            {row("Biaya", d.feePassthrough ? `${formatIdr(d.feeAmount ?? 0)} (diteruskan ke pelanggan)` : formatIdr(d.feeAmount ?? 0))}
             {row("Dibuat", formatDateTime(d.createdAt))}
             {row("Kedaluwarsa", d.expiresAt ? formatDateTime(d.expiresAt) : "-")}
             {row("Dibayar", d.paidAt ? formatDateTime(d.paidAt) : "-")}
@@ -150,6 +150,8 @@ export function DepositsView({ deposits }: { deposits: AdminDeposit[] }) {
     { key: "user", header: "Pengguna", cell: (d) => d.username },
     { key: "method", header: "Metode", cell: (d) => d.method, hideBelowLg: true },
     { key: "amount", header: "Jumlah", cell: (d) => <span className="font-semibold">{formatIdr(d.amount)}</span>, className: "whitespace-nowrap" },
+    { key: "pay", header: "Dibayar", cell: (d) => (d.gateway && d.payAmount ? formatIdr(d.payAmount) : "-"), className: "whitespace-nowrap", hideBelowLg: true },
+    { key: "fee", header: "Biaya", cell: (d) => (d.gateway ? formatIdr(d.feeAmount ?? 0) : "-"), className: "whitespace-nowrap", hideBelowLg: true },
     { key: "status", header: "Status", cell: (d) => <DepositStatusChip status={d.status} /> },
     { key: "date", header: "Tanggal", cell: (d) => <time dateTime={d.createdAt}>{formatDateTime(d.createdAt)}</time>, className: "whitespace-nowrap", hideBelowLg: true },
     { key: "actions", header: "Aksi", cell: menuFor, className: "w-16 text-right" },

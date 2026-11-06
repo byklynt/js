@@ -222,6 +222,7 @@ export const settingsGatewaySchema = z.object({
   enabled: z.boolean(),
   maxDeposit: z.coerce.number().int("Harus bilangan bulat.").min(10_000, "Minimal Rp 10.000.").max(100_000_000, "Maksimal Rp 100.000.000."),
   feePolicy: z.enum(["ikuti", "pengguna", "kami"]),
+  feePassthrough: z.boolean().default(false),
   channels: z.array(z.string().trim().regex(/^[a-z0-9_]{1,40}$/, "Kode kanal tidak valid.")).max(60),
 });
 export const settingsRanksSchema = z.object({

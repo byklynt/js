@@ -30,7 +30,7 @@ const FAKE_PORT = 3199;
 // a 1x1 PNG served as the "QR"
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64");
 
-type Tx = { trx_id: string; reference_id: string; amount: number; status: string; channel: string; base: number; idem: string };
+type Tx = { trx_id: string; reference_id: string; amount: number; status: string; channel: string; base: number; idem: string; /** merchant-billed channel: the fee and what reaches the merchant (otherwise amount - base and base) */ fee?: number; received?: number };
 
 describe.skipIf(!enabled || process.env.E2E_PAYMENKU !== "1")("paymenku top-up with a fake gateway", () => {
   const MARKER = "pk";
@@ -59,7 +59,7 @@ describe.skipIf(!enabled || process.env.E2E_PAYMENKU !== "1")("paymenku top-up w
   };
   const balance = async (uid: string) => Number((await sb().from("profiles").select("balance").eq("id", uid).single()).data!.balance);
   const ledger = async (depId: string) => ((await sb().from("balance_ledger").select("amount,type").eq("ref_type", "deposit").eq("ref_id", depId)).data ?? []).filter((l) => l.type === "deposit");
-  const body = (t: Tx) => JSON.stringify({ event: "payment.status_updated", trx_id: t.trx_id, reference_id: t.reference_id, status: t.status, amount: `${t.amount}.00`, total_fee: `${t.amount - t.base}.00`, amount_received: `${t.base}.00`, payment_channel: t.channel, customer_name: "x", customer_email: "x@x.id", is_sandbox: true });
+  const body = (t: Tx) => JSON.stringify({ event: "payment.status_updated", trx_id: t.trx_id, reference_id: t.reference_id, status: t.status, amount: `${t.amount}.00`, total_fee: `${t.fee ?? t.amount - t.base}.00`, amount_received: `${t.received ?? t.base}.00`, payment_channel: t.channel, customer_name: "x", customer_email: "x@x.id", is_sandbox: true });
   const sendWebhook = async (t: Tx, over: { secret?: string; ts?: string } = {}) => {
     const raw = body(t);
     const ts = over.ts ?? String(Math.floor(Date.now() / 1000));
@@ -91,13 +91,15 @@ describe.skipIf(!enabled || process.env.E2E_PAYMENKU !== "1")("paymenku top-up w
       req.on("data", (c) => (raw += c));
       req.on("end", () => {
         if (req.method === "GET" && path === "payment-channels") {
-          return send(200, { status: "success", data: [{ code: "qris", name: "QRIS", type: "qris", group: "QRIS", flow_type: "direct", fee_mode: "customer", fee_flat: 200, fee_percent: 0.7, min_amount: 1000, max_amount: 10_000_000 }] });
+          return send(200, { status: "success", data: [{ code: "qris", name: "QRIS", type: "qris", group: "QRIS", flow_type: "direct", fee_mode: "customer", fee_flat: 200, fee_percent: 0.7, min_amount: 1000, max_amount: 10_000_000 }, { code: "dana", name: "DANA", type: "ewallet", group: "E-Wallet", flow_type: "redirect", fee_mode: "merchant", fee_flat: 200, fee_percent: 0.7, min_amount: 1000, max_amount: 10_000_000 }] });
         }
         if (req.method === "GET" && path === "wallet/balance") return send(200, { success: true, data: { balance: "36793.00", currency: "IDR" } });
         if (req.method === "POST" && path === "transaction/create") {
           const b = JSON.parse(raw) as { channel_code: string; amount: number; reference_id: string };
           const fee = Math.ceil(200 + (b.amount * 0.7) / 100);
-          const t: Tx = { trx_id: `zt-${run}-${txs.size + 1}`, reference_id: b.reference_id, amount: b.amount + fee, status: "pending", channel: b.channel_code, base: b.amount, idem: String(req.headers["idempotency-key"]) };
+          // DANA is billed to the merchant: the customer is asked for exactly what we send and Paymenku keeps the fee out of it. QRIS adds the fee on top (customer-borne).
+          const merchantBilled = b.channel_code === "dana";
+          const t: Tx = { trx_id: `zt-${run}-${txs.size + 1}`, reference_id: b.reference_id, amount: merchantBilled ? b.amount : b.amount + fee, status: "pending", channel: b.channel_code, base: b.amount, idem: String(req.headers["idempotency-key"]), ...(merchantBilled ? { fee, received: b.amount - fee } : {}) };
           txs.set(t.trx_id, t);
           return send(200, { status: "success", data: { trx_id: t.trx_id, reference_id: t.reference_id, amount: `${t.amount}.00`, status: "pending", pay_url: `http://localhost:${FAKE_PORT}/pay/${t.trx_id}`, payment_info: { transaction_id: `SANDBOX-${t.trx_id}`, transaction_status: "pending", qr_url: `http://localhost:${FAKE_PORT}/qr/${t.trx_id}.png`, qr_string: "x", expiration_date: new Date(Date.now() + 15 * 60_000).toISOString(), sandbox: true, simulator_url: `http://localhost:${FAKE_PORT}/sim/${t.trx_id}` } } });
         }
@@ -105,7 +107,7 @@ describe.skipIf(!enabled || process.env.E2E_PAYMENKU !== "1")("paymenku top-up w
           const key = decodeURIComponent(path.split("/")[1]);
           const t = [...txs.values()].find((x) => x.trx_id === key || x.reference_id === key);
           if (!t) return send(404, { status: "error", message: "Transaction not found" });
-          return send(200, { status: "success", data: { trx_id: t.trx_id, reference_id: t.reference_id, amount: `${t.amount}.00`, total_fee: `${t.amount - t.base}.00`, amount_received: `${t.base}.00`, status: t.status, is_sandbox: true, payment_channel: { code: t.channel, name: "QRIS", type: "qris" }, paid_at: t.status === "paid" ? new Date().toISOString() : null } });
+          return send(200, { status: "success", data: { trx_id: t.trx_id, reference_id: t.reference_id, amount: `${t.amount}.00`, total_fee: `${t.fee ?? t.amount - t.base}.00`, amount_received: `${t.received ?? t.base}.00`, status: t.status, is_sandbox: true, payment_channel: { code: t.channel, name: "QRIS", type: "qris" }, paid_at: t.status === "paid" ? new Date().toISOString() : null } });
         }
         if (req.method === "POST" && path === "transaction/cancel") {
           const t = txs.get((JSON.parse(raw) as { trx_id: string }).trx_id);
@@ -293,4 +295,61 @@ describe.skipIf(!enabled || process.env.E2E_PAYMENKU !== "1")("paymenku top-up w
     await expect.poll(async () => user.getByTestId("deposit-status").innerText(), { timeout: 30_000 }).toContain("Dibatalkan");
     expect(await balance(id.u)).toBe(50_000);
   }, 150_000);
+
+  it("Teruskan biaya ke pelanggan: the label has no fee claim, the summary shows exact numbers, the gross total is charged, only the base is credited, and a base-only payment is flagged", async () => {
+    // switch the setting on for the DEV project (the original settings are restored in afterAll)
+    const cur = ((await sb().from("site_settings").select("data").single()).data!.data ?? {}) as { payments?: { gateway?: Record<string, unknown> } };
+    const gw = (cur.payments?.gateway ?? {}) as { channels?: string[] };
+    await sb().from("site_settings").upsert({ id: true, data: { ...cur, payments: { ...(cur.payments ?? {}), gateway: { ...gw, enabled: true, feePassthrough: true, feePolicy: "ikuti", channels: [...new Set([...(gw.channels ?? []), "qris", "dana"])] } } } as never });
+    const pickDana = async () => {
+      await user.goto("/dashboard/add-funds");
+      await user.waitForLoadState("networkidle").catch(() => {});
+      await user.getByRole("button", { name: /Metode pembayaran/ }).click();
+      const option = user.getByRole("option", { name: /DANA/ });
+      await option.waitFor({ timeout: 20_000 });
+      expect(await option.innerText()).toMatch(/DANA\s*\(otomatis\)/);
+      expect(await option.innerText()).not.toMatch(/biaya|gratis/i);
+      await option.click();
+      await user.getByLabel("Jumlah").fill("10000");
+    };
+
+    await pickDana();
+    const fee = user.getByTestId("fee-info");
+    await expect.poll(async () => fee.innerText(), { timeout: 15_000 }).toMatch(/Biaya layanan Rp\s?272\. Total bayar Rp\s?10\.272, saldo masuk Rp\s?10\.000\./);
+    expect(await fee.innerText()).not.toMatch(/±/);
+    expect(await user.locator("body").innerText()).not.toMatch(/tanpa biaya|biaya tambahan/i);
+    const before = await balance(id.u);
+    await user.getByRole("button", { name: "Bayar sekarang" }).click();
+    await user.waitForURL(/\/deposit\/[0-9a-f-]{36}$/, { timeout: 40_000 });
+    const depId2 = new URL(user.url()).pathname.split("/").pop()!;
+    const row = (await sb().from("deposits").select("amount,pay_amount,fee_amount,fee_passthrough,external_id,status").eq("id", depId2).single()).data!;
+    expect(row).toMatchObject({ amount: 10_000, pay_amount: 10_272, fee_amount: 272, fee_passthrough: true, status: "menunggu" });
+    const tx = txs.get(row.external_id!)!;
+    expect(tx.amount).toBe(10_272); // Paymenku was asked for the gross total
+    // the payment page: gross total, the fee, the credited base
+    await expect.poll(async () => user.getByTestId("deposit-pay-amount").innerText(), { timeout: 20_000 }).toMatch(/10\.272/);
+    expect(await user.getByTestId("deposit-amount").innerText()).toMatch(/10\.000/);
+    expect(await user.locator("body").innerText()).toMatch(/Biaya layanan[\s\S]*272/);
+    expect(await user.locator("body").innerText()).not.toMatch(/tanpa biaya|biaya tambahan/i);
+    // paid at the gross amount: only the base is credited, once
+    tx.status = "paid";
+    expect((await sendWebhook(tx)).status).toBe(200);
+    expect((await sendWebhook(tx)).status).toBe(200); // replay
+    await expect.poll(async () => balance(id.u), { timeout: 30_000 }).toBe(before + 10_000);
+    expect((await ledger(depId2)).map((l) => Number(l.amount))).toEqual([10_000]);
+
+    // a customer who paid only the BASE amount is not credited: flagged for an admin
+    await pickDana();
+    await user.getByRole("button", { name: "Bayar sekarang" }).click();
+    await user.waitForURL(/\/deposit\/[0-9a-f-]{36}$/, { timeout: 40_000 });
+    const depId3 = new URL(user.url()).pathname.split("/").pop()!;
+    const row3 = (await sb().from("deposits").select("external_id").eq("id", depId3).single()).data!;
+    const tx3 = txs.get(row3.external_id!)!;
+    const baseFee = Math.ceil(200 + (10_000 * 0.7) / 100);
+    Object.assign(tx3, { status: "paid", amount: 10_000, fee: baseFee, received: 10_000 - baseFee });
+    expect((await sendWebhook(tx3)).status).toBe(200);
+    await expect.poll(async () => (await sb().from("deposits").select("needs_review,status").eq("id", depId3).single()).data, { timeout: 30_000 }).toMatchObject({ needs_review: true, status: "menunggu" });
+    expect(await balance(id.u)).toBe(before + 10_000);
+    expect(await ledger(depId3)).toHaveLength(0);
+  }, 240_000);
 });

@@ -55,17 +55,17 @@ export async function listOrders(o: { cursor?: string | null; q?: string | null;
 
 // -------------------------------------------------------------------------------------------------------------- deposits
 type DepRow = { id: string; user_id: string; method: string; amount: number; status: string; created_at: string; proof: string | null; external_id: string | null; user: { username: string } | null;
-  gateway: string | null; channel_code: string | null; pay_amount: number | null; fee_amount: number; gateway_status: string | null; is_sandbox: boolean | null; expires_at: string | null; paid_at: string | null; needs_review: boolean; review_reason: string | null; payment_info: Record<string, unknown> | null };
+  gateway: string | null; channel_code: string | null; pay_amount: number | null; fee_amount: number; fee_passthrough: boolean; gateway_status: string | null; is_sandbox: boolean | null; expires_at: string | null; paid_at: string | null; needs_review: boolean; review_reason: string | null; payment_info: Record<string, unknown> | null };
 const toDeposit = (d: DepRow): AdminDeposit => ({
   id: d.id, userId: d.user_id, username: d.user?.username ?? "", method: d.method, amount: num(d.amount), status: d.status as AdminDeposit["status"], createdAt: d.created_at, proof: d.proof ?? "", externalId: d.external_id,
-  gateway: d.gateway === "paymenku", channelCode: d.channel_code, payAmount: d.pay_amount == null ? null : num(d.pay_amount), feeAmount: num(d.fee_amount), gatewayStatus: d.gateway_status,
+  gateway: d.gateway === "paymenku", channelCode: d.channel_code, payAmount: d.pay_amount == null ? null : num(d.pay_amount), feeAmount: num(d.fee_amount), feePassthrough: d.fee_passthrough, gatewayStatus: d.gateway_status,
   isSandbox: d.is_sandbox, expiresAt: d.expires_at, paidAt: d.paid_at, needsReview: d.needs_review, reviewReason: d.review_reason, paymentInfo: d.payment_info,
 });
 export async function listDeposits(o: { cursor?: string | null; q?: string | null; limit?: number } = {}): Promise<Paged<AdminDeposit>> {
   const limit = o.limit ?? PAGE_SIZE;
   const q = clean(o.q);
   const sb = supabaseAdmin();
-  let query = sb.from("deposits").select("id,user_id,method,amount,status,created_at,proof,external_id,gateway,channel_code,pay_amount,fee_amount,gateway_status,is_sandbox,expires_at,paid_at,needs_review,review_reason,payment_info,user:profiles!deposits_user_id_fkey(username)").order("created_at", { ascending: false }).order("id", { ascending: false }).limit(limit + 1);
+  let query = sb.from("deposits").select("id,user_id,method,amount,status,created_at,proof,external_id,gateway,channel_code,pay_amount,fee_amount,fee_passthrough,gateway_status,is_sandbox,expires_at,paid_at,needs_review,review_reason,payment_info,user:profiles!deposits_user_id_fkey(username)").order("created_at", { ascending: false }).order("id", { ascending: false }).limit(limit + 1);
   if (q) {
     // deposit id (full uuid), trx id, method / channel, amount (digits), username (resolved first, then matched by user_id)
     const text = q.replace(/[%_,()*\\"']/g, " ").trim();

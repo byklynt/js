@@ -18,7 +18,7 @@ import { Row } from "./admin-settings-forms";
 export type AdminChannel = { code: string; name: string; type: string; feeMode: "merchant" | "customer" | "split"; feeFlat: number; feePercent: number; minAmount: number; maxAmount: number };
 export type PaymenkuState = { state: "off" | "sandbox" | "live"; reason: string; webhookUrl: string; channels: AdminChannel[]; channelsError: string };
 
-const feeModeLabel = { merchant: "biaya di merchant (tanpa biaya untuk pengguna)", customer: "biaya ditanggung pengguna", split: "biaya dibagi" } as const;
+const feeModeLabel = { merchant: "biaya ditagih ke merchant", customer: "biaya ditanggung pengguna", split: "biaya dibagi" } as const;
 const rp = (n: number) => `Rp ${n.toLocaleString("id-ID")}`;
 
 /** Paymenku: mode banner, connection test, the on / off switch, largest top-up, fee policy, channels, and the webhook URL to register in the Paymenku dashboard. */
@@ -28,6 +28,7 @@ export function PaymenkuSettings({ settings, paymenku }: { settings: SiteSetting
   const [enabled, setEnabled] = useState(settings.enabled);
   const [maxDeposit, setMaxDeposit] = useState(String(settings.maxDeposit));
   const [feePolicy, setFeePolicy] = useState<FeePolicy>(settings.feePolicy);
+  const [feePassthrough, setFeePassthrough] = useState(settings.feePassthrough);
   const [chosen, setChosen] = useState<string[]>(settings.channels);
   const [channels, setChannels] = useState<AdminChannel[]>(paymenku.channels);
   const [busy, setBusy] = useState<"" | "save" | "test" | "channels">("");
@@ -83,6 +84,10 @@ export function PaymenkuSettings({ settings, paymenku }: { settings: SiteSetting
           </p>
         </div>
 
+        <Row label="Teruskan biaya ke pelanggan" hint="Bila aktif, biaya kanal yang ditagih Paymenku ke merchant (mis. QRIS Rp 200 + 0,7%) ditambahkan ke jumlah yang dibayar pelanggan, dibulatkan ke atas supaya merchant menerima minimal nominal deposit. Saldo dan bonus tetap dihitung dari nominal deposit. Deposit yang sudah dibuat tidak berubah. Tidak bisa dipakai bersama kebijakan Kami.">
+          <ToggleSwitch checked={feePassthrough} label="Teruskan biaya ke pelanggan" onChange={setFeePassthrough} />
+        </Row>
+
         <div>
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <p className="text-[10.5px] font-semibold text-ink dark:text-slate-200">Kanal pembayaran</p>
@@ -132,7 +137,7 @@ export function PaymenkuSettings({ settings, paymenku }: { settings: SiteSetting
             onClick={async () => {
               setBusy("save");
               setError("");
-              const res = await run(savePaymenkuSettings({ enabled, maxDeposit: Number(maxDeposit), feePolicy, channels: chosen }));
+              const res = await run(savePaymenkuSettings({ enabled, maxDeposit: Number(maxDeposit), feePolicy, feePassthrough, channels: chosen }));
               setBusy("");
               if (!res.ok) setError(res.error);
             }}

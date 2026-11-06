@@ -7,7 +7,7 @@ import { notifyAdmins } from "@/lib/server/repo/notify";
 import { loadSettings } from "@/lib/server/repo/settings";
 import { ServiceError } from "@/lib/server/tx";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
-import { amountLimits, channelAllowed, checkQuote, MAX_PENDING_GATEWAY_DEPOSITS, RECONCILE_AFTER_MINUTES, type RuleChannel } from "./gateway-rules";
+import { amountLimits, channelAllowed, checkPassthroughQuote, checkQuote, feeQuote, MAX_PENDING_GATEWAY_DEPOSITS, passesFeeToCustomer, RECONCILE_AFTER_MINUTES, totalLimitProblem, type RuleChannel } from "./gateway-rules";
 import {
   getPaymenkuClient, paymenkuMode, PaymenkuError, parseTransaction, sanitizePaymentInfo, verifyPaymenkuSignature,
   type PaymenkuChannel, type PaymenkuClient, type PaymenkuTransaction,
@@ -43,6 +43,8 @@ export type GatewayConfig = {
   mode: "sandbox" | "live" | "off";
   maxDeposit: number;
   feePolicy: "ikuti" | "pengguna" | "kami";
+  /** "Teruskan biaya ke pelanggan": the app adds the fee of merchant-billed channels to what the customer pays. */
+  feePassthrough: boolean;
   channels: RuleChannel[];
 };
 
@@ -51,12 +53,12 @@ export async function getGatewayConfig(): Promise<GatewayConfig> {
   const { payments } = await loadSettings();
   const g = payments.gateway;
   const mode = paymenkuMode();
-  const off: GatewayConfig = { enabled: false, mode: "off", maxDeposit: g.maxDeposit, feePolicy: g.feePolicy, channels: [] };
+  const off: GatewayConfig = { enabled: false, mode: "off", maxDeposit: g.maxDeposit, feePolicy: g.feePolicy, feePassthrough: g.feePassthrough, channels: [] };
   if (!g.enabled || mode.state === "off") return off;
   try {
     const all = await listChannels();
-    const channels = all.filter((c) => g.channels.includes(c.code) && channelAllowed(c, g.feePolicy)).map((c): RuleChannel => ({ code: c.code, name: c.name, type: c.type, feeMode: c.feeMode, feeFlat: c.feeFlat, feePercent: c.feePercent, minAmount: c.minAmount, maxAmount: c.maxAmount }));
-    return { enabled: channels.length > 0, mode: mode.state, maxDeposit: g.maxDeposit, feePolicy: g.feePolicy, channels };
+    const channels = all.filter((c) => g.channels.includes(c.code) && channelAllowed(c, g.feePolicy, g.feePassthrough)).map((c): RuleChannel => ({ code: c.code, name: c.name, type: c.type, feeMode: c.feeMode, feeFlat: c.feeFlat, feePercent: c.feePercent, minAmount: c.minAmount, maxAmount: c.maxAmount }));
+    return { enabled: channels.length > 0, mode: mode.state, maxDeposit: g.maxDeposit, feePolicy: g.feePolicy, feePassthrough: g.feePassthrough, channels };
   } catch {
     return off;
   }
@@ -79,11 +81,19 @@ export async function createGatewayDeposit(input: { userId: string; ip: string; 
   if (user.status !== "aktif") throw new ServiceError(BLOCKED_MESSAGE, "blocked");
 
   const channels = await listChannels({ client: deps.client });
-  const channel = channels.find((c) => c.code === input.channelCode && settings.gateway.channels.includes(c.code) && channelAllowed(c, settings.gateway.feePolicy));
+  const channel = channels.find((c) => c.code === input.channelCode && settings.gateway.channels.includes(c.code) && channelAllowed(c, settings.gateway.feePolicy, settings.gateway.feePassthrough));
   if (!channel) throw new ServiceError("Kanal pembayaran tidak tersedia.", "bad_channel");
   const { min, max } = amountLimits(channel, { minDeposit: settings.minDeposit, maxDeposit: settings.gateway.maxDeposit });
   if (input.amount < min) throw new ServiceError(`Minimal deposit ${rp(min)} untuk ${channel.name}.`, "below_min");
   if (input.amount > max) throw new ServiceError(`Maksimal deposit ${rp(max)} untuk ${channel.name}.`, "above_max");
+  // Fee pass-through: the customer pays base + the channel fee (grossed up so the merchant nets at least the base). The balance and the bonus stay on the base amount.
+  const passthrough = passesFeeToCustomer(channel, settings.gateway.feePassthrough);
+  const quote = passthrough ? feeQuote(channel, input.amount, true) : null;
+  if (passthrough && !quote) throw new ServiceError("Biaya layanan tidak bisa dihitung untuk kanal ini. Pilih kanal lain atau hubungi support.", "bad_fee");
+  if (quote) {
+    const problem = totalLimitProblem(channel, quote.total);
+    if (problem) throw new ServiceError(problem, "total_out_of_range");
+  }
 
   const byUser = await hitRateLimit(`deposit:${input.userId}`, 5, 10 * 60);
   if (!byUser.allowed) throw new ServiceError(`Terlalu banyak permintaan deposit. Coba lagi dalam ${minutes(byUser.retryAfterSeconds)} menit.`, "rate_limited");
@@ -99,6 +109,7 @@ export async function createGatewayDeposit(input: { userId: string; ip: string; 
   const { data: dep, error } = await db.from("deposits").insert({
     user_id: input.userId, method: channel.name, amount: input.amount, status: "menunggu", gateway: "paymenku", channel_code: channel.code,
     is_sandbox: gw.mode === "sandbox", expires_at: new Date(Date.now() + FALLBACK_EXPIRY_MINUTES * 60_000).toISOString(), gateway_status: "pending",
+    ...(quote ? { pay_amount: quote.total, fee_amount: quote.fee, fee_passthrough: true } : {}),
   }).select("id").single();
   if (error || !dep) throw new Error(`deposits: ${error?.message ?? "insert failed"}`);
 
@@ -106,7 +117,7 @@ export async function createGatewayDeposit(input: { userId: string; ip: string; 
   let tx: PaymenkuTransaction;
   try {
     tx = await gw.client.createTransaction({
-      channelCode: channel.code, amount: input.amount, referenceId: dep.id, customerName: user.username, customerEmail: user.email, returnUrl: `${origin}/deposit/${dep.id}`, idempotencyKey: dep.id,
+      channelCode: channel.code, amount: quote ? quote.total : input.amount, referenceId: dep.id, customerName: user.username, customerEmail: user.email, returnUrl: `${origin}/deposit/${dep.id}`, idempotencyKey: dep.id,
     });
   } catch (e) {
     if (e instanceof PaymenkuError && e.ambiguous) {
@@ -127,16 +138,16 @@ export async function createGatewayDeposit(input: { userId: string; ip: string; 
   };
   if (tx.referenceId !== dep.id) return reject("Jawaban Paymenku tidak cocok dengan deposit. Hubungi support.", "reference_mismatch");
   if (tx.isSandbox !== (gw.mode === "sandbox")) return reject("Mode sandbox / live transaksi tidak cocok. Hubungi support.", "sandbox_mismatch");
-  const quoteProblem = checkQuote(channel, input.amount, tx.amount);
+  const quoteProblem = quote ? checkPassthroughQuote(quote.total, tx.amount) : checkQuote(channel, input.amount, tx.amount);
   if (quoteProblem) return reject(quoteProblem, "quote");
 
   const info = sanitizePaymentInfo(tx.paymentInfo);
   const exp = typeof info.expiration_date === "string" && !Number.isNaN(Date.parse(info.expiration_date)) ? new Date(info.expiration_date).toISOString() : new Date(Date.now() + FALLBACK_EXPIRY_MINUTES * 60_000).toISOString();
   const { error: upErr } = await db.from("deposits").update({
-    external_id: tx.trxId, pay_url: tx.payUrl, payment_info: info, pay_amount: tx.amount, fee_amount: Math.max(0, tx.amount - input.amount), expires_at: exp, gateway_status: tx.status,
+    external_id: tx.trxId, pay_url: tx.payUrl, payment_info: info, pay_amount: quote ? quote.total : tx.amount, fee_amount: quote ? quote.fee : Math.max(0, tx.amount - input.amount), expires_at: exp, gateway_status: tx.status,
   }).eq("id", dep.id);
   if (upErr) throw new Error(`deposits: ${upErr.message}`);
-  await logSystem("deposit.paymenku_created", "deposit", dep.id, null, { channel: channel.code, amount: input.amount, payAmount: tx.amount, sandbox: tx.isSandbox });
+  await logSystem("deposit.paymenku_created", "deposit", dep.id, null, { channel: channel.code, amount: input.amount, payAmount: tx.amount, feePassthrough: Boolean(quote), sandbox: tx.isSandbox });
   return { id: dep.id, payAmount: tx.amount };
 }
 
@@ -169,6 +180,11 @@ export async function applyTransaction(deposit: DepositRow, tx: PaymenkuTransact
       const hint = (error as { hint?: string }).hint ?? "";
       if (["amount_mismatch", "sandbox_mismatch", "trx_mismatch", "not_gateway", "no_deposit"].includes(hint)) {
         await logSystem("deposit.paymenku_rejected", "deposit", deposit.id, null, { hint, trx: tx.trxId });
+        // never credited, and an admin must look at it ("Perlu dicek"), for example when the customer paid only the base amount
+        if (["amount_mismatch", "sandbox_mismatch", "trx_mismatch"].includes(hint)) {
+          const reason = hint === "amount_mismatch" ? `Nominal yang dilaporkan Paymenku (bayar ${rp(tx.amount)}, diterima ${rp(tx.amountReceived)}) tidak cocok dengan deposit. Tidak dikreditkan: periksa di Paymenku.` : hint === "sandbox_mismatch" ? "Mode sandbox / live transaksi tidak cocok dengan deposit. Tidak dikreditkan." : "ID transaksi tidak cocok dengan deposit. Tidak dikreditkan.";
+          await db.rpc("paymenku_flag_deposit", { p_deposit: deposit.id, p_reason: reason, p_by: by });
+        }
         return { outcome: "rejected", message: error.message };
       }
       await logSystem("deposit.paymenku_error", "deposit", deposit.id, null, { message: error.message.slice(0, 160) });

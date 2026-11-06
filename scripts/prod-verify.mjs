@@ -144,11 +144,11 @@ if (report) {
   }
 }
 if (pay) {
-  const need = ["gateway", "channel_code", "pay_amount", "fee_amount", "pay_url", "payment_info", "gateway_status", "expires_at", "paid_at", "is_sandbox", "needs_review", "review_reason"];
+  const need = ["gateway", "channel_code", "pay_amount", "fee_amount", "fee_passthrough", "pay_url", "payment_info", "gateway_status", "expires_at", "paid_at", "is_sandbox", "needs_review", "review_reason"];
   const missing = need.filter((c) => !pay.columns.includes(c));
   add("Kolom Paymenku ada di tabel deposits", missing.length === 0, missing.length ? `tidak ada: ${missing.join(", ")}` : `${need.length} kolom`);
   add("deposits.status mengizinkan 'dibatalkan' dan external_id (trx_id) UNIK", pay.statusAllowsCancelled && pay.externalIdUnique, `status: ${pay.statusAllowsCancelled ? "ok" : "BELUM"}; trx_id unik: ${pay.externalIdUnique ? "ok" : "BELUM"}`);
-  const fns = ["paymenku_settle_deposit", "paymenku_mark_deposit", "credit_deposit"];
+  const fns = ["paymenku_settle_deposit", "paymenku_mark_deposit", "paymenku_flag_deposit", "credit_deposit"];
   const bad = fns.filter((n) => !pay.functions[n] || pay.functions[n].anon || pay.functions[n].authenticated || !pay.functions[n].service);
   add("Fungsi kredit deposit hanya bisa dijalankan service role (bukan anon / pengguna)", bad.length === 0, bad.length ? `bermasalah: ${bad.join(", ")}` : fns.join(", "));
   if (!isDev) add("Tidak ada deposit SANDBOX yang sudah dikreditkan", pay.sandboxCredited === 0, pay.sandboxCredited ? `${pay.sandboxCredited} deposit sandbox berstatus berhasil: periksa ledger!` : "tidak ada");

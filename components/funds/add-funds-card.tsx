@@ -10,7 +10,7 @@ import { formatIdr } from "@/lib/balance";
 import { createDeposit } from "@/lib/dashboard-actions";
 import { submitGatewayDeposit } from "@/lib/user-actions";
 import { amountLimits } from "@/lib/server/payments/gateway-rules";
-import { feeSummary, gatewayMethodHint } from "@/lib/funds-copy";
+import { feeSummary, gatewayMethodHint, totalProblem } from "@/lib/funds-copy";
 import { useToast } from "@/components/shared/toast";
 import { cn } from "@/lib/utils";
 import { AmountPresets, type PresetValue } from "./amount-presets";
@@ -54,10 +54,12 @@ export function AddFundsCard({ config }: { config: DepositConfig }) {
   const selectedPreset: PresetValue = matchedPreset ?? (customChosen || digits ? "custom" : null);
   const belowMin = amount < limits.min;
   const aboveMax = amount > limits.max;
-  const error = touched && belowMin ? `Minimal deposit ${formatIdr(limits.min)}.` : touched && aboveMax ? `Maksimal deposit ${formatIdr(limits.max)}.` : "";
-  const summary = feeSummary(channel, amount, limits);
+  // with "Teruskan biaya ke pelanggan" the TOTAL (base + fee) must also fit the channel's own limits
+  const totalMsg = !belowMin && !aboveMax ? totalProblem(channel, amount, gateway.feePassthrough) : null;
+  const error = touched && belowMin ? `Minimal deposit ${formatIdr(limits.min)}.` : touched && aboveMax ? `Maksimal deposit ${formatIdr(limits.max)}.` : totalMsg ?? "";
+  const summary = feeSummary(channel, amount, limits, gateway.feePassthrough);
   const bonusPercent = getBonusPercent(amount);
-  const canSubmit = !belowMin && !aboveMax && Boolean(method) && !submitting;
+  const canSubmit = !belowMin && !aboveMax && !totalMsg && Boolean(method) && !submitting;
 
   function handlePreset(next: number | "custom") {
     if (next === "custom") {

@@ -219,7 +219,7 @@ export type DepositConfig = {
   methods: { id: string; name: string; detail?: string }[];
   bonusTiers: { min: number; percent: number }[];
   /** Paymenku: channels the admin enabled (already filtered by the fee policy); `sandbox` = test mode (no real money). */
-  gateway: { enabled: boolean; sandbox: boolean; maxDeposit: number; channels: GatewayChannelOption[] };
+  gateway: { enabled: boolean; sandbox: boolean; maxDeposit: number; feePassthrough: boolean; channels: GatewayChannelOption[] };
 };
 export type MyDeposit = { id: string; method: string; amount: number; status: "berhasil" | "menunggu" | "gagal" | "kedaluwarsa" | "dibatalkan"; createdAt: string; gateway?: boolean; payAmount?: number; fee?: number };
 
@@ -229,7 +229,7 @@ export async function getDepositConfig(): Promise<DepositConfig> {
     minDeposit: payments.minDeposit,
     methods: payments.activeMethods.filter((id) => id === "manual").map((id) => ({ id, name: methodLabel(id), detail: "dikonfirmasi admin setelah pembayaran diterima" })),
     bonusTiers: [...payments.bonusTiers].sort((a, b) => b.min - a.min),
-    gateway: { enabled: gw.enabled, sandbox: gw.mode === "sandbox", maxDeposit: gw.maxDeposit, channels: gw.channels },
+    gateway: { enabled: gw.enabled, sandbox: gw.mode === "sandbox", maxDeposit: gw.maxDeposit, feePassthrough: gw.feePassthrough, channels: gw.channels },
   };
 }
 

@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { amountLimits, channelAllowed, checkQuote, estimateCustomerFee } from "./gateway-rules";
+import { amountLimits, channelAllowed, checkPassthroughQuote, checkQuote, estimateCustomerFee, feeQuote, gatewayFeeOn, grossUpTotal, passesFeeToCustomer, totalLimitProblem } from "./gateway-rules";
 import { createPaymenkuClient, paymenkuMode, parseRupiah, parseTransaction, PaymenkuError, sanitizePaymentInfo, verifyPaymenkuSignature } from "./paymenku";
 
 vi.mock("server-only", () => ({}));
@@ -229,8 +229,98 @@ describe("rules: fee policy, estimate, limits, quote check", () => {
     expect(checkQuote(qris, 15_000, 15_000)).toBeNull();
     expect(checkQuote(qris, 15_000, 14_999)).toMatch(/lebih kecil/);
     expect(checkQuote(bca, 100_000, 100_000)).toBeNull();
-    expect(checkQuote(bca, 100_000, 100_300)).toMatch(/tanpa biaya/);
+    expect(checkQuote(bca, 100_000, 100_300)).toMatch(/tidak membebankan biaya/);
     expect(checkQuote(qris, 15_000, 20_000)).toMatch(/jauh di atas/);
     expect(checkQuote(qris, 15_000, 15_305.5)).not.toBeNull();
+  });
+});
+
+describe("fee pass-through: integer gross-up (QRIS Rp 200 + 0,7 %)", () => {
+  // total = ceil((amount + 200) / 0,993), then bumped until total - fee(total) >= amount
+  it.each([
+    [10_000, 10_272],
+    [25_000, 25_378],
+    [50_000, 50_554],
+    [1_000, 1_209],
+    [100_000, 100_907],
+  ])("%i -> %i", (amount, total) => {
+    expect(grossUpTotal(amount, 200, 0.7)).toBe(total);
+  });
+
+  it("the merchant nets at least the base amount and the extra is the smallest that achieves it (ceil, never floor)", () => {
+    for (const amount of [1_000, 1_001, 9_999, 10_000, 10_001, 12_345, 25_000, 33_333, 49_999, 50_000, 99_999, 123_456, 1_000_000, 5_000_000]) {
+      const total = grossUpTotal(amount, 200, 0.7)!;
+      expect(Number.isInteger(total)).toBe(true);
+      expect(total - gatewayFeeOn(total, 200, 0.7)!).toBeGreaterThanOrEqual(amount);
+      // one Rupiah less would leave the merchant short (so we never charge more than needed)
+      expect(total - 1 - gatewayFeeOn(total - 1, 200, 0.7)!).toBeLessThan(amount);
+    }
+  });
+
+  it("percent 0: only the fixed part; fixed 0: only the percentage; both 0: nothing", () => {
+    expect(grossUpTotal(10_000, 200, 0)).toBe(10_200);
+    expect(grossUpTotal(10_000, 0, 0.7)).toBe(10_071); // ceil(10000 / 0,993) = 10070,49 -> 10071
+    expect(grossUpTotal(10_000, 0, 0)).toBe(10_000);
+    expect(feeQuote({ feeMode: "merchant", feeFlat: 0, feePercent: 0 }, 10_000, true)).toEqual({ total: 10_000, fee: 0, kind: "none" });
+  });
+
+  it("whole-Rupiah rounding of the gateway's own fee is covered (ceil)", () => {
+    expect(gatewayFeeOn(10_272, 200, 0.7)).toBe(272); // 200 + 71,904 -> 72 -> 272
+    expect(gatewayFeeOn(10_000, 0, 0.7)).toBe(70);
+    expect(gatewayFeeOn(1, 0, 0.7)).toBe(1); // a fraction of a Rupiah is a whole one
+  });
+
+  it("no floating point on money: awkward percentages stay exact", () => {
+    expect(grossUpTotal(10_000, 0, 0.1)).toBe(10_011); // 10000 / 0,999 = 10010,01
+    expect(grossUpTotal(1_000_000, 0, 0.3)).toBe(1_003_010); // 1000000 / 0,997 = 1003009,03
+    expect(grossUpTotal(9_999_999_999, 200, 0.7)).toBeGreaterThan(9_999_999_999); // ten digits: still exact (BigInt inside)
+  });
+
+  it("refuses what cannot be grossed up", () => {
+    expect(grossUpTotal(0, 200, 0.7)).toBeNull();
+    expect(grossUpTotal(-5, 200, 0.7)).toBeNull();
+    expect(grossUpTotal(10_000.5, 200, 0.7)).toBeNull();
+    expect(grossUpTotal(10_000, 200, 100)).toBeNull();
+    expect(grossUpTotal(10_000, 200, -1)).toBeNull();
+    expect(grossUpTotal(10_000, 200, Number.NaN)).toBeNull();
+    expect(grossUpTotal(10_000, -1, 0.7)).toBeNull();
+  });
+
+  it("only merchant-billed channels get the fee added, and only when the switch is on", () => {
+    expect(passesFeeToCustomer({ feeMode: "merchant" }, true)).toBe(true);
+    expect(passesFeeToCustomer({ feeMode: "merchant" }, false)).toBe(false);
+    expect(passesFeeToCustomer({ feeMode: "customer" }, true)).toBe(false);
+    expect(passesFeeToCustomer({ feeMode: "split" }, true)).toBe(false);
+  });
+
+  it("feeQuote: exact for pass-through, an estimate for customer channels, none for merchant channels when off", () => {
+    const merchant = { feeMode: "merchant" as const, feeFlat: 200, feePercent: 0.7 };
+    expect(feeQuote(merchant, 10_000, true)).toEqual({ total: 10_272, fee: 272, kind: "exact" });
+    expect(feeQuote(merchant, 10_000, false)).toEqual({ total: 10_000, fee: 0, kind: "none" });
+    expect(feeQuote({ feeMode: "customer", feeFlat: 200, feePercent: 0.7 }, 10_000, true)).toMatchObject({ kind: "estimate", fee: 270 });
+    expect(feeQuote({ feeMode: "split", feeFlat: 200, feePercent: 0.7 }, 10_000, false)).toMatchObject({ kind: "upper" });
+    expect(feeQuote(merchant, 0, true)).toBeNull();
+  });
+
+  it("the total must fit the channel's limits, with a clear message", () => {
+    expect(totalLimitProblem({ name: "QRIS", minAmount: 1_000, maxAmount: 10_000 }, 10_001)).toMatch(/melebihi batas QRIS/);
+    expect(totalLimitProblem({ name: "QRIS", minAmount: 1_000, maxAmount: 10_000 }, 10_000)).toBeNull();
+    expect(totalLimitProblem({ name: "QRIS", minAmount: 1_000, maxAmount: 0 }, 99_999_999)).toBeNull(); // 0 = no upper limit
+    expect(totalLimitProblem({ name: "QRIS", minAmount: 5_000, maxAmount: 0 }, 4_999)).toMatch(/di bawah batas minimal/);
+  });
+
+  it("what Paymenku quoted at creation must equal the stored total exactly", () => {
+    expect(checkPassthroughQuote(10_272, 10_272)).toBeNull();
+    expect(checkPassthroughQuote(10_272, 10_000)).toMatch(/tidak sama/);
+    expect(checkPassthroughQuote(10_272, 10_273)).toMatch(/tidak sama/);
+    expect(checkPassthroughQuote(10_272, 10_272.5)).not.toBeNull();
+  });
+
+  it("the fee policy 'pengguna' also offers merchant channels while the switch is on; 'kami' offers none then", () => {
+    expect(channelAllowed({ feeMode: "merchant" }, "pengguna")).toBe(false);
+    expect(channelAllowed({ feeMode: "merchant" }, "pengguna", true)).toBe(true);
+    expect(channelAllowed({ feeMode: "merchant" }, "kami", true)).toBe(false);
+    expect(channelAllowed({ feeMode: "merchant" }, "kami", false)).toBe(true);
+    expect(channelAllowed({ feeMode: "merchant" }, "ikuti", true)).toBe(true);
   });
 });

@@ -167,6 +167,8 @@ export type AdminDeposit = {
   channelCode?: string | null;
   payAmount?: number | null;
   feeAmount?: number;
+  /** The app added the fee to what the customer pays ("Teruskan biaya ke pelanggan"); amount is still the credited base. */
+  feePassthrough?: boolean;
   gatewayStatus?: string | null;
   isSandbox?: boolean | null;
   expiresAt?: string | null;
@@ -214,6 +216,8 @@ export type SiteSettings = {
       maxDeposit: number;
       /** Who bears the channel fee: filters the channels offered (see lib/server/payments/gateway-rules.ts). */
       feePolicy: "ikuti" | "pengguna" | "kami";
+      /** "Teruskan biaya ke pelanggan": the app adds the channel fee of merchant-billed channels to what the customer pays (default off). */
+      feePassthrough: boolean;
       /** Channel codes (from Paymenku) the admin enabled. */
       channels: string[];
     };
@@ -336,7 +340,7 @@ export function defaultSettings(): SiteSettings {
       activeMethods: ["manual"],
       minDeposit: 10_000,
       bonusTiers: [],
-      gateway: { enabled: false, maxDeposit: 5_000_000, feePolicy: "ikuti", channels: [] },
+      gateway: { enabled: false, maxDeposit: 5_000_000, feePolicy: "ikuti", feePassthrough: false, channels: [] },
     },
     ranks: [
       { name: "Starter", minSpent: 0, discountPercent: 0 },

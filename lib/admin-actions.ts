@@ -945,7 +945,8 @@ export async function savePaymenkuSettings(input: unknown) {
     const before = { ...db.settings.payments.gateway };
     if (d.enabled && paymenkuMode().state === "off") return fail(`Gateway belum bisa diaktifkan: ${(paymenkuMode() as { reason: string }).reason}`);
     if (d.enabled && d.channels.length === 0) return fail("Pilih minimal satu kanal pembayaran.");
-    db.settings.payments.gateway = { enabled: d.enabled, maxDeposit: d.maxDeposit, feePolicy: d.feePolicy, channels: [...new Set(d.channels)] };
+    if (d.feePassthrough && d.feePolicy === "kami") return fail("\"Teruskan biaya ke pelanggan\" tidak cocok dengan kebijakan \"Kami\" (biaya kami tanggung). Pilih \"Ikuti kanal\" atau \"Pengguna\".");
+    db.settings.payments.gateway = { enabled: d.enabled, maxDeposit: d.maxDeposit, feePolicy: d.feePolicy, feePassthrough: d.feePassthrough, channels: [...new Set(d.channels)] };
     await audit(admin, "settings.update", "settings", "paymenku", before, db.settings.payments.gateway);
     return ok("Pengaturan Paymenku disimpan.");
   });
