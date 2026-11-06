@@ -9,7 +9,8 @@ import type { DepositConfig } from "@/lib/user-actions";
 import { formatIdr } from "@/lib/balance";
 import { createDeposit } from "@/lib/dashboard-actions";
 import { submitGatewayDeposit } from "@/lib/user-actions";
-import { amountLimits, estimateCustomerFee } from "@/lib/server/payments/gateway-rules";
+import { amountLimits } from "@/lib/server/payments/gateway-rules";
+import { feeSummary, gatewayMethodHint } from "@/lib/funds-copy";
 import { useToast } from "@/components/shared/toast";
 import { cn } from "@/lib/utils";
 import { AmountPresets, type PresetValue } from "./amount-presets";
@@ -28,7 +29,7 @@ export function AddFundsCard({ config }: { config: DepositConfig }) {
   const paymentMethods: PaymentMethod[] = [
     ...gateway.channels.map((c, i): PaymentMethod => ({
       id: `gw:${c.code}`, name: c.name, kind: c.type, featured: i === 0,
-      detail: c.feeMode === "merchant" ? "otomatis, tanpa biaya tambahan" : "otomatis",
+      detail: gatewayMethodHint,
     })),
     ...config.methods,
   ];
@@ -54,7 +55,7 @@ export function AddFundsCard({ config }: { config: DepositConfig }) {
   const belowMin = amount < limits.min;
   const aboveMax = amount > limits.max;
   const error = touched && belowMin ? `Minimal deposit ${formatIdr(limits.min)}.` : touched && aboveMax ? `Maksimal deposit ${formatIdr(limits.max)}.` : "";
-  const customerFee = channel && amount > 0 ? estimateCustomerFee(channel, amount) : 0;
+  const summary = feeSummary(channel, amount, limits);
   const bonusPercent = getBonusPercent(amount);
   const canSubmit = !belowMin && !aboveMax && Boolean(method) && !submitting;
 
@@ -169,6 +170,9 @@ export function AddFundsCard({ config }: { config: DepositConfig }) {
                 {error}
               </p>
             ) : null}
+            <p data-testid="fee-info" aria-live="polite" className={cn("text-[9.5px] font-medium text-ink dark:text-slate-200", summary && !error ? "mt-1.5" : "hidden")}>
+              {error ? null : summary}
+            </p>
           </div>
 
           {paymentMethods.length === 0 ? (
@@ -187,13 +191,6 @@ export function AddFundsCard({ config }: { config: DepositConfig }) {
               {channel ? (
                 <>
                   <p>Pilih jumlah, lalu bayar di halaman berikutnya. Saldo masuk otomatis begitu pembayaranmu terkonfirmasi.</p>
-                  <p data-testid="fee-info" className="font-medium text-ink dark:text-slate-200">
-                    {amount <= 0
-                      ? channel.feeMode === "merchant" ? "Tanpa biaya tambahan: biaya ditanggung kami." : "Biaya layanan ditanggung kamu dan ditambahkan ke nominal bayar."
-                      : channel.feeMode === "merchant"
-                        ? `Tanpa biaya tambahan. Kamu membayar ${formatIdr(amount)}; saldo masuk ${formatIdr(amount)}.`
-                        : `Biaya layanan ± ${formatIdr(customerFee)} ditanggung kamu. Kamu membayar ± ${formatIdr(amount + customerFee)}; saldo yang masuk tetap ${formatIdr(amount)}.`}
-                  </p>
                   {gateway.sandbox ? <p className="font-semibold text-amber-600 dark:text-amber-300">Mode uji coba (sandbox): pembayaran tidak memindahkan uang.</p> : null}
                 </>
               ) : (
