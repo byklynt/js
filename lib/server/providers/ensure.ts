@@ -1,14 +1,14 @@
 import "server-only";
-import { checkLikeo } from "./balance";
+import { checkAllProviders } from "./balance";
 
 /**
- * Reads the Likeo balance if the cached one is older than 60 seconds. Never throws. In live mode a failure is NOT hidden:
- * it is stored as the last test result and shown on the provider card; the mock is never used instead.
+ * Reads the balance of every active provider whose cached reading is older than 60 seconds. Never throws. In live mode a failure is NOT hidden:
+ * it is stored as the last test result and shown on that provider's card; the mock is never used instead. One provider failing does not affect the others.
  */
 export async function ensureFreshBalance(): Promise<void> {
   try {
-    await checkLikeo();
+    await checkAllProviders();
   } catch {
-    /* checkLikeo records its own failures; anything else must not break the page */
+    /* each provider records its own failure; anything else must not break the page */
   }
 }

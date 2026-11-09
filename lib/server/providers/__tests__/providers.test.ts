@@ -143,7 +143,7 @@ describe("the key stays secret", () => {
     const db = seedAdminDb();
     const json = JSON.stringify(db.providers.map(toPublicProvider));
     expect(json).not.toContain(KEY);
-    expect(json).toContain(KEY.slice(-4));
+    expect(json).not.toContain(KEY.slice(-4)); // not even the last characters: the key is write-only, the UI only learns whether one is saved
     vi.unstubAllEnvs();
     const root = join(__dirname, "..", "..", "..", "..");
     const offenders: string[] = [];

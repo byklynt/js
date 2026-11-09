@@ -17,6 +17,17 @@ Everything here is **server only**. The API key is read from the environment and
 3. Restart `npm run dev` after changing `.env.local`.
 4. `/admin/providers` shows a **MODE MOCK** or **MODE LIVE** chip on the Likeo card. Use **Tes koneksi** (calls `balance`).
 
+## More than one provider (smmsoc and others)
+
+The adapter is generic: every provider with `adapter_type = smm-v2` (standard SMM panel API v2: `key` + `action`) uses `smm-v2.ts`; `likeo.ts` is a thin wrapper that only sets the display name. Providers live in the `providers` table (name, slug, api_url, encrypted key, currency, exchange_rate, active) and are added in **Admin > Provider > Tambah provider**; nothing about a provider except Likeo is read from the environment.
+
+- **Routing**: every call (`add`, `status`, refill, cancel, balance, catalogue) carries the provider id and goes to that provider with its own URL and key (`client.ts` `getAdapter(providerId)`). Orders use `orders.provider_id`.
+- **Same live guard for all**: `PROVIDER_MODE=live` AND `PROVIDER_LIVE_APPROVED_REF` = this project. Otherwise the simulator answers (it has a separate fake catalogue and balance for providers other than the first). Tests never reach a real panel.
+- **Money per provider** (`rates.ts`): each provider has its own currency and `exchange_rate`; Likeo keeps the global rate. A provider without a rate cannot sync (pricing blocked) and its Rupiah balance is "belum diketahui" instead of a wrong number.
+- **Service ids** stay one global sequence; `services` is unique on `(provider_id, provider_service_id)`. A sync of one provider only reads/writes that provider's services; `globalServiceMaxima()` makes sure new ids never reuse another provider's. Categories are shared by label.
+- **Cron**: `sync-orders` walks every provider (switched-off ones only while they still have open orders); one provider failing is recorded for it and does not stop the others. Refill and cancel read-back are grouped by provider.
+- **Custom Comments** stays Likeo-only until another provider's format is verified.
+
 ## First live test (one tiny order)
 
 1. `PROVIDER_MODE=live`, then **Tes koneksi**. Expect "Terhubung (live, ... ms). Saldo ...". If it fails, the message says why (key, URL, timeout).

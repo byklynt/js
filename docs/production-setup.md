@@ -245,6 +245,36 @@ Migrasi **20261106000036** (kolom gateway di `deposits`, fungsi kredit `paymenku
 4. Jalankan lagi `npm run prod:verify -- REF`: semua LULUS.
 5. Tes sandbox lokal (DEV saja): `node scripts/paymenku-smoke.mjs --cancel` (menolak kunci `sk_live_`).
 
+## 14. Provider kedua (smmsoc) dan provider tambahan
+
+Aplikasi mendukung banyak provider sekaligus. Semua provider yang memakai API panel SMM standar v2 (`key` + `action` = `services | add | status | refill | refill_status | cancel | balance`) dipakai lewat adapter yang sama (`adapter_type = smm-v2`). Likeo tetap provider pertama dan tidak berubah. **Tidak ada URL atau key provider baru yang ditulis di kode atau di environment variable**: semuanya ditambahkan lewat Admin.
+
+**Migrasi:** `20261108000039_multi_provider.sql` (kolom `providers.adapter_type`, default `smm-v2`; baris Likeo yang ada ikut mendapat nilai itu). Dorong **sebelum** men-deploy kode baru (langkah 1), karena halaman Provider membaca kolom ini. Tidak ada tabel baru dan tidak ada data yang diubah.
+
+**Environment variable:** tidak ada yang baru. Yang sudah ada tetap berlaku untuk **semua** provider sekaligus:
+
+| Variabel | Catatan untuk provider kedua |
+|---|---|
+| `PROVIDER_MODE=live` dan `PROVIDER_LIVE_APPROVED_REF` = ref production | Pengaman yang sama untuk setiap provider. Tanpa keduanya, tidak ada panggilan ke smmsoc maupun Likeo. |
+| `PROVIDER_KEY_ENC_KEY` | Dipakai mengenkripsi API key smmsoc di database (AES-256-GCM), sama seperti Likeo. **Jangan diganti** setelah ada key tersimpan: key lama tidak bisa dibuka lagi. |
+| `PROVIDER_CUSTOM_COMMENTS` | Hanya berlaku untuk Likeo (formatnya baru terverifikasi di sana). Layanan Custom Comments dari provider lain tetap "Belum tersedia untuk dipesan" sampai formatnya diuji. |
+| `LIKEO_API_URL`, `LIKEO_API_KEY` | Tetap hanya untuk Likeo. Provider lain tidak pernah membaca environment. |
+
+**Langkah di Admin (urut):**
+1. **Admin > Provider > Tambah provider**: nama (`smmsoc`), URL API (harus `https://` dan nama domain publik; alamat IP, localhost, dan port khusus ditolak), API key (hanya ditulis, tidak bisa dibaca lagi; kartu hanya menampilkan "tersimpan"), mata uang provider (mis. `USD` atau `IDR`), kurs ke Rupiah (kosongkan untuk `IDR`). Perlu password admin.
+2. Klik **Tes koneksi** (memanggil `balance`). Pastikan hasilnya "Berhasil" dan saldo tampil. Bila mata uang yang dilaporkan provider berbeda dari yang kamu isi, saldo Rupiah tampil "Belum diketahui" (bukan angka salah): perbaiki mata uang dan kurs di **Kurs & markup**.
+3. **Kurs & markup** di kartu smmsoc: kurs, mata uang, dan markup untuk layanan baru provider ini. Kurs dan markup Likeo tidak ikut berubah.
+4. **Admin > Layanan > Sinkronkan dari provider**: pilih smmsoc, periksa pratinjau, **Terapkan** (password admin). Layanan baru masuk **nonaktif** bila "Layanan baru mulai nonaktif" menyala (disarankan). Aktifkan satu per satu setelah dicek. Layanan Likeo tidak disentuh.
+5. Pesan satu layanan termurah dengan jumlah minimum ke link milikmu sendiri, lalu pastikan statusnya ikut berubah (cron `sync-orders` memeriksa **semua** provider; satu provider yang gagal tidak menghentikan yang lain).
+
+**Yang perlu kamu tahu:**
+- **Saklar Nonaktifkan** pada kartu provider menyembunyikan seluruh layanannya dari pengguna dan memblokir pesanan baru. Layanan dan riwayat pesanan tidak dihapus; pesanan yang masih berjalan tetap disinkronkan sampai selesai, termasuk refund otomatis. Mengaktifkan kembali memunculkan layanannya lagi.
+- Pesanan, refill, pembatalan, dan refund selalu dikirim ke provider **milik layanan itu**. Refund tetap lewat fungsi database yang idempoten (satu kali per pesanan dan alasan).
+- `add` (membuat pesanan) **tidak pernah diulang otomatis**. Bila smmsoc timeout atau menjawab tidak jelas, pesanan ditandai "perlu dicek manual" (sama seperti Likeo): periksa di panel smmsoc, lalu putuskan di Admin > Pesanan.
+- Peringatan **Saldo rendah** tampil per provider (batas yang sama dengan Likeo). Bila kurs belum diatur, saldo Rupiah "Belum diketahui" dan peringatan tidak ditampilkan.
+- Mengganti API key atau URL: **Ubah koneksi** (kosongkan key bila tidak ingin menggantinya). Kunci tidak pernah dicatat di log, audit, atau dikirim ke browser.
+- Ketergantungan yang **belum terverifikasi** pada smmsoc (sama seperti Likeo sebelum diuji): bentuk jawaban `services/add/status/refill/cancel` mengikuti konvensi standar. Uji dengan satu pesanan kecil (langkah 5) sebelum membuka layanannya untuk pengguna.
+
 ## 12. Smoke test setelah deploy
 
 Urutan singkat; semuanya harus berhasil.

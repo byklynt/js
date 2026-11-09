@@ -1,6 +1,6 @@
 import { handleCron } from "@/lib/server/cron";
 import { createProviderClient } from "@/lib/server/providers/client";
-import { checkLikeo } from "@/lib/server/providers/balance";
+import { checkAllProviders } from "@/lib/server/providers/balance";
 import { syncOrders } from "@/lib/server/sync";
 import { reconcilePendingDeposits } from "@/lib/server/payments/deposits-gateway";
 
@@ -19,9 +19,9 @@ async function handle(request: Request) {
       const startedAt = Date.now();
       const summary = await syncOrders(createProviderClient(), new Date(), { deadlineAt: startedAt + MAX_RUN_MS });
       try {
-        await checkLikeo(); // keeps the provider balance fresh (cached 60 s); a failure shows under Provider, never breaks the sync
+        await checkAllProviders(); // keeps every active provider balance fresh (cached 60 s); a failure shows under Provider, never breaks the sync or another provider
       } catch {
-        /* recorded by checkLikeo */
+        /* recorded per provider by checkAllProviders */
       }
       // Paymenku deposits pending for more than 5 minutes (a lost webhook): ask Paymenku and apply the same credit function. Never breaks the order sync.
       let deposits: Awaited<ReturnType<typeof reconcilePendingDeposits>> | { error: true } = { error: true };

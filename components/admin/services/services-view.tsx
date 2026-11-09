@@ -466,7 +466,7 @@ export function ServicesView({ initial, meta, providers, minMargin = 5, reviewTh
         onClose={() => setForm(null)}
       />
       <EstimateDialog key={estimateFor?.id ?? "estimate-closed"} service={estimateFor} onClose={() => setEstimateFor(null)} />
-      <SyncModal open={syncOpen} onClose={() => setSyncOpen(false)} />
+      <SyncModal open={syncOpen} onClose={() => setSyncOpen(false)} providers={providers.map((p) => ({ id: p.id, name: p.name, status: p.status }))} />
       <BulkMarkupModal open={markupOpen} onClose={() => setMarkupOpen(false)} categories={categories} />
       <MarginFixModal open={fixOpen} onClose={() => setFixOpen(false)} />
     </div>

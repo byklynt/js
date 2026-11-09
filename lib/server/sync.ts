@@ -110,17 +110,22 @@ export async function updateRequests(client: ProviderClient, now: Date): Promise
 
   // Refill requests: read the provider's status back.
   if (client.getRefillStatuses) {
-    const { data: refills } = await db.from("refill_requests").select("id,user_id,order_id,status,provider_request_id").in("status", ["menunggu", "berjalan"]).not("provider_request_id", "is", null).order("created_at").limit(200);
-    const ids = [...new Set((refills ?? []).map((r) => r.provider_request_id as string))];
-    if (ids.length) {
-      let results: Awaited<ReturnType<NonNullable<ProviderClient["getRefillStatuses"]>>> = {};
+    const { data: refillRows } = await db.from("refill_requests").select("id,user_id,order_id,status,provider_request_id,orders!inner(provider_id)").in("status", ["menunggu", "berjalan"]).not("provider_request_id", "is", null).order("created_at").limit(200);
+    const refills = ((refillRows ?? []) as unknown as { id: string; user_id: string; order_id: number; status: string; provider_request_id: string; orders: { provider_id: string } }[]);
+    // Refill ids only mean something to the provider that issued them: ask each provider about its own, and let one failing provider skip only itself.
+    const byProvider = new Map<string, string[]>();
+    for (const r of refills) byProvider.set(r.orders.provider_id, [...(byProvider.get(r.orders.provider_id) ?? []), r.provider_request_id]);
+    const resultsOf = new Map<string, Awaited<ReturnType<NonNullable<ProviderClient["getRefillStatuses"]>>>>();
+    for (const [pid, list] of byProvider) {
       try {
-        results = await client.getRefillStatuses("", ids);
+        resultsOf.set(pid, await client.getRefillStatuses(pid, [...new Set(list)]));
       } catch (e) {
-        await logSystem("sync.refill_status_failed", "refill", "-", null, { error: e instanceof Error ? e.message.slice(0, 120) : "error" });
+        await logSystem("sync.refill_status_failed", "provider", pid, null, { error: e instanceof Error ? e.message.slice(0, 120) : "error" });
       }
-      for (const r of refills ?? []) {
-        const item = results[r.provider_request_id as string];
+    }
+    if (refills.length) {
+      for (const r of refills) {
+        const item = resultsOf.get(r.orders.provider_id)?.[r.provider_request_id];
         if (!item || !item.ok || !item.state) continue;
         const current = r.status as keyof typeof REFILL_RANK;
         if (item.state === current || REFILL_RANK[item.state] <= REFILL_RANK[current]) continue; // only forward, never back
@@ -138,18 +143,20 @@ export async function updateRequests(client: ProviderClient, now: Date): Promise
 
   // Cancellations forwarded to the provider: confirmed or refused.
   if (client.getCancelStatuses) {
-    const { data: sent } = await db.from("cancel_requests").select("id,user_id,order_id,orders!inner(provider_order_id,status,cancelled_by)").eq("provider_state", "diminta").limit(200);
-    type Sent = { id: string; user_id: string; order_id: number; orders: { provider_order_id: string; status: string; cancelled_by: string | null } };
+    const { data: sent } = await db.from("cancel_requests").select("id,user_id,order_id,orders!inner(provider_id,provider_order_id,status,cancelled_by)").eq("provider_state", "diminta").limit(200);
+    type Sent = { id: string; user_id: string; order_id: number; orders: { provider_id: string; provider_order_id: string; status: string; cancelled_by: string | null } };
     const rows = ((sent ?? []) as unknown as Sent[]).filter((x) => x.orders.provider_order_id);
     if (rows.length) {
-      let results: Awaited<ReturnType<NonNullable<ProviderClient["getCancelStatuses"]>>> = {};
-      try {
-        results = await client.getCancelStatuses("", [...new Set(rows.map((x) => x.orders.provider_order_id))]);
-      } catch (e) {
-        await logSystem("sync.cancel_status_failed", "order", "-", null, { error: e instanceof Error ? e.message.slice(0, 120) : "error" });
+      const resultsOf = new Map<string, Awaited<ReturnType<NonNullable<ProviderClient["getCancelStatuses"]>>>>();
+      for (const pid of new Set(rows.map((x) => x.orders.provider_id))) {
+        try {
+          resultsOf.set(pid, await client.getCancelStatuses(pid, [...new Set(rows.filter((x) => x.orders.provider_id === pid).map((x) => x.orders.provider_order_id))]));
+        } catch (e) {
+          await logSystem("sync.cancel_status_failed", "provider", pid, null, { error: e instanceof Error ? e.message.slice(0, 120) : "error" });
+        }
       }
       for (const c of rows) {
-        const item = results[c.orders.provider_order_id];
+        const item = resultsOf.get(c.orders.provider_id)?.[c.orders.provider_order_id];
         if (!item || !item.ok || item.state === "pending") continue;
         const next = item.state === "confirmed" ? "dikonfirmasi" : "ditolak";
         const { data: changed } = await db.from("cancel_requests").update({ provider_state: next }).eq("id", c.id).eq("provider_state", "diminta").select("id");
@@ -236,7 +243,8 @@ export async function syncOrders(client: ProviderClient, now = new Date(), opts:
   const db = supabaseAdmin();
   const runs: SyncRun[] = [];
   let refundsCreated = 0;
-  const { data: providers } = await db.from("providers").select("id,name").eq("active", true);
+  // Every provider, not only the active ones: switching a provider off hides its services but its open orders must still be followed to the end.
+  const { data: providers } = await db.from("providers").select("id,name,active").order("created_at");
 
   for (const provider of providers ?? []) {
     if (outOfTime()) { stoppedEarly = true; break; }
@@ -245,6 +253,7 @@ export async function syncOrders(client: ProviderClient, now = new Date(), opts:
       // least recently synced first (never-synced first): an old stuck order cannot starve new ones when the batch limit is reached
       .eq("provider_id", provider.id).neq("provider_order_id", "").in("status", ACTIVE_STATUSES).order("last_synced_at", { ascending: true, nullsFirst: true }).order("id").limit(MAX_ORDERS_PER_TICK);
     const list = (orders ?? []) as ActiveOrder[];
+    if (!provider.active && list.length === 0) continue; // a switched-off provider with nothing open: no call, no run row
     const run: SyncRun = { providerId: provider.id, startedAt: now.toISOString(), finishedAt: now.toISOString(), ordersChecked: 0, ordersChanged: 0, errors: 0, errorMessage: null };
 
     const apply = async (order: ActiveOrder, state: { status: string; startCount: number; remains: number }) => {

@@ -7,7 +7,7 @@ import type { AdminDb } from "@/lib/admin-data";
 import { ProviderError } from "../provider-client";
 import { LIKEO_ID } from "./config";
 import { readMockOverride } from "./mock-overrides";
-import { cancelStateFromStatus, mapLikeoStatus, mapRefillStatus } from "./likeo";
+import { cancelStateFromStatus, mapRefillStatus, mapSmmStatus as mapLikeoStatus } from "./smm-v2";
 import type { BatchStatusItem, CancelResult, CancelStatusItem, RefillStatusItem, ProviderAdapter, ProviderOrderStatus, ProviderServiceInfo } from "./types";
 
 const row = (id: number, name: string, category: string, rate: number, min: number, max: number, extra: Partial<ProviderServiceInfo> = {}): ProviderServiceInfo => ({
@@ -33,6 +33,22 @@ export const MOCK_CATALOG: ProviderServiceInfo[] = [
   row(1015, "Website Traffic | Social Referral", "Website Traffic", 0.7, 1_000, 500_000),
   row(1016, "Reddit Upvotes | Mixed", "Reddit Upvotes", 4.2, 10, 5_000, { type: "Package" }),
 ];
+
+/**
+ * A second fake catalogue for every provider that is not the first one (smmsoc and others in mock mode). Different ids, names and prices, and a
+ * different balance currency, so multi-provider routing, namespacing and per-provider rates can be tested without any network.
+ */
+export const MOCK_CATALOG_SECOND: ProviderServiceInfo[] = [
+  row(5001, "Instagram Followers | Stabil", "Instagram Followers", 0.62, 50, 200_000, { refill: true, cancel: true }),
+  row(5002, "Instagram Likes | Cepat", "Instagram Likes", 0.21, 20, 100_000, { cancel: true }),
+  row(5003, "TikTok Views | Instan", "TikTok Views", 0.03, 100, 20_000_000),
+  row(5004, "YouTube Watch Time", "YouTube Views", 5.5, 100, 100_000, { type: "Package" }),
+  row(5005, "Facebook Custom Comments", "Facebook Comments", 7.2, 5, 500, { type: "Custom Comments" }),
+];
+
+/** The fake catalogue / balance of one provider (the first provider keeps the original fake). */
+const catalogFor = (providerId: string) => (providerId === LIKEO_ID ? MOCK_CATALOG : MOCK_CATALOG_SECOND);
+const balanceFor = (providerId: string) => (providerId === LIKEO_ID ? { balance: 75.5, currency: "USD" } : { balance: 31.25, currency: "USD" });
 
 /** Mock refill lifecycle: Pending -> In progress (first read) -> Completed (second read). A refill id containing "REJECT" ends as Rejected. */
 const refillPolls = new Map<string, number>();
@@ -68,15 +84,17 @@ export function createMockAdapter(db: AdminDb, providerId: string = LIKEO_ID): P
     mode: "mock",
     async getServices() {
       guard();
-      return MOCK_CATALOG.map((s) => ({ ...s }));
+      return catalogFor(providerId).map((s) => ({ ...s }));
     },
     async getBalance() {
       guard();
-      return { balance: 75.5, currency: "USD" };
+      return balanceFor(providerId);
     },
     async createOrder({ serviceId, quantity, comments }) {
       guard();
-      if (!MOCK_CATALOG.some((s) => s.id === serviceId) && !db.services.some((s) => s.providerId === providerId && s.providerServiceId === serviceId)) {
+      // Fixture providers (tests) historically ordered the first catalogue ids, so those stay accepted for them. Tests and the demo teach the mock a service id by registering it in the mock world; the first provider's entries count for every mock provider
+      // (they were written when there was only one provider, and fixture providers have their own ids).
+      if (!catalogFor(providerId).some((s) => s.id === serviceId) && !(providerId !== LIKEO_ID && MOCK_CATALOG.some((s) => s.id === serviceId)) && !db.services.some((s) => (s.providerId === providerId || s.providerId === LIKEO_ID) && s.providerServiceId === serviceId)) {
         throw new ProviderError("Layanan tidak ditemukan di Likeo.", { kind: "provider" });
       }
       if (comments && comments.length !== quantity) throw new ProviderError("Jumlah komentar tidak sama dengan jumlah pesanan.", { kind: "provider" });

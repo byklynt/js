@@ -158,3 +158,33 @@ export function redact(text: string, ...secrets: (string | undefined)[]): string
   for (const s of secrets) if (s && s.length >= 4) out = out.split(s).join(`${"•".repeat(8)}${s.slice(-4)}`);
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Provider URL validation (admin typed): the server fetches it, so it must be a public https address.
+// ---------------------------------------------------------------------------
+
+const PRIVATE_V4 = [/^10\./, /^127\./, /^0\./, /^169\.254\./, /^192\.168\./, /^172\.(1[6-9]|2\d|3[01])\./, /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./];
+
+/**
+ * Accepts only https URLs to a public host name: no credentials in the URL, no custom port, no IP literals, no localhost / internal names.
+ * (A DNS name that points to a private address is not caught here; the key is only ever sent to the address the admin saved.)
+ */
+export function validateProviderUrl(raw: string): { ok: true; url: string } | { ok: false; error: string } {
+  const text = raw.trim();
+  if (!text) return { ok: false, error: "URL API wajib diisi." };
+  if (text.length > 300) return { ok: false, error: "URL API terlalu panjang." };
+  let u: URL;
+  try {
+    u = new URL(text);
+  } catch {
+    return { ok: false, error: "URL API tidak valid. Contoh: https://contoh.com/api/v2" };
+  }
+  if (u.protocol !== "https:") return { ok: false, error: "URL API harus memakai https://." };
+  if (u.username || u.password) return { ok: false, error: "URL API tidak boleh berisi username atau password." };
+  if (u.port && u.port !== "443") return { ok: false, error: "URL API tidak boleh memakai port khusus." };
+  const host = u.hostname.toLowerCase();
+  if (host.startsWith("[") || /^\d+(\.\d+){3}$/.test(host) || PRIVATE_V4.some((r) => r.test(host))) return { ok: false, error: "URL API harus berupa nama domain publik, bukan alamat IP." };
+  if (host === "localhost" || !host.includes(".") || /\.(local|localhost|internal|lan|home|corp)$/.test(host)) return { ok: false, error: "URL API harus berupa nama domain publik." };
+  u.hash = "";
+  return { ok: true, url: u.toString() };
+}

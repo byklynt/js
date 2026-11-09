@@ -19,16 +19,18 @@ import * as S from "@/lib/admin-schemas";
 import { creditDeposit } from "@/lib/server/deposits";
 import { approveHeldOrder, resolveManualCheck, resubmitFailedOrder } from "@/lib/server/orders";
 import { createProviderClient, getAdapter } from "@/lib/server/providers/client";
-import { checkLikeo } from "@/lib/server/providers/balance";
+import { checkProvider } from "@/lib/server/providers/balance";
+import { nativeToRupiah, providerRate } from "@/lib/server/providers/rates";
+import { slugOf } from "@/lib/server/providers/catalog";
 import { getOrder, updateOrder } from "@/lib/server/repo/orders";
 import { loadSettings, saveRuleSet, saveSettings } from "@/lib/server/repo/settings";
 import { callFn } from "@/lib/server/repo/rpc";
 import { saveServices } from "@/lib/server/repo/services-repo";
-import { loadProvider, updateProvider } from "@/lib/server/repo/providers";
+import { insertProvider, loadProvider, storeProviderKey, updateProvider } from "@/lib/server/repo/providers";
 import { applyCatalogSync, previewCatalogSync } from "@/lib/server/repo/services-repo";
 import { notifyOrderStatus, notifyUser } from "@/lib/server/repo/notify";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
-import { LIKEO_ID, providerMode } from "@/lib/server/providers/config";
+import { LIKEO_ID, providerMode, validateProviderUrl } from "@/lib/server/providers/config";
 import { ProviderError } from "@/lib/server/provider-client";
 import { approveRefund, autoRefundForOrder, createManualRefund, rejectRefund, refundableRemaining } from "@/lib/server/refunds";
 import { refundReasonFor } from "@/lib/server/rules";
@@ -519,14 +521,17 @@ export async function bulkMarkup(input: unknown) {
   }, { services: true });
 }
 
-/** Read-only diff against the provider catalogue (Likeo). Nothing is changed. */
-export async function previewProviderSync(): Promise<ActionResult> {
-  return run(S.providerIdSchema.partial(), {}, async () => {
+/** Read-only diff against ONE provider catalogue (default: the first provider, Likeo). Nothing is changed. */
+export async function previewProviderSync(input?: unknown): Promise<ActionResult> {
+  return run(S.providerIdSchema.partial(), input ?? {}, async (d) => {
     try {
-      const items = await (await getAdapter()).getServices();
+      const providerId = d.id ?? LIKEO_ID;
+      const provider = await loadProvider(providerId);
+      if (!provider) return fail("Provider tidak ditemukan.");
+      const items = await (await getAdapter(providerId)).getServices();
       // An empty answer is an error to show, not an empty list to accept silently.
-      if (items.length === 0) return fail("Likeo mengembalikan 0 layanan. Cek API key dan URL lewat Tes koneksi di halaman Provider.");
-      const preview = await previewCatalogSync(items);
+      if (items.length === 0) return fail(`${provider.name} mengembalikan 0 layanan. Cek API key dan URL lewat Tes koneksi di halaman Provider.`);
+      const preview = await previewCatalogSync(items, providerId);
       return ok(undefined, { preview, mode: providerMode() });
     } catch (e) {
       if (e instanceof ProviderError) return fail(e.message);
@@ -539,22 +544,24 @@ export async function previewProviderSync(): Promise<ActionResult> {
 export async function applyProviderSync(input: unknown) {
   return run(S.syncApplySchema, input, async (d, admin) => {
     if (!(await reauth(admin, d.password))) return fail("Password salah.");
+    const providerId = d.id ?? LIKEO_ID;
+    if (!(await loadProvider(providerId))) return fail("Provider tidak ditemukan.");
     let items;
     try {
-      items = await (await getAdapter()).getServices();
+      items = await (await getAdapter(providerId)).getServices();
     } catch (e) {
       return fail(e instanceof ProviderError ? e.message : "Tidak bisa mengambil layanan dari provider.");
     }
     // The admin approved a specific preview: if the provider or the rate changed since, ask for a new look.
-    const fresh = await previewCatalogSync(items);
+    const fresh = await previewCatalogSync(items, providerId);
     if (fresh.blocked) return fail(fresh.blocked);
     if (fresh.fingerprint !== d.fingerprint) return fail("Katalog provider atau kurs berubah sejak pratinjau. Cek perubahan lagi.");
-    const { count } = await supabaseAdmin().from("services").select("id", { count: "exact", head: true }).eq("provider_id", LIKEO_ID);
-    const { result } = await applyCatalogSync(items);
+    const { count } = await supabaseAdmin().from("services").select("id", { count: "exact", head: true }).eq("provider_id", providerId);
+    const { result } = await applyCatalogSync(items, providerId);
     // Users must see the new services right away.
     revalidatePath("/dashboard", "layout");
     revalidatePath("/services");
-    await audit(admin, "service.sync", "provider", LIKEO_ID, { services: count ?? 0 }, { ...result, fingerprint: d.fingerprint, mode: providerMode() });
+    await audit(admin, "service.sync", "provider", providerId, { services: count ?? 0 }, { ...result, fingerprint: d.fingerprint, mode: providerMode() });
     return ok(`${result.created} layanan baru, ${result.raised} harga naik, ${result.lowered} harga turun, ${result.deactivated} dinonaktifkan.`, result);
   });
 }
@@ -593,7 +600,7 @@ export async function testProviderConnection(input: unknown) {
   return run(S.providerIdSchema, input, async (d, admin) => {
     const p = await loadProvider(d.id);
     if (!p) return fail("Provider tidak ditemukan.");
-    const res = await checkLikeo({ force: true });
+    const res = await checkProvider(p.id, { force: true });
     await audit(admin, "provider.test", "provider", p.id, null, { result: res.ok ? "ok" : "gagal", mode: providerMode(), http: res.probe?.httpStatus ?? null, reason: res.probe?.reason ?? null, ms: res.probe?.latencyMs ?? null });
     return res.ok ? ok(res.message) : fail(res.message);
   });
@@ -604,7 +611,7 @@ export async function refreshProviderBalanceAction(input: unknown) {
   return run(S.providerIdSchema, input, async (d, admin) => {
     const p = await loadProvider(d.id);
     if (!p) return fail("Provider tidak mendukung penyegaran saldo.");
-    const res = await checkLikeo({ force: true });
+    const res = await checkProvider(p.id, { force: true });
     await audit(admin, "provider.balance_refresh", "provider", p.id, null, { ok: res.ok, mode: providerMode() });
     return res.ok ? ok(res.message) : fail(res.message);
   });
@@ -640,6 +647,86 @@ export async function resolveOrderManualCheck(input: unknown) {
     const after = await resolveManualCheck(order.id, d.outcome === "sent" ? { kind: "sent", providerOrderId: d.providerOrderId! } : { kind: "refund" });
     await audit(admin, "order.manual_check", "order", order.id, before, { outcome: d.outcome, status: after.status, refunded: after.refundedAmount, providerOrderId: after.providerOrderId });
     return ok(d.outcome === "refund" ? `Pesanan #${order.id} direfund penuh.` : `Pesanan #${order.id} ditautkan ke provider dan akan disinkronkan.`);
+  });
+}
+
+/** "5" / "16.250,5" -> number. IDR is always 1. Returns an error text for anything else that is not a positive number. */
+function parseRate(currency: string, text: string): { ok: true; rate: number | null } | { ok: false; error: string } {
+  if (currency === "IDR") return { ok: true, rate: 1 };
+  const raw = text.trim();
+  if (raw === "") return { ok: true, rate: null };
+  // Indonesian notation: "16.250" is sixteen thousand two hundred fifty, "16.250,5" has a decimal comma; "0.5" and "16250" are plain numbers.
+  const thousands = /^\d{1,3}(\.\d{3})+(,\d+)?$/.test(raw);
+  const n = Number(thousands || raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw);
+  if (!Number.isFinite(n) || n <= 0 || n > 1_000_000) return { ok: false, error: "Kurs harus angka lebih dari 0." };
+  return { ok: true, rate: n };
+}
+
+/** Adds a provider (adapter smm-v2). The key is encrypted on write and never returned. */
+export async function addProvider(input: unknown) {
+  return run(S.addProviderSchema, input, async (d, admin) => {
+    if (!(await reauth(admin, d.password))) return fail("Password salah.");
+    const url = validateProviderUrl(d.apiUrl);
+    if (!url.ok) return fail(url.error);
+    const rate = parseRate(d.currency, d.exchangeRate);
+    if (!rate.ok) return fail(rate.error);
+    const base = slugOf(d.name);
+    let created: string | null = null;
+    for (let i = 1; i <= 6 && !created; i++) {
+      const r = await insertProvider({ name: d.name, slug: i === 1 ? base : `${base}-${i}`, apiUrl: url.url, apiKey: d.apiKey, currency: d.currency, exchangeRate: rate.rate, active: true });
+      if ("id" in r) created = r.id;
+      else if (r.error === "failed") return fail("Provider gagal disimpan. Coba lagi.");
+    }
+    if (!created) return fail("Nama provider sudah dipakai. Pakai nama lain.");
+    revalidatePath("/admin/providers");
+    // The audit entry never holds the key (not even masked): only what was configured around it.
+    await audit(admin, "provider.create", "provider", created, null, { name: d.name, host: new URL(url.url).host, currency: d.currency, exchangeRate: rate.rate, keySaved: true });
+    return ok(`${d.name} ditambahkan. Klik Tes koneksi, lalu atur kurs dan markup sebelum sinkronisasi layanan.`, { id: created });
+  });
+}
+
+/** Changes the API URL and/or replaces the API key of a provider. The key is write-only: an empty field keeps the stored key. */
+export async function saveProviderConnection(input: unknown) {
+  return run(S.providerConnectionSchema, input, async (d, admin) => {
+    if (!(await reauth(admin, d.password))) return fail("Password salah.");
+    const p = await loadProvider(d.id);
+    if (!p) return fail("Provider tidak ditemukan.");
+    let urlChanged = false;
+    if (d.apiUrl) {
+      const url = validateProviderUrl(d.apiUrl);
+      if (!url.ok) return fail(url.error);
+      urlChanged = url.url !== p.apiUrl;
+      if (urlChanged) await updateProvider(p.id, { api_url: url.url });
+    }
+    if (d.apiKey) {
+      if (d.apiKey.length < 8) return fail("API key terlalu pendek.");
+      await storeProviderKey(p.id, d.apiKey);
+    }
+    if (!urlChanged && !d.apiKey) return fail("Tidak ada yang diubah.");
+    await updateProvider(p.id, { last_test: null }); // the old test result no longer describes this connection
+    revalidatePath("/admin/providers");
+    await audit(admin, "provider.connection", "provider", p.id, null, { urlChanged, keyReplaced: Boolean(d.apiKey) });
+    return ok("Koneksi disimpan. Klik Tes koneksi untuk memastikan.");
+  });
+}
+
+/** Rate, currency and markup of one provider other than the first (the first keeps the global form). Applies at the next catalogue sync. */
+export async function saveProviderPricing(input: unknown) {
+  return run(S.providerPricingSchema, input, async (d, admin) => {
+    if (d.id === LIKEO_ID) return fail("Kurs dan markup Likeo diatur lewat tombol Kurs & markup yang lama.");
+    const p = await loadProvider(d.id);
+    if (!p) return fail("Provider tidak ditemukan.");
+    const rate = parseRate(d.currency, d.exchangeRate);
+    if (!rate.ok) return fail(rate.error);
+    if (rate.rate === null) return fail("Kurs wajib diisi untuk mata uang selain IDR.");
+    const settings = await loadSettings();
+    settings.pricing = { ...settings.pricing, providerMarkups: { ...settings.pricing.providerMarkups, [p.id]: { markupType: d.markupType, markup: d.markup } } };
+    await saveSettings(settings, admin.sub);
+    const info = providerRate({ id: p.id, currency: d.currency, exchangeRate: rate.rate }, settings.pricing);
+    const idr = p.balanceNative !== undefined ? nativeToRupiah(p.balanceNative, d.currency, info) : null;
+    await updateProvider(p.id, { currency: d.currency, exchange_rate: rate.rate, ...(p.balanceNative !== undefined ? { balance_idr: idr } : {}) });
+    await audit(admin, "provider.pricing", "provider", p.id, { currency: p.currency, exchangeRate: p.exchangeRate ?? null }, { currency: d.currency, exchangeRate: rate.rate, markupType: d.markupType, markup: d.markup });
+    return ok("Kurs dan markup provider disimpan. Jalankan sinkronisasi layanan untuk memperbarui harga.");
   });
 }
 

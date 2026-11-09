@@ -109,7 +109,7 @@ export const bulkMarkupSchema = z.object({
 });
 
 /** Applying the catalogue sync: the fingerprint of the previewed diff must still match what the provider returns now. */
-export const syncApplySchema = z.object({ fingerprint: z.string().trim().min(8).max(64), password });
+export const syncApplySchema = z.object({ id: z.string().uuid("Provider tidak valid.").optional(), fingerprint: z.string().trim().min(8).max(64), password });
 
 export const pricingSettingsSchema = z.object({
   rateIdr: z.coerce.number().positive("Kurs harus lebih dari 0.").max(1_000_000, "Kurs terlalu besar."),
@@ -130,6 +130,37 @@ export const manualCheckSchema = z.object({
 export const csvImportSchema = z.object({ csv: z.string().min(1, "File CSV kosong.").max(500_000) });
 
 export const providerIdSchema = z.object({ id });
+
+const currencyCode = z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, "Mata uang harus 3 huruf, misalnya USD atau IDR.");
+const exchangeRateText = z.string().trim().max(20).default("");
+const providerKey = z.string().trim().min(8, "API key terlalu pendek.").max(200, "API key terlalu panjang.");
+
+/** Adding a provider stores a secret and starts spending money: the admin password is required. The key is write-only. */
+export const addProviderSchema = z.object({
+  name: z.string().trim().min(2, "Nama provider minimal 2 karakter.").max(40, "Nama provider maksimal 40 karakter."),
+  apiUrl: z.string().trim().min(1, "URL API wajib diisi.").max(300),
+  apiKey: providerKey,
+  currency: currencyCode,
+  exchangeRate: exchangeRateText,
+  password,
+});
+
+/** Change the URL and/or replace the key. Leaving the key empty keeps the stored one. */
+export const providerConnectionSchema = z.object({
+  id,
+  apiUrl: z.string().trim().max(300).default(""),
+  apiKey: z.string().trim().max(200).default(""),
+  password,
+});
+
+/** Rate, currency and markup of ONE provider (Likeo keeps using the global form). */
+export const providerPricingSchema = z.object({
+  id,
+  currency: currencyCode,
+  exchangeRate: exchangeRateText,
+  markupType: z.enum(["persen", "tetap"]),
+  markup: z.coerce.number().min(0, "Tidak boleh negatif.").max(100_000_000),
+});
 
 export const depositGatewaySchema = z.object({ id: z.string().uuid("ID deposit tidak valid.") });
 export const depositConfirmSchema = z.object({ id, password });

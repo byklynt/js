@@ -1,5 +1,5 @@
 import { handleCron } from "@/lib/server/cron";
-import { checkLikeo } from "@/lib/server/providers/balance";
+import { checkAllProviders } from "@/lib/server/providers/balance";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 
 /**
@@ -16,7 +16,8 @@ async function handle(request: Request) {
       const sb = supabaseAdmin();
       let balance = "skipped";
       try {
-        balance = (await checkLikeo({ force: true })).ok ? "ok" : "gagal";
+        const res = Object.values(await checkAllProviders({ force: true }));
+        balance = res.length === 0 ? "skipped" : res.every((r) => r.ok) ? "ok" : "gagal";
       } catch {
         balance = "gagal";
       }

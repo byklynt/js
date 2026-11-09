@@ -1,14 +1,9 @@
 import "server-only";
-import { likeoApiUrl, maskedLikeoKey } from "@/lib/server/providers/config";
+import { likeoApiUrl } from "@/lib/server/providers/config";
 import type { ProviderRecord, PublicProvider } from "@/lib/admin-data";
 
-/** Shows only the last 4 characters. The full key never leaves the server. */
-export function maskKey(key: string): string {
-  return `${"•".repeat(12)}${key.slice(-4)}`;
-}
-
 export function toPublicProvider(p: ProviderRecord): PublicProvider {
-  // Explicit allow-list: the full apiKey must never be part of what the client receives.
+  // Explicit allow-list: the API key (in any form, not even its last characters) must never be part of what the client receives.
   return {
     id: p.id,
     name: p.name,
@@ -21,7 +16,12 @@ export function toPublicProvider(p: ProviderRecord): PublicProvider {
     balanceNative: p.balanceNative,
     balanceAt: p.balanceAt,
     lastTest: p.lastTest,
-    // Only the last 4 characters of the key are ever shown.
-    apiKeyMasked: p.kind === "likeo" ? maskedLikeoKey() : maskKey(p.apiKey),
+    slug: p.slug,
+    adapterType: p.adapterType,
+    exchangeRate: p.exchangeRate ?? null,
+    keySaved: Boolean(p.keySaved),
+    balanceKnown: Boolean(p.balanceKnown),
+    // Write-only field: the UI only learns whether a key exists.
+    apiKeyMasked: p.keySaved ? "tersimpan" : "belum diisi",
   };
 }

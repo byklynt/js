@@ -66,16 +66,36 @@ async function unitDb(providerId: string): Promise<AdminDb> {
   return db;
 }
 
-export async function previewCatalogSync(items: ProviderServiceInfo[], providerId = LIKEO_ID): Promise<SyncPreview> {
+/**
+ * Highest numeric service id and sort order across ALL providers. Service ids are one global sequence; a sync of one provider only loads that provider
+ * services, so without this a second provider would reuse ids 1.. and overwrite the first provider services (the upsert is on id).
+ */
+export async function globalServiceMaxima(): Promise<{ maxId: number; maxSort: number }> {
+  let maxId = 0;
+  let maxSort = 0;
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabaseAdmin().from("services").select("id,sort_order").order("id").range(from, from + 999);
+    if (error) throw new Error(`services: ${error.message}`);
+    for (const r of data ?? []) {
+      const n = Number(r.id);
+      if (Number.isFinite(n) && n > maxId) maxId = n;
+      if (r.sort_order > maxSort) maxSort = r.sort_order;
+    }
+    if ((data?.length ?? 0) < 1000) break;
+  }
+  return { maxId, maxSort };
+}
+
+export async function previewCatalogSync(items: ProviderServiceInfo[], providerId: string = LIKEO_ID): Promise<SyncPreview> {
   return buildSyncPreview(await unitDb(providerId), providerId, items);
 }
 
 /** Applies the provider catalogue. Idempotent: a second run with the same list changes nothing. Price changes are recorded for the "Pembaruan" page. */
-export async function applyCatalogSync(items: ProviderServiceInfo[], providerId = LIKEO_ID): Promise<{ result: SyncResult; fingerprint: string; blocked: string | null }> {
+export async function applyCatalogSync(items: ProviderServiceInfo[], providerId: string = LIKEO_ID): Promise<{ result: SyncResult; fingerprint: string; blocked: string | null }> {
   const db = await unitDb(providerId);
   const preview = buildSyncPreview(db, providerId, items);
   if (preview.blocked) return { result: { created: 0, raised: 0, lowered: 0, deactivated: 0, restored: 0, thinMargin: 0, flagged: 0 }, fingerprint: preview.fingerprint, blocked: preview.blocked };
-  const result = applyCatalog(db, providerId, items);
+  const result = applyCatalog(db, providerId, items, new Date(), await globalServiceMaxima());
   const changed = db.services.filter((s) => s.providerId === providerId && s.imported);
   await saveServices(changed);
   const updates = db.priceUpdates.map((u) => ({ service_id: u.serviceId, platform: u.platform, name: u.name, type: u.type, detail: u.detail }));

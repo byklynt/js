@@ -25,6 +25,7 @@ export default function Page() {
             mode={mode}
             modeSource={source}
             modeWarning={warning}
+            markups={pricing.providerMarkups}
             pricing={{
               currency: pricing.currency, rateIdr: pricing.rateIdr, roundTo: pricing.roundTo, defaultMarkup: pricing.defaultMarkup,
               providerMarkup: pricing.providerMarkups[LIKEO_ID] ?? pricing.defaultMarkup,

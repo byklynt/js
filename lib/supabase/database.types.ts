@@ -1177,6 +1177,7 @@ export type Database = {
       providers: {
         Row: {
           active: boolean
+          adapter_type: string
           api_key_encrypted: string | null
           api_url: string
           balance_at: string | null
@@ -1196,6 +1197,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          adapter_type?: string
           api_key_encrypted?: string | null
           api_url?: string
           balance_at?: string | null
@@ -1215,6 +1217,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          adapter_type?: string
           api_key_encrypted?: string | null
           api_url?: string
           balance_at?: string | null

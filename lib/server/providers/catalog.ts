@@ -11,6 +11,7 @@ import { isThinMargin, marginPercent, afterProviderPriceChange, markupForMargin 
 import { logSystem } from "../system-log";
 import { ServiceError } from "../tx";
 import { LIKEO_ID } from "./config";
+import { providerRate } from "./rates";
 import type { ProviderServiceInfo } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -53,19 +54,26 @@ export function resolveMarkup(db: AdminDb, providerId: string, categoryLabel: st
   return p.categoryMarkups[categoryLabel] ?? p.providerMarkups[providerId] ?? p.defaultMarkup;
 }
 
+/** The rate (Rupiah per 1 unit of the provider currency) and currency used to price ONE provider. Likeo keeps the global setting; others use their own. */
+export function ratesFor(db: AdminDb, providerId: string) {
+  return providerRate(db.providers.find((x) => x.id === providerId), db.settings.pricing);
+}
+
 /**
  * Why importing would produce unusable (zero or nonsense priced) services, or null when pricing is ready.
  * The sync is blocked while this returns text, so zero-price services are never imported.
  */
-export function pricingProblem(db: AdminDb): string | null {
+export function pricingProblem(db: AdminDb, providerId: string = LIKEO_ID): string | null {
   const p = db.settings.pricing;
-  if (!Number.isFinite(p.rateIdr) || p.rateIdr <= 0) return "Atur kurs dan markup dulu: kurs ke Rupiah belum diisi.";
-  const m = p.providerMarkups[LIKEO_ID_FOR_PRICING] ?? p.defaultMarkup;
+  const rate = ratesFor(db, providerId);
+  if (rate.rateIdr === null || !Number.isFinite(rate.rateIdr) || rate.rateIdr <= 0) {
+    return providerId === LIKEO_ID ? "Atur kurs dan markup dulu: kurs ke Rupiah belum diisi." : "Atur kurs dan markup provider ini dulu: kurs ke Rupiah belum diisi.";
+  }
+  const m = p.providerMarkups[providerId] ?? p.defaultMarkup;
   if (!m || !Number.isFinite(m.markup) || m.markup <= 0) return "Atur kurs dan markup dulu: markup belum diisi.";
   if (!Number.isFinite(p.roundTo) || p.roundTo < 1) return "Atur kurs dan markup dulu: pembulatan harga tidak valid.";
   return null;
 }
-const LIKEO_ID_FOR_PRICING = LIKEO_ID;
 
 // ---------------------------------------------------------------------------
 // Diff
@@ -129,7 +137,10 @@ const localFor = (db: AdminDb, providerId: string, providerServiceId: string) =>
   db.services.find((s) => s.providerId === providerId && s.providerServiceId === providerServiceId);
 
 export function buildSyncPreview(db: AdminDb, providerId: string, items: ProviderServiceInfo[]): SyncPreview {
-  const { rateIdr, currency, minMarginPercent, roundTo, reviewPriceThreshold, newServicesInactive } = db.settings.pricing;
+  const { minMarginPercent, roundTo, reviewPriceThreshold, newServicesInactive } = db.settings.pricing;
+  const rate = ratesFor(db, providerId);
+  const rateIdr = rate.rateIdr ?? 0;
+  const currency = rate.currency;
   const { supported, unsupported } = supportedCandidates(items, rateIdr);
   const changes: SyncChange[] = [];
   let unchanged = 0;
@@ -170,10 +181,10 @@ export function buildSyncPreview(db: AdminDb, providerId: string, items: Provide
   }
 
   const fingerprint = createHash("sha256")
-    .update(JSON.stringify({ rateIdr, roundTo, reviewPriceThreshold, newServicesInactive, c: changes.map((c) => [c.kind, c.providerServiceId, c.newCost, c.restored ?? false]) }))
+    .update(JSON.stringify({ providerId, rateIdr, roundTo, reviewPriceThreshold, newServicesInactive, c: changes.map((c) => [c.kind, c.providerServiceId, c.newCost, c.restored ?? false]) }))
     .digest("hex")
     .slice(0, 16);
-  return { providerId, total: items.length, unchanged, changes, unsupported, fingerprint, rate: { currency, rateIdr }, roundTo, reviewThreshold: reviewPriceThreshold, blocked: pricingProblem(db) };
+  return { providerId, total: items.length, unchanged, changes, unsupported, fingerprint, rate: { currency, rateIdr }, roundTo, reviewThreshold: reviewPriceThreshold, blocked: pricingProblem(db, providerId) };
 }
 
 // ---------------------------------------------------------------------------
@@ -183,15 +194,17 @@ export function buildSyncPreview(db: AdminDb, providerId: string, items: Provide
 export type SyncResult = { created: number; raised: number; lowered: number; deactivated: number; restored: number; thinMargin: number; /** New services imported inactive because they need checking. */ flagged: number };
 
 /** Applies the catalogue to db.services. Idempotent: a second run with the same list changes nothing. */
-export function applyCatalog(db: AdminDb, providerId: string, items: ProviderServiceInfo[], now = new Date()): SyncResult {
-  const blocked = pricingProblem(db);
+export function applyCatalog(db: AdminDb, providerId: string, items: ProviderServiceInfo[], now = new Date(), seed: { maxId?: number; maxSort?: number } = {}): SyncResult {
+  const blocked = pricingProblem(db, providerId);
   if (blocked) throw new ServiceError(blocked, "pricing_not_configured");
-  const { rateIdr, minMarginPercent } = db.settings.pricing;
-  const { supported } = supportedCandidates(items, rateIdr);
+  const { minMarginPercent } = db.settings.pricing;
+  const { supported } = supportedCandidates(items, ratesFor(db, providerId).rateIdr ?? 0);
   const result: SyncResult = { created: 0, raised: 0, lowered: 0, deactivated: 0, restored: 0, thinMargin: 0, flagged: 0 };
   const at = now.toISOString();
-  let nextId = Math.max(0, ...db.services.map((s) => Number(s.id) || 0)) + 1;
-  let nextSort = Math.max(0, ...db.services.map((s) => s.sort)) + 1;
+  // Service ids are one global sequence across ALL providers. db.services may hold only this provider, so the caller passes the global maximum
+  // (otherwise a second provider would start at 1 and overwrite the first provider services on upsert).
+  let nextId = Math.max(seed.maxId ?? 0, ...db.services.map((s) => Number(s.id) || 0)) + 1;
+  let nextSort = Math.max(seed.maxSort ?? 0, ...db.services.map((s) => s.sort)) + 1;
 
   for (const { info, cost } of supported) {
     const local = localFor(db, providerId, info.id);
@@ -199,7 +212,7 @@ export function applyCatalog(db: AdminDb, providerId: string, items: ProviderSer
     if (!local) {
       const m = resolveMarkup(db, providerId, category);
       const created: AdminService = {
-        id: String(nextId++), categoryId: `lk-${slugOf(category)}`, categoryLabel: category, platform: platformFromCategory(`${info.category} ${info.name}`),
+        id: String(nextId++), categoryId: `lk-${slugOf(category)}` /* categories are shared by all providers (same label = same category); services stay namespaced by provider_id */, categoryLabel: category, platform: platformFromCategory(`${info.category} ${info.name}`),
         name: cleanServiceName(info.name), badges: [], providerId, providerServiceId: info.id, providerPrice: cost, markupType: m.markupType, markup: m.markup,
         min: info.min, max: info.max, refill: info.refill, refillDays: info.refill ? 30 : null, cancel: info.cancel, active: true, sort: nextSort++,
         providerName: info.name, providerType: info.type, providerRate: info.rate, syncedAt: at, imported: true,
@@ -251,7 +264,8 @@ export function applyCatalog(db: AdminDb, providerId: string, items: ProviderSer
 export function isUserVisible(db: AdminDb, s: AdminService): boolean {
   if (!s.active || s.providerRemoved || !(finalPrice(s) > 0)) return false;
   const provider = db.providers.find((p) => p.id === s.providerId);
-  return Boolean(provider) && !(provider!.kind && provider!.status === "nonaktif");
+  // A switched-off provider hides ALL of its services (they stay in the database, with their order history, and come back when it is switched on).
+  return Boolean(provider) && provider!.status !== "nonaktif";
 }
 
 export type ServiceStages = {

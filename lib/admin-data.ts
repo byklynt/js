@@ -108,6 +108,14 @@ export type ProviderRecord = {
   lastTest?: { ok: boolean; at: string; message: string } | null;
   /** Which mode produced balanceNative / lastTest. Data from another mode is cleared (reconcileProviderMode). The mode itself is never stored. */
   dataMode?: "mock" | "live" | "off";
+  /** Multi-provider fields. slug is unique; exchangeRate = Rupiah per 1 unit of `currency` (null = not set yet). */
+  slug?: string;
+  adapterType?: "smm-v2";
+  exchangeRate?: number | null;
+  /** Whether an API key is stored (the key itself never leaves the server). */
+  keySaved?: boolean;
+  /** False while the Rupiah balance is unknown (never read, or no rate for the provider currency). */
+  balanceKnown?: boolean;
 };
 
 export type PublicProvider = Omit<ProviderRecord, "apiKey"> & { apiKeyMasked: string };

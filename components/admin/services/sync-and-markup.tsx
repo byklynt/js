@@ -25,9 +25,11 @@ const MAX_ROWS = 200;
 const kindOrder: Change["kind"][] = ["baru", "naik", "turun", "dihapus"];
 
 /** Preview of what the provider changed (from the real adapter); applying needs a password re-entry. */
-export function SyncModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SyncModal({ open, onClose, providers }: { open: boolean; onClose: () => void; providers: { id: string; name: string; status: string }[] }) {
   const run = useAdminRunner();
   const toast = useToast();
+  const [providerId, setProviderId] = useState<string>(providers[0]?.id ?? "");
+  const chosen = providers.find((p) => p.id === providerId) ?? providers[0];
   const [preview, setPreview] = useState<SyncPreview | null>(null);
   const [mode, setMode] = useState<"mock" | "live" | "off">("live");
   const [loading, setLoading] = useState(false);
@@ -35,7 +37,7 @@ export function SyncModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   async function load() {
     setLoading(true);
-    const result = await previewProviderSync();
+    const result = await previewProviderSync({ id: chosen?.id });
     setLoading(false);
     if (result.ok) {
       const data = result.data as { preview: SyncPreview; mode: "mock" | "live" | "off" };
@@ -59,13 +61,18 @@ export function SyncModal({ open, onClose }: { open: boolean; onClose: () => voi
         open={open && !confirming}
         onClose={close}
         title="Sinkronkan dari provider"
-        description="Lihat perubahan dari Likeo sebelum diterapkan. Hanya layanan bertipe Default yang diimpor; layanan dihapus provider dinonaktifkan, tidak dihapus."
+        description={`Lihat perubahan dari ${chosen?.name ?? "provider"} sebelum diterapkan. Hanya layanan bertipe Default dan Custom Comments yang diimpor; layanan baru mulai nonaktif bila pengaturannya aktif; layanan dihapus provider dinonaktifkan, tidak dihapus.`}
         maxWidth="max-w-2xl"
       >
         {preview === null ? (
-          <Button loading={loading} onClick={load}>
-            Cek perubahan
-          </Button>
+          <div className="space-y-3">
+            {providers.length > 1 ? (
+              <SegmentedControl<string> items={providers.map((p) => ({ value: p.id, label: p.status === "aktif" ? p.name : `${p.name} (nonaktif)` }))} value={chosen?.id ?? ""} onChange={setProviderId} ariaLabel="Provider yang disinkronkan" />
+            ) : null}
+            <Button loading={loading} onClick={load}>
+              Cek perubahan
+            </Button>
+          </div>
         ) : (
           <div>
             <div className="mb-3 flex flex-wrap items-center gap-2 text-[9.5px] text-[#5B6B8C] dark:text-slate-400">
@@ -170,7 +177,7 @@ export function SyncModal({ open, onClose }: { open: boolean; onClose: () => voi
         tone="primary"
         requirePassword
         onConfirm={async (password) => {
-          const result = await run(applyProviderSync({ password, fingerprint: preview?.fingerprint ?? "" }));
+          const result = await run(applyProviderSync({ id: chosen?.id, password, fingerprint: preview?.fingerprint ?? "" }));
           if (result.ok) close();
         }}
       />

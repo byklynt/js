@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Plug, Power, RefreshCw, Server, SlidersHorizontal } from "lucide-react";
+import { KeyRound, Plug, Plus, Power, RefreshCw, Server, SlidersHorizontal } from "lucide-react";
 import type { PublicProvider } from "@/lib/admin-data";
-import { refreshProviderBalanceAction, savePricingSettings, setProviderStatus, testProviderConnection } from "@/lib/admin-actions";
+import { addProvider, refreshProviderBalanceAction, savePricingSettings, saveProviderConnection, saveProviderPricing, setProviderStatus, testProviderConnection } from "@/lib/admin-actions";
 import { formatDateTime, formatIdr } from "@/lib/balance";
 import { LOW_PROVIDER_BALANCE } from "@/lib/admin-data";
 import { PageHeader } from "@/components/shell/page-header";
@@ -89,8 +89,107 @@ function PricingModal({ pricing, open, onClose }: { pricing: PricingView; open: 
   );
 }
 
-export function ProvidersView({ providers, mode, modeSource, modeWarning, pricing }: { providers: PublicProvider[]; mode: "mock" | "live" | "off"; modeSource: string; modeWarning: string | null; pricing: PricingView }) {
+export type ProviderMarkups = Record<string, { markupType: MarkupType; markup: number }>;
+
+/** Rate, currency and markup of one provider other than the first. */
+function ProviderPricingModal({ provider, markup, open, onClose }: { provider: PublicProvider; markup: { markupType: MarkupType; markup: number }; open: boolean; onClose: () => void }) {
   const run = useAdminRunner();
+  const [currency, setCurrency] = useState(provider.currency ?? "USD");
+  const [rate, setRate] = useState(provider.exchangeRate ? String(provider.exchangeRate) : "");
+  const [type, setType] = useState<MarkupType>(markup.markupType);
+  const [value, setValue] = useState(String(markup.markup));
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const idr = currency.trim().toUpperCase() === "IDR";
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    const result = await run(saveProviderPricing({ id: provider.id, currency, exchangeRate: rate, markupType: type, markup: value }));
+    setBusy(false);
+    if (result.ok) onClose();
+    else setError(result.error);
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} title={`Kurs dan markup ${provider.name}`} description="Harga provider per 1000 dikonversi ke Rupiah dengan kurs provider ini. Berlaku saat sinkronisasi layanan berikutnya." maxWidth="max-w-md">
+      <form noValidate onSubmit={submit} className="space-y-3.5">
+        <TextField label="Mata uang provider" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} hint="3 huruf, misalnya USD atau IDR." />
+        {idr ? null : <TextField label={`Kurs 1 ${currency || "mata uang"} ke Rupiah`} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} hint="Diisi manual. Contoh: 16250" />}
+        <div>
+          <p className="mb-1.5 text-[10.5px] font-semibold text-ink dark:text-slate-200">Markup provider ini (layanan baru)</p>
+          <SegmentedControl<MarkupType> items={markupItems} value={type} onChange={setType} ariaLabel="Jenis markup provider" />
+          <div className="mt-2"><TextField label={type === "persen" ? "Markup (%)" : "Markup (Rp per 1000)"} inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} /></div>
+        </div>
+        {error ? <p role="alert" className="text-[9.5px] font-medium text-red-500">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Batal</Button>
+          <Button type="submit" loading={busy}>Simpan</Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+/** Add a provider (write-only key) or change the connection of an existing one. Both ask for the admin password. */
+function ConnectionModal({ provider, open, onClose }: { provider: PublicProvider | null; open: boolean; onClose: () => void }) {
+  const run = useAdminRunner();
+  const [name, setName] = useState("");
+  const [apiUrl, setApiUrl] = useState(provider?.apiUrl ?? "");
+  const [apiKey, setApiKey] = useState("");
+  const [currency, setCurrency] = useState("USD");
+  const [rate, setRate] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const idr = currency.trim().toUpperCase() === "IDR";
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    const result = await run(provider === null ? addProvider({ name, apiUrl, apiKey, currency, exchangeRate: rate, password }) : saveProviderConnection({ id: provider.id, apiUrl, apiKey, password }));
+    setBusy(false);
+    setApiKey("");
+    setPassword("");
+    if (result.ok) onClose();
+    else setError(result.error);
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={provider === null ? "Tambah provider" : `Ubah koneksi ${provider.name}`}
+      description={provider === null ? "Provider dengan API panel SMM standar (v2). API key disimpan terenkripsi di server dan tidak pernah ditampilkan lagi." : "Kosongkan API key kalau tidak ingin menggantinya. Key yang tersimpan tidak bisa dilihat."}
+      maxWidth="max-w-md"
+    >
+      <form noValidate onSubmit={submit} className="space-y-3.5" autoComplete="off">
+        {provider === null ? <TextField label="Nama provider" value={name} onChange={(e) => setName(e.target.value)} placeholder="smmsoc" maxLength={40} /> : null}
+        <TextField label="URL API" inputMode="url" value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder="https://contoh.com/api/v2" hint="Harus https dan berupa nama domain." />
+        <TextField label={provider === null ? "API key" : "API key baru (opsional)"} type="password" autoComplete="new-password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} hint={provider === null ? "Hanya ditulis, tidak bisa dibaca kembali." : provider.keySaved ? "Saat ini: tersimpan." : "Saat ini: belum diisi."} />
+        {provider === null ? (
+          <>
+            <TextField label="Mata uang provider" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} hint="3 huruf, misalnya USD atau IDR." />
+            {idr ? null : <TextField label={`Kurs 1 ${currency || "mata uang"} ke Rupiah`} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} hint="Bisa diisi nanti lewat Kurs & markup. Contoh: 16250" />}
+          </>
+        ) : null}
+        <TextField label="Password admin" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        {error ? <p role="alert" className="text-[9.5px] font-medium text-red-500">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Batal</Button>
+          <Button type="submit" loading={busy}>{provider === null ? "Tambah" : "Simpan"}</Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+export function ProvidersView({ providers, mode, modeSource, modeWarning, pricing, markups }: { providers: PublicProvider[]; mode: "mock" | "live" | "off"; modeSource: string; modeWarning: string | null; pricing: PricingView; markups: ProviderMarkups }) {
+  const run = useAdminRunner();
+  const [connection, setConnection] = useState<{ provider: PublicProvider | null } | null>(null);
+  const [pricingFor, setPricingFor] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<string | null>(null);
   const [pricingOpen, setPricingOpen] = useState(false);
@@ -99,7 +198,13 @@ export function ProvidersView({ providers, mode, modeSource, modeWarning, pricin
     <div>
       <PageHeader title="Provider" subtitle="Kelola koneksi ke provider layanan." />
 
-      <p className="mt-6 text-[10px] text-[#5B6B8C] dark:text-slate-400">Provider yang didukung saat ini: Likeo. URL dan API key dibaca dari .env.local.</p>
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[10px] text-[#5B6B8C] dark:text-slate-400">Semua provider dengan API panel SMM standar (v2) bisa ditambahkan. API key disimpan terenkripsi dan tidak bisa dilihat lagi.</p>
+        <Button className="h-8" onClick={() => setConnection({ provider: null })}>
+          <Plus className="h-3.5 w-3.5" aria-hidden />
+          Tambah provider
+        </Button>
+      </div>
 
       {providers.length === 0 ? (
         <div className="mt-5">
@@ -117,13 +222,13 @@ export function ProvidersView({ providers, mode, modeSource, modeWarning, pricin
                   <h2 className="text-[12px] font-semibold text-ink dark:text-white">{p.name}</h2>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-1.5">
-                  {p.kind === "likeo" ? <StatusChip label={mode === "mock" ? "MODE MOCK" : mode === "live" ? "MODE LIVE" : "BELUM DIATUR"} tone={mode === "mock" ? "amber" : mode === "live" ? "emerald" : "red"} /> : null}
+                  <StatusChip label={mode === "mock" ? "MODE MOCK" : mode === "live" ? "MODE LIVE" : "BELUM DIATUR"} tone={mode === "mock" ? "amber" : mode === "live" ? "emerald" : "red"} />
                   <ProviderStatusChip status={p.status} />
                 </div>
               </div>
 
               <dl className="mt-4 space-y-2.5 text-[10px]">
-                {p.kind === "likeo" ? (
+                {p.id === providers[0]?.id ? (
                   <div>
                     <dt className="text-[#5B6B8C] dark:text-slate-400">Mode</dt>
                     <dd className="mt-0.5 text-[10.5px] font-medium text-ink dark:text-white">
@@ -140,26 +245,26 @@ export function ProvidersView({ providers, mode, modeSource, modeWarning, pricin
                   <dt className="text-[#5B6B8C] dark:text-slate-400">API key</dt>
                   <dd className="mt-0.5 flex items-center gap-2">
                     <span className="truncate font-mono text-[10.5px] text-ink dark:text-white">{p.apiKeyMasked}</span>
-                    <span className="text-[9.5px] text-[#5B6B8C] dark:text-slate-400">dari .env.local</span>
+                    <span className="text-[9.5px] text-[#5B6B8C] dark:text-slate-400">write-only</span>
                   </dd>
                 </div>
                 <div className="flex items-end justify-between gap-2">
                   <div>
                     <dt className="text-[#5B6B8C] dark:text-slate-400">Saldo</dt>
-                    <dd className="mt-0.5 text-[16px] font-medium text-ink dark:text-white">{formatIdr(p.balance)}</dd>
-                    {p.kind === "likeo" && p.balanceNative !== undefined ? (
+                    <dd className="mt-0.5 text-[16px] font-medium text-ink dark:text-white">{p.balanceKnown ? formatIdr(p.balance) : "Belum diketahui"}</dd>
+                    {p.balanceNative !== undefined ? (
                       <dd className="mt-0.5 text-[9.5px] text-[#5B6B8C] dark:text-slate-400">
                         {p.balanceNative.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {p.currency}
                         {p.balanceAt ? <> &middot; dibaca <time dateTime={p.balanceAt}>{formatDateTime(p.balanceAt)}</time></> : null}
                       </dd>
                     ) : null}
                   </div>
-                  {p.balance < LOW_PROVIDER_BALANCE ? <LowBalanceChip /> : null}
+                  {p.balanceKnown && p.balance < LOW_PROVIDER_BALANCE ? <LowBalanceChip /> : null}
                 </div>
                 <div className="text-[#5B6B8C] dark:text-slate-400">
                   Terakhir sinkron {p.lastSync ? <time dateTime={p.lastSync}>{formatDateTime(p.lastSync)}</time> : "belum pernah"}
                 </div>
-                {p.kind === "likeo" && p.lastTest ? (
+                {p.lastTest ? (
                   <div role="status" className={`break-words ${p.lastTest.ok ? "text-emerald-600 dark:text-emerald-300" : "text-red-500"}`}>
                     {p.lastTest.ok ? "Tes terakhir berhasil" : "Tes terakhir gagal"}: {p.lastTest.message}
                   </div>
@@ -180,8 +285,7 @@ export function ProvidersView({ providers, mode, modeSource, modeWarning, pricin
                   <Plug className="h-3.5 w-3.5" aria-hidden />
                   Tes koneksi
                 </Button>
-                {p.kind === "likeo" ? (
-                  <>
+                <>
                     <Button
                       variant="outline"
                       className="h-8"
@@ -195,12 +299,15 @@ export function ProvidersView({ providers, mode, modeSource, modeWarning, pricin
                       <RefreshCw className="h-3.5 w-3.5" aria-hidden />
                       Segarkan
                     </Button>
-                    <Button variant="outline" className="h-8" onClick={() => setPricingOpen(true)}>
+                    <Button variant="outline" className="h-8" onClick={() => (p.kind === "likeo" ? setPricingOpen(true) : setPricingFor(p.id))}>
                       <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
                       Kurs &amp; markup
                     </Button>
-                  </>
-                ) : null}
+                    <Button variant="outline" className="h-8" onClick={() => setConnection({ provider: p })}>
+                      <KeyRound className="h-3.5 w-3.5" aria-hidden />
+                      Ubah koneksi
+                    </Button>
+                </>
                 <Button
                   variant="outline"
                   className="h-8"
@@ -217,6 +324,10 @@ export function ProvidersView({ providers, mode, modeSource, modeWarning, pricin
 
 
       <PricingModal key={pricingOpen ? "pricing-open" : "pricing-closed"} pricing={pricing} open={pricingOpen} onClose={() => setPricingOpen(false)} />
+      {providers.filter((p) => p.kind !== "likeo").map((p) => (
+        <ProviderPricingModal key={`${p.id}-${pricingFor === p.id ? "open" : "closed"}`} provider={p} markup={markups[p.id] ?? pricing.defaultMarkup} open={pricingFor === p.id} onClose={() => setPricingFor(null)} />
+      ))}
+      <ConnectionModal key={connection ? `conn-${connection.provider?.id ?? "new"}` : "conn-closed"} provider={connection?.provider ?? null} open={connection !== null} onClose={() => setConnection(null)} />
 
     </div>
   );

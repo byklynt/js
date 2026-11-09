@@ -4,7 +4,7 @@
  * first 200 characters of the response body with the key removed. It never falls back to mock data.
  */
 import { redact } from "./config";
-import { translateProviderError } from "./likeo";
+import { translateProviderError } from "./smm-v2";
 
 export type ProbeReason = "ok" | "key_salah" | "url_salah" | "timeout" | "jaringan" | "server" | "format" | "ditolak";
 
@@ -23,19 +23,21 @@ export type ProbeResult = {
 
 export const PREVIEW_CHARS = 200;
 
-const REASON_TEXT: Record<Exclude<ProbeReason, "ok">, string> = {
-  key_salah: "API key salah atau ditolak oleh Likeo",
+const reasonText = (name: string): Record<Exclude<ProbeReason, "ok">, string> => ({
+  key_salah: `API key salah atau ditolak oleh ${name}`,
   url_salah: "URL API salah atau tidak ditemukan",
-  timeout: "Likeo tidak merespons dalam batas waktu",
+  timeout: `${name} tidak merespons dalam batas waktu`,
   jaringan: "Tidak bisa terhubung ke URL (jaringan, DNS atau sertifikat)",
-  server: "Server Likeo bermasalah",
+  server: `Server ${name} bermasalah`,
   format: "Format respons tidak dikenali",
-  ditolak: "Likeo menolak permintaan",
-};
+  ditolak: `${name} menolak permintaan`,
+});
 
 export const cleanPreview = (body: string, key: string) => redact(body.replace(/\s+/g, " ").trim(), key).slice(0, PREVIEW_CHARS);
 
-export async function probeBalance(opts: { apiUrl: string; apiKey: string; fetchImpl?: typeof fetch; timeoutMs?: number }): Promise<ProbeResult> {
+export async function probeBalance(opts: { apiUrl: string; apiKey: string; fetchImpl?: typeof fetch; timeoutMs?: number; providerName?: string }): Promise<ProbeResult> {
+  const name = opts.providerName ?? "Likeo";
+  const REASON_TEXT = reasonText(name);
   const doFetch = opts.fetchImpl ?? fetch;
   const started = Date.now();
   const latency = () => Date.now() - started;
@@ -70,7 +72,7 @@ export async function probeBalance(opts: { apiUrl: string; apiKey: string; fetch
   const preview = cleanPreview(body, opts.apiKey);
   const status = res.status;
 
-  if (status >= 300 && status < 400) return fail("url_salah", status, preview, `dialihkan ke ${redact(res.headers.get("location") ?? "?", opts.apiKey).slice(0, 80)}, ubah LIKEO_API_URL ke alamat tujuan`);
+  if (status >= 300 && status < 400) return fail("url_salah", status, preview, `dialihkan ke ${redact(res.headers.get("location") ?? "?", opts.apiKey).slice(0, 80)}, ubah URL API provider ke alamat tujuan`);
   if (status === 401 || status === 403) return fail("key_salah", status, preview, `HTTP ${status}`);
   if (status === 404 || status === 405) return fail("url_salah", status, preview, `HTTP ${status}`);
   if (status >= 500) return fail("server", status, preview, `HTTP ${status}`);
@@ -84,7 +86,7 @@ export async function probeBalance(opts: { apiUrl: string; apiKey: string; fetch
   }
   if (json && typeof json === "object" && !Array.isArray(json) && typeof (json as { error?: unknown }).error === "string") {
     const raw = (json as { error: string }).error;
-    const mapped = translateProviderError(raw);
+    const mapped = translateProviderError(raw, name);
     const keyProblem = /api key|invalid key|incorrect request|unauthori[sz]ed/i.test(raw);
     return { ...fail(keyProblem ? "key_salah" : "ditolak", status, preview, mapped.replace(/\.$/, "")), message: `${mapped}` };
   }
